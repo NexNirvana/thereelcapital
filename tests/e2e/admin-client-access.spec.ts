@@ -22,6 +22,7 @@ const actions = [
   "reactivate",
   "revokeSession",
   "revokeAllSessions",
+  "updateSettings",
   "recover",
 ];
 
@@ -230,6 +231,46 @@ test("asks a stale admin session to confirm with a passkey, then deactivates", a
   await page.getByRole("button", { name: "Desactivar cliente" }).click();
   await expect(page.getByText(/Cliente desactivado/)).toBeVisible();
   expect(audited("client.deactivate", client.userId)).toBe(1);
+});
+
+const settingsOf = (userId: string) =>
+  d1(
+    `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS unlockPct FROM client_settings WHERE user_id = '${userId}'`,
+  );
+
+test("saves a client's settings with an audit row, refuses a lower SIZE and shows the limits read-only", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { role: "admin" });
+  const client = await seedPendingClient();
+  const other = await seedPendingClient();
+  await page.goto(`/admin/clientes/${client.userId}`);
+
+  await expect(page.getByText("máx. 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("máx. 3", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Posiciones abiertas")).toHaveCount(0);
+
+  await page.getByLabel("SIZE por entrada (USD)").fill("25000");
+  await page.getByLabel("Stop inicial (%)").fill("25");
+  await page.getByLabel("Desbloqueo del trailing (%)").fill("60");
+  await page.getByRole("button", { name: "Guardar configuración" }).click();
+  await expect(page.getByText("Configuración guardada.")).toBeVisible();
+  expect(settingsOf(client.userId)).toEqual([{ sizeUsd: 25000, stopPct: 25, unlockPct: 60 }]);
+  expect(settingsOf(other.userId)).toEqual([{ sizeUsd: 20000, stopPct: 30, unlockPct: 70 }]);
+  expect(audited("client_settings.update", client.userId)).toBe(1);
+
+  const post = (form: Record<string, string>) =>
+    page.request.post(`/admin/clientes/${client.userId}?/updateSettings`, {
+      form,
+      headers: { origin, accept: "application/json" },
+    });
+  const lower = await post({ sizeUsd: "24999", stopPct: "25", unlockPct: "60" });
+  expect(await lower.text()).toContain("SIZE solo puede aumentar.");
+  const stop = await post({ sizeUsd: "25000", stopPct: "9", unlockPct: "60" });
+  expect(await stop.text()).toContain("El stop debe ser un entero entre 10 y 50.");
+  expect(settingsOf(client.userId)).toEqual([{ sizeUsd: 25000, stopPct: 25, unlockPct: 60 }]);
+  expect(audited("client_settings.update", client.userId)).toBe(1);
 });
 
 test("the admin cannot impersonate a client or set their password", async ({ context, page }) => {

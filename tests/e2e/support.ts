@@ -39,6 +39,8 @@ export async function seedPendingClient({
   d1(
     `INSERT INTO "user" ("id","name","email","emailVerified","role","banned","createdAt","updatedAt")
      VALUES ('${userId}','Cliente','${userId}@example.com',0,'user',${banned ? 1 : 0},'${now}','${now}');
+     INSERT INTO client_settings (user_id, size_usd, stop_pct, trailing_unlock_pct, updated_at)
+     VALUES ('${userId}',20000,30,70,${Date.now()});
      INSERT INTO invitations ("id","user_id","token_hash","expires_at","created_by")
      VALUES ('${invitationId}','${userId}','${link.tokenHash}',${expiresInMs === undefined ? link.expiresAt : Date.now() + expiresInMs},'admin');`,
   );
