@@ -74,6 +74,12 @@ export async function seedSignedInUser(
   return userId;
 }
 
+// Makes a session look `ageMs` old, for after a passkey was registered: registering needs a fresh one.
+export function ageSessions(userId: string, ageMs: number) {
+  const createdAt = new Date(Date.now() - ageMs).toISOString();
+  d1(`UPDATE "session" SET "createdAt" = '${createdAt}' WHERE "userId" = '${userId}'`);
+}
+
 // An authenticator that cannot verify the user at all (no PIN or biometrics) is what produces
 // UV=0 at registration: Chrome refuses to create a discoverable credential with a capable but
 // unverified one.

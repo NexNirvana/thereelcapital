@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { seedSignedInUser } from "./support.ts";
 
-test("the shell is served from /operar and / redirects there", async ({ page, baseURL }) => {
+test("the shell is served from /operar and / redirects there", async ({
+  context,
+  page,
+  baseURL,
+}) => {
+  await seedSignedInUser(context);
   // A missing baseURL makes the origin "null", so every request counts as external.
   const origin = new URL(baseURL ?? "about:blank").origin;
   const external: string[] = [];
@@ -24,8 +30,10 @@ test("the shell is served from /operar and / redirects there", async ({ page, ba
 });
 
 test("narrow viewport shows the mobile header and bottom nav, not the sidebar", async ({
+  context,
   page,
 }) => {
+  await seedSignedInUser(context);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/operar");
   const header = page.getByRole("banner");

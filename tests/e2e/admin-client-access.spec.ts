@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
+  ageSessions,
   count,
   d1,
   registerPasskey,
@@ -57,7 +58,9 @@ test("keeps the client page closed to clients and to anyone not signed in", asyn
   const post = (action: string) =>
     page.request.post(`${url}?/${action}`, { form: {}, headers: { origin } });
 
-  expect((await page.request.get(url)).status()).toBe(401);
+  const anonymous = await page.request.get(url, { maxRedirects: 0 });
+  expect(anonymous.status()).toBe(303);
+  expect(new URL(anonymous.headers().location ?? "", `${origin}${url}`).pathname).toBe("/acceso");
   for (const action of actions) expect((await post(action)).status()).toBe(401);
 
   await seedSignedInUser(context, { role: "user" });
@@ -215,8 +218,9 @@ test("asks a stale admin session to confirm with a passkey, then deactivates", a
 }) => {
   await page.goto("/acceso");
   await virtualAuthenticator(context, page, true);
-  await seedSignedInUser(context, { role: "admin", sessionAgeMs: 11 * 60_000 });
+  const adminId = await seedSignedInUser(context, { role: "admin" });
   expect(await registerPasskey(page, true)).toEqual({ status: 200, code: null });
+  ageSessions(adminId, 11 * 60_000);
   const client = await seedPendingClient();
   await page.goto(`/admin/clientes/${client.userId}`);
 

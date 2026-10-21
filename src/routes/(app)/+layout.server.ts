@@ -1,5 +1,8 @@
+import { redirect } from "@sveltejs/kit";
+import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { engineFor } from "#lib/server/engine.ts";
+import { requireUser } from "#lib/server/guards.ts";
 import type { LayoutServerLoad } from "./$types";
 
 /** Recovery codes the user can still redeem; `undefined` when unreadable, so no false prompt. */
@@ -15,15 +18,17 @@ async function unusedRecoveryCodes(userId: string): Promise<number | undefined> 
 
 /** What the shell shows: the connection, the account, the admin link and the recovery-code prompt. */
 export const load: LayoutServerLoad = async (event) => {
-  const { locals } = event;
-  if (!locals.user || locals.user.banned) return { health: undefined, account: null };
+  // Every page of the shell needs a signed-in client: anonymous visitors go to /acceso and a banned
+  // one gets 403. Pages and actions guard themselves too (SvelteKit runs loads in parallel).
+  if (!event.locals.user) redirect(303, resolve("/acceso"));
+  const { user } = requireUser(event);
   const [result, unusedCodes] = await Promise.all([
     engineFor(env.ENGINE, event)
       .connection({ mode: "SIM" })
       .catch(() => null),
-    unusedRecoveryCodes(locals.user.id),
+    unusedRecoveryCodes(user.id),
   ]);
-  const shell = { isAdmin: locals.user.role === "admin", unusedCodes };
+  const shell = { isAdmin: user.role === "admin", unusedCodes };
   if (result === null || !result.ok) return { ...shell, health: undefined, account: null };
   // The account is shown only while there is a connection to show it for.
   return result.value.status === "CONNECTED"

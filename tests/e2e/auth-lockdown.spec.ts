@@ -97,3 +97,19 @@ test("lets a fresh session list, rename, register and delete passkeys", async ({
   expect(remove.status()).toBe(200);
   expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId" = '${userId}'`)).toBe(0);
 });
+
+// Issue #104 item 3: the shell and /admin are not anonymous pages.
+test("sends anyone not signed in from the shell and /admin to /acceso", async ({ page }) => {
+  for (const path of ["/", "/conexion", "/admin", "/admin/clientes/x"]) {
+    await page.goto(path);
+    await expect(page, path).toHaveURL(/\/acceso$/);
+  }
+  // Client-side navigation fetches the loads as JSON, where a redirect is part of the payload.
+  const data = await page.request.get("/operar/__data.json");
+  expect(await data.text()).toContain('"type":"redirect"');
+});
+
+test("keeps /admin closed to a client", async ({ context, page }) => {
+  await seedSignedInUser(context);
+  expect((await page.request.get("/admin")).status()).toBe(403);
+});
