@@ -2,7 +2,9 @@
 
 Library: **Better Auth** (`better-auth` + `@better-auth/passkey`, 1.7.x on 2026-10-20). Plugins: `admin`, `emailOTP`, `passkey`, `sveltekitCookies` (last). The email delivery provider is undecided. Better Auth calls our `sendVerificationOTP`, and the app sends invitations itself, both through one `sendEmail` function.
 
-Better Auth defaults do **not** meet our requirements in three places. Each needs app code and a test:
+## Gaps in Better Auth defaults
+
+Better Auth's defaults do **not** meet our requirements in three places. Each needs app code and a test:
 
 | Requirement | Better Auth default | What we do |
 | --- | --- | --- |
