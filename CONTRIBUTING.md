@@ -50,13 +50,22 @@ Every PR shows how it was verified, in the template's sections:
 - **No UI change:** state why there is nothing to show in a browser, and how the behavior was exercised instead.
 - Anything not verified is listed as such. Never claim a check you didn't run.
 
-### Review gate: CodeRabbit
+### Review gate
 
-**No PR is merged until CodeRabbit has reviewed its final commit.**
+**No PR is merged until one AI reviewer has reviewed its final commit**, and every actionable comment is addressed.
 
-- Reviews are rate-limited (about one per hour), so automatic reviews are off (`.coderabbit.yaml`). Request one with a `@coderabbitai review` comment only when the PR is ready: commits organized, checks passing, verification filled in.
-- Wait for the review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review. If the limit is reached, the PR waits and the request is repeated after the reset.
-- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Push all fixes together, then request one follow-up review of those commits. Resolve the threads.
+| Reviewer | How to request | Notes |
+| --- | --- | --- |
+| CodeRabbit (first choice) | comment `@coderabbitai review` | rate-limited to about one review per hour; configured in `.coderabbit.yaml` |
+| GitHub Copilot | `gh pr edit <n> --add-reviewer @copilot` | reads `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md` |
+| Greptile | comment `@greptileai review` | requires the Greptile app on the repository |
+
+- Use **one reviewer at a time per PR**. When CodeRabbit is rate-limited or busy, request Copilot or Greptile instead, so several PRs are reviewed in parallel by different reviewers. Never request two reviewers for the same commit.
+- The rules below apply to whichever reviewer is used.
+
+- Automatic reviews are off. Request a review only when the PR is ready: commits organized, checks passing, verification filled in.
+- Wait for the review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review. If CodeRabbit's limit is reached, switch that PR to Copilot or Greptile rather than waiting.
+- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Push all fixes together, then request one follow-up review of those commits, preferably from the same reviewer. Resolve the threads.
 - Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
 - Green CI is required as well, once CI exists (#3).
 
