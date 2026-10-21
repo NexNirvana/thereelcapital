@@ -33,7 +33,7 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 ## Security
 
 - Public sign-up → rejected. No route sends email.
-- Passkey registration or sign-in without UV → rejected (virtual authenticator with UV off).
+- Passkey registration or sign-in without UV → rejected (virtual authenticator with UV off), and no passkey or session is created (`tests/e2e/passkey.spec.ts`). The authenticator is driven over CDP; a test asks for `userVerification: "discouraged"` so the authenticator really answers UV=0 and the server's own check is what rejects it. Users and sessions are seeded into the local D1 by the test, never through an app endpoint. A banned user gets the Spanish message and no session.
 - Expired, reused or regenerated activation links and used recovery codes → rejected. An enrollment session can only register a passkey. Regenerating or revoking a link after its enrollment session started makes that session's passkey registration fail; opening one link twice leaves only the newest enrollment session usable. Recovery revokes all sessions and allows only passkey enrollment.
 - Client A can't read or act on client B through any route (the ids in requests are ignored).
 - Admin routes reject clients. Admin changes need a fresh session and write `audit_log`. Impersonation and password endpoints → 404.
