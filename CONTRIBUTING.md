@@ -12,16 +12,53 @@ Once the project is scaffolded, `pnpm install` sets the hooks path automatically
 
 ## Workflow
 
-1. Every change starts from a GitHub issue.
-2. Branch from `main`: `<type>/<issue>-<slug>`, e.g. `feat/22-entry-orders`, `fix/27-oversell-race`.
-3. Open a PR early. Its title follows the commit format below, and its body says `Closes #<issue>`.
-4. CI must pass. Merge with **squash**; the PR title becomes the commit on `main`. The branch is deleted on merge.
-5. A PR does one thing. If it grows past one issue, split it.
-6. Behavior changes update the relevant `docs/` file in the same PR.
+One issue → one branch → one pull request. Nothing is pushed to `main` directly.
+
+### Branches
+
+Branch from an up-to-date `main`:
+
+| Prefix | For | Example |
+| --- | --- | --- |
+| `feature/` | anything new: features, docs, tooling, refactors | `feature/22-entry-orders` |
+| `fix/` | a bug found before it reached users | `fix/27-oversell-race` |
+| `hotfix/` | an urgent fix for something broken in production | `hotfix/51-token-refresh-loop` |
+
+The format is `<prefix>/<issue>-<slug>`: the issue number, then a short lowercase slug with hyphens. The `pre-push` hook rejects other names.
+
+A hotfix is a normal PR that skips the queue: smallest possible change, its own issue, the same checks and reviews, merged as soon as CI is green.
+
+### Pull requests
+
+- One PR per branch and per issue. If the work grows past its issue, split it into a new issue and branch.
+- Title in the commit format below; body starts with `Closes #<issue>` and fills in the template.
+- Open it early as a draft; mark it ready when the commits are organized and CI passes.
+- Keep the branch current by rebasing on `main` (`git rebase origin/main`), never by merging `main` into it.
+- Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
+- Behavior changes update the relevant `docs/` file in the same PR.
+
+### Organizing commits
+
+The commits of a PR should read as the story of the change.
+
+- **One logical change per commit.** Separate the groundwork (a refactor, a migration, generated files) from the behavior that uses it.
+- **Every commit passes** typecheck, lint and tests on its own, so `main` stays bisectable.
+- **Tests and docs travel with their code**, in the same commit, not in a trailing "add tests" commit.
+- **Order** commits so each builds on the previous: prerequisites first, then the feature, then any follow-up cleanup it enables.
+- **Before marking the PR ready**, fold review fixes and "wip" commits into the commit they belong to: `git commit --fixup <sha>`, then `git rebase -i --autosquash origin/main`. CI rejects `fixup!`, `squash!` and `amend!` commits.
+- **Size**: a commit should be reviewable in one sitting. A large diff is fine only when it is mechanical (generated schema, a rename), and the message says so.
+
+Example PR for #7, oldest first, each commit with its own tests:
+
+```
+refactor(domain): extract position quantities into a ledger type
+feat(domain): compute scale-out quantities with cumulative rounding
+feat(domain): mark zero-quantity steps as done without an order
+```
 
 ## Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), checked by the `commit-msg` hook and in CI.
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), checked by the `commit-msg` and `pre-push` hooks and, for every commit of a PR, in CI.
 
 ```
 <type>(<scope>): <subject>
@@ -67,6 +104,7 @@ docs: record the stop residency decision from the SIM spike
 
 - **pre-commit**: blocks the wrong git identity, secrets (`.dev.vars`, `.env`, private keys, provider tokens), merge-conflict markers and files over 5 MB. After scaffolding it also runs the formatter and linter on staged files.
 - **commit-msg**: enforces the format above and rejects AI attribution.
+- **pre-push**: rejects pushes to `main`, branch names outside the table above, and any pushed commit whose message breaks the rules.
 
 Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 
