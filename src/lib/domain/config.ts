@@ -64,3 +64,9 @@ export const SEND_GRACE_MS = 60 * 1000;
 
 /** Undecided: clock difference tolerated when matching a broker order's open time to an intent. */
 export const ORDER_MATCH_SKEW_MS = 60 * 1000;
+
+/**
+ * Undecided (docs/open-questions.md): how old an option chain snapshot may get before the screen
+ * calls its prices out of date. The chain is read on demand, never polled.
+ */
+export const CHAIN_STALE_AFTER_MS = 30 * 1000;

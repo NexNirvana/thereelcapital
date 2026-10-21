@@ -2,6 +2,7 @@
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
+  import { contractLabel } from "#lib/ui/option-chain.ts";
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
 
@@ -21,8 +22,13 @@
     { id: "acciones", label: "Acciones", href: `${resolve("/(app)/operar")}?tipo=acciones` },
     { id: "opciones", label: "Opciones", href: `${resolve("/(app)/operar")}?tipo=opciones` },
   ]);
-  // TODO(#25): the option chain lives at /operar/cadena; it hands back an option symbol.
-  const chainHref = $derived(`${resolve("/(app)/operar")}/cadena`);
+  // The chain hands back the exact option symbol as `simbolo`; the account travels along.
+  const chainHref = $derived(
+    data.accountId === null
+      ? resolve("/(app)/operar/cadena")
+      : `${resolve("/(app)/operar/cadena")}?${new URLSearchParams({ cuenta: data.accountId })}`,
+  );
+  const contract = $derived(data.contract);
 
   // TODO(#26): `Revisar orden` leads to /operar/revisar once the review step exists.
   const reviewBuilt = false;
@@ -92,7 +98,16 @@
       {:else}
         <div class="field">
           <span>Contrato</span>
-          <p class="selector">{data.symbol === "" ? "Sin contrato" : data.symbol}</p>
+          {#if contract}
+            <p class="selector">
+              <span class="underlying">{contract.underlying}</span>
+              <span class="divider" aria-hidden="true"></span>
+              <span class="contract">{contractLabel(contract)}</span>
+            </p>
+            <p class="symbol-line">Símbolo del contrato: <strong>{contract.symbol}</strong></p>
+          {:else}
+            <p class="selector">{data.symbol === "" ? "Sin contrato" : data.symbol}</p>
+          {/if}
         </div>
         <input type="hidden" name="simbolo" value={data.symbol} />
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- built with resolve() above -->
@@ -122,8 +137,17 @@
 
   <section class="summary" aria-label="Resumen">
     <p class="label">Resumen</p>
-    <p class="instrument">{preview ? preview.symbol : "—"}</p>
+    {#if contract}
+      <p class="instrument">{contract.underlying}</p>
+      <p class="contract-name">{contractLabel(contract)}</p>
+    {:else}
+      <p class="instrument">{preview ? preview.symbol : "—"}</p>
+    {/if}
     <dl>
+      {#if contract}
+        <DefinitionRow label="Subyacente" value={contract.underlying} />
+        <DefinitionRow label="Contrato" value={contract.symbol} />
+      {/if}
       <DefinitionRow label="Acción" value="Comprar para abrir" />
       <DefinitionRow
         label="Cantidad"
@@ -253,6 +277,35 @@
   }
   select {
     min-height: var(--target);
+  }
+  .selector {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+  }
+  .divider {
+    align-self: stretch;
+    border-left: 1px solid var(--rule-strong);
+  }
+  .contract {
+    font-size: 20px;
+    font-weight: 500;
+  }
+  .symbol-line {
+    margin: 0.5rem 0 1rem;
+    color: var(--text-dim);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .symbol-line strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .contract-name {
+    margin: -1rem 0 1.5rem;
+    color: var(--text-muted);
+    font-size: 18px;
   }
   .actions {
     margin-bottom: 1rem;

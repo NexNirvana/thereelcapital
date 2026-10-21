@@ -51,7 +51,7 @@ The DO rejects any mode other than SIM before making a call. Whether one token s
 | Symbol details | `GET /marketdata/symbols/{symbols}` | `PriceFormat.PointValue` (multiplier; options = 100 is **(verify)**), `QuantityFormat.Increment`, `MinimumTradeQuantity` |
 | Quotes | `GET /marketdata/quotes/{symbols}` (≤100 symbols) | `Bid`, `Ask`, `Last`, `TradeTime`, `MarketFlags.IsDelayed/IsHalted`. There is no bid/ask timestamp, so freshness = our receive time plus `IsDelayed`. Option symbols via the snapshot endpoint are **(verify)**; otherwise `/marketdata/stream/options/quotes`. |
 | Expirations / strikes | `GET /marketdata/options/expirations/{underlying}`, `GET /marketdata/options/strikes/{underlying}` | |
-| Chain with bid/ask | `GET /marketdata/stream/options/chains/{underlying}` | stream only; at most 10 concurrent per key. Open it while the chain screen is open, close it after. |
+| Chain with bid/ask | `GET /marketdata/stream/options/chains/{underlying}` | stream only; at most 10 concurrent per key. The chain screen reads one snapshot per request (until `EndSnapshot`) and closes the stream; nothing keeps it open. |
 | Preview | `POST /orderexecution/orderconfirm` | estimated cost; returns an `OrderConfirmID` |
 | Place | `POST /orderexecution/orders` | see body below |
 | Cancel | `DELETE /orderexecution/orders/{orderID}` | "cancel request sent" is not a confirmation |

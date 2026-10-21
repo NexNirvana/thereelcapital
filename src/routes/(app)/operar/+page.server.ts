@@ -33,13 +33,18 @@ export const load: PageServerLoad = async (event) => {
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
   const engine = engineFor(env.ENGINE, event);
-  const [connection, limits, settings] = await Promise.all([
+  const [connection, limits, settings, contract] = await Promise.all([
     engine.connection({ mode: "SIM" }).catch(() => null),
     engine.limits({ mode: "SIM" }).catch(() => null),
     env.DB.prepare("SELECT stop_pct FROM client_settings WHERE user_id = ?")
       .bind(user.id)
       .first<{ stop_pct: number }>()
       .catch(() => null),
+    // What the chosen option symbol stands for, so the screen shows the underlying and the
+    // contract apart. The symbol came back from the chain; the engine says what it is.
+    tipo === "opciones" && SYMBOL.test(symbol)
+      ? engine.optionContract({ mode: "SIM", symbol }).catch(() => null)
+      : null,
   ]);
 
   const base = {
@@ -47,6 +52,7 @@ export const load: PageServerLoad = async (event) => {
     symbol,
     stopPct: settings?.stop_pct ?? null,
     limits: limits?.ok ? limits.value : null,
+    contract: contract?.ok ? contract.value : null,
     accounts: [] as string[],
     accountId: null as string | null,
   };
