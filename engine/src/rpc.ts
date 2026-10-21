@@ -3,6 +3,7 @@
 // broker URL (CLAUDE.md, never-break rule 3).
 
 import { Schema } from "effect";
+import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
 import { Mode } from "./mode.ts";
 
@@ -73,7 +74,29 @@ export type OptionChainArgs = typeof OptionChainArgs.Type;
 export const OptionContractArgs = Schema.Struct({ mode: Mode, symbol: Symbol });
 export type OptionContractArgs = typeof OptionContractArgs.Type;
 
-/** `state`, `history` and `connection` only need the mode they are asked about. */
+/** Calendar day in New York (YYYY-MM-DD), the unit the history screen filters by. */
+const Day = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/),
+  Schema.makeFilter(isCalendarDay),
+);
+
+/**
+ * One page of the client's orders. `cursor` is the opaque `nextCursor` of the previous page;
+ * filters narrow what is listed and never widen it past this client's own rows.
+ */
+export const HistoryArgs = Schema.Struct({
+  mode: Mode,
+  accountId: Schema.optionalKey(Id),
+  symbol: Schema.optionalKey(Symbol),
+  from: Schema.optionalKey(Day),
+  to: Schema.optionalKey(Day),
+  cursor: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^\d{1,16}:[A-Za-z0-9_-]{1,64}$/)),
+  ),
+});
+export type HistoryArgs = typeof HistoryArgs.Type;
+
+/** `state` and `connection` only need the mode they are asked about. */
 export const ModeOnlyArgs = Schema.Struct({ mode: Mode });
 export type ModeOnlyArgs = typeof ModeOnlyArgs.Type;
 

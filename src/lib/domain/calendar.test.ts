@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { getCalendar } from "market-calendar";
-import { isRegularSession, sessionDate } from "./calendar";
+import { isCalendarDay, isRegularSession, sessionDate } from "./calendar";
 
 // NYSE's published calendar (https://www.nyse.com/markets/hours-calendars).
 // These fixtures check the library; they are not used by the app.
@@ -120,5 +120,15 @@ describe("market-calendar", () => {
     }
     expect(weekdays.filter((day) => !tradingDays.has(day))).toEqual(NYSE_HOLIDAYS);
     expect(nyse.earlyCloses(schedule).map((s) => s.date.toISODate())).toEqual(NYSE_EARLY_CLOSES);
+  });
+});
+
+describe("isCalendarDay", () => {
+  test("accepts real days and rejects rolled-over or out-of-range ones", () => {
+    expect(isCalendarDay("2026-11-04")).toBe(true);
+    expect(isCalendarDay("2028-02-29")).toBe(true);
+    for (const day of ["2026-02-31", "2026-13-01", "9999-12-31", "1969-12-31", "2026-1-1"]) {
+      expect(isCalendarDay(day)).toBe(false);
+    }
   });
 });

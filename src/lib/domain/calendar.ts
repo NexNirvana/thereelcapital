@@ -49,3 +49,15 @@ export function isRegularSession(instrument: Instrument, now: Date): SessionChec
     return { open: false, reason: "Market closed: after the close" };
   return { open: true };
 }
+
+/** A real calendar day as YYYY-MM-DD, within years a history filter can mean (1970 to 2100). */
+export function isCalendarDay(day: string): boolean {
+  const parsed = new Date(`${day}T00:00:00Z`);
+  const year = parsed.getUTCFullYear();
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().startsWith(day) &&
+    year >= 1970 &&
+    year <= 2100
+  );
+}
