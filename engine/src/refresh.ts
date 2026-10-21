@@ -14,6 +14,17 @@ import { refreshAccessToken } from "./tradestation/auth.ts";
 /** Marks that entries stay blocked until reconciliation, even once the connection works again. */
 const RECONCILIATION_PENDING_KEY = "reconciliation_pending";
 
+/**
+ * A rotated refresh token that D1 has not accepted yet, encrypted, in Durable Object storage so it
+ * survives an eviction. TradeStation has already retired the old token, so this is the only valid
+ * copy. `replaces` is the D1 ciphertext it supersedes.
+ */
+const UNSAVED_REFRESH_KEY = "unsaved_refresh_token";
+interface UnsavedRefreshToken {
+  readonly tokenEnc: string;
+  readonly replaces: string;
+}
+
 export interface RefresherDeps {
   readonly sql: SqlStorage;
   readonly storage: DurableObjectStorage;
@@ -52,11 +63,6 @@ const refreshContext = (userId: string) => `${userId}:refresh_token`;
 export class TokenRefresher {
   #access: { token: string; expiresAt: number } | null = null;
   #inflight: Promise<RefreshOutcome> | null = null;
-  /**
-   * A rotated refresh token that could not be written to D1 yet. TradeStation has already retired
-   * the old one, so this is the only valid copy; it is retried on the next refresh.
-   */
-  #unsaved: { token: string; replaces: string } | null = null;
   #generation = 0;
 
   constructor(private readonly deps: RefresherDeps) {}
@@ -65,13 +71,13 @@ export class TokenRefresher {
   seed(accessToken: string, expiresInSeconds: number): void {
     this.#generation++;
     this.#access = { token: accessToken, expiresAt: this.deps.clock() + expiresInSeconds * 1000 };
-    this.#unsaved = null;
+    this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
   }
 
   forget(): void {
     this.#generation++;
     this.#access = null;
-    this.#unsaved = null;
+    this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
   }
 
   /** When the access token should be refreshed; null while there is none. */
@@ -142,8 +148,14 @@ export class TokenRefresher {
       cipher = await this.deps.cipher();
       clientSecret = await cipher.decrypt(row.client_secret_enc, secretContext(userId));
       storedToken = await cipher.decrypt(row.refresh_token_enc, refreshContext(userId));
-      const unsaved = this.#unsaved?.replaces === row.refresh_token_enc ? this.#unsaved : null;
-      refreshToken = unsaved?.token ?? storedToken;
+      const unsaved = this.deps.storage.kv.get<UnsavedRefreshToken>(UNSAVED_REFRESH_KEY);
+      if (unsaved?.replaces === row.refresh_token_enc) {
+        refreshToken = await cipher.decrypt(unsaved.tokenEnc, refreshContext(userId));
+      } else {
+        // Superseded (the row was replaced by a reconnect): nothing to recover.
+        if (unsaved !== undefined) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
+        refreshToken = storedToken;
+      }
     } catch {
       // A missing or rotated CREDENTIALS_KEY is a failure like any other: entries must stop.
       return this.#fail(row, generation, { kind: "retryable" }, "CREDENTIALS");
@@ -172,7 +184,6 @@ export class TokenRefresher {
     // one just used, which differs from the stored one only when an earlier rotation was not saved.
     const current = tokens.rotatedRefreshToken ?? refreshToken;
     if (current !== storedToken) {
-      this.#unsaved = { token: current, replaces: row.refresh_token_enc };
       await this.#persistRefreshToken(row, generation, cipher, clientSecret, current, now);
     } else {
       await this.#recordSuccess(row, now);
@@ -196,6 +207,14 @@ export class TokenRefresher {
     const { db, userId, sql } = this.deps;
     try {
       const refreshTokenEnc = await cipher.encrypt(refreshToken, refreshContext(userId));
+      // Before the D1 write, and synchronously after the await above: from here on the token
+      // survives a failed write and an eviction.
+      if (generation === this.#generation) {
+        this.deps.storage.kv.put<UnsavedRefreshToken>(UNSAVED_REFRESH_KEY, {
+          tokenEnc: refreshTokenEnc,
+          replaces: row.refresh_token_enc,
+        });
+      }
       // key_id covers both ciphertexts, so a key change re-encrypts the secret in the same statement.
       const secretEnc =
         row.key_id === cipher.keyId
@@ -225,7 +244,7 @@ export class TokenRefresher {
         if (generation === this.#generation) this.forget();
         return;
       }
-      if (generation === this.#generation) this.#unsaved = null;
+      if (generation === this.#generation) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
       if (row.refresh_expires_at === null) {
         writeEvent(sql, now, {
           mode: "SIM",
@@ -237,7 +256,7 @@ export class TokenRefresher {
       }
       this.#recovered(row, now);
     } catch {
-      // The token stays in `#unsaved` and the next refresh writes it, whatever the response says.
+      // The token stays in DO storage and the next refresh writes it, whatever the response says.
       writeEvent(sql, now, {
         mode: "SIM",
         level: "error",
