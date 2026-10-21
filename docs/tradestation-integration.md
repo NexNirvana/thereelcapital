@@ -23,12 +23,9 @@ All TradeStation calls are made by the client's `ClientCoordinator` DO ([archite
 
 ## Environments
 
-| Mode | Base URL |
-| --- | --- |
-| SIM | `https://sim-api.tradestation.com/v3` |
-| LIVE (disabled) | `https://api.tradestation.com/v3` |
+**SIM only. No real money, ever.** The only base URL in code is `https://sim-api.tradestation.com/v3`. LIVE is not a configured environment: there is no live URL constant, setting or code path, and the pre-commit hook rejects the live host outside `docs/`. Adding LIVE would require an explicit decision by the owner and is out of scope.
 
-The DO picks the base URL from the intent's mode. Whether one token serves both and how SIM accounts are identified is **(verify)**. SIM fills are instantaneous with fake money, so SIM proves integration, not execution quality.
+The DO rejects any mode other than SIM before making a call. Whether one token serves both and how SIM accounts are identified is **(verify)**. SIM fills are instantaneous with fake money, so SIM proves integration, not execution quality.
 
 ## Endpoints used
 

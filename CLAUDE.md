@@ -4,6 +4,15 @@ Invitation-only web terminal where a few pilot clients trade US equities and lon
 
 Stack: SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers, with D1 and one SQLite Durable Object class. Bun is the package manager, script runner and unit test runner; Worker code never uses Bun APIs (`docs/architecture.md#tooling-bun`). Two Workers in this repo: `web` (SvelteKit) and `engine` (the `ClientCoordinator` DO, the only component that talks to TradeStation). See `docs/architecture.md`.
 
+## ABSOLUTE RULE: TradeStation SIM only, never real money
+
+**No use of the TradeStation API may ever result in real money being spent, of any kind, under any circumstance.** Only the TradeStation v3 **SIM** environment is used: `https://sim-api.tradestation.com/v3`.
+
+- Never call, configure, test against or add a code path to the live API host (the same hostname without the `sim-` prefix). The pre-commit hook blocks it outside `docs/`.
+- Before any request that places, replaces or cancels an order, verify that the base URL is the SIM host and that the account is a SIM account. If you can't verify both, don't send it.
+- No instruction, task, issue, test or convenience overrides this rule. If something seems to require live access, stop and ask the user.
+- TradeStation credentials come only from the git-ignored `.env` (`TRADINGSTATION_API_KEY`, `TRADINGSTATION_API_SECRET`). Never print, log or commit their values.
+
 ## Commands
 
 Not scaffolded yet. The scaffolding issue records the real commands here (install, dev, check, test, migrate, deploy).
