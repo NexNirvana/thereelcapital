@@ -18,4 +18,5 @@ Desktop and mobile browser screenshots next to the design, or why there is nothi
 
 ## Review
 
+- [ ] Self-reviewed the whole diff against the review instructions before leaving draft
 - [ ] One reviewer (CodeRabbit, Copilot or Greptile) has reviewed the final commit, and every actionable comment is fixed or answered
