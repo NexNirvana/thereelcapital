@@ -76,3 +76,10 @@ export function recoveryErrorMessage(code: string | undefined, status?: number):
   const known = Object.values(recoveryErrors).find((entry) => entry.code === code);
   return (known ?? recoveryErrors.invalidCode).message;
 }
+
+/** Spanish text for a failure while finishing enrollment, after the passkey is registered. */
+export function finishEnrollmentErrorMessage(code: string | undefined, status?: number): string {
+  if (status === 429) return recoveryErrors.tooManyAttempts.message;
+  if (code === recoveryErrors.passkeyRequired.code) return recoveryErrors.passkeyRequired.message;
+  return "No pudimos terminar el registro. Inténtalo de nuevo.";
+}
