@@ -10,7 +10,7 @@ Spec: `docs/auth-and-security.md`. Run this checklist on the diff.
 ## Better Auth gaps (each must have a test)
 
 - [ ] Passkey UV enforced in **both** `registration.afterVerification` and `authentication.afterVerification` (the plugin itself accepts UV=false).
-- [ ] Activation links: 32 random bytes, stored as HMAC, single use, 72 h expiry, regenerating invalidates the old one, never logged; the enrollment session they create can only register a passkey.
+- [ ] Activation links: 32 random bytes, stored as SHA-256 (recovery codes: keyed HMAC), single use, 72 h expiry, regenerating invalidates the old one, never logged; the enrollment session they create can only register a passkey.
 - [ ] Recovery uses the app's hashed `recovery_codes` with an atomic single-use update, not Better Auth backup codes.
 - [ ] Sensitive actions check session age themselves (`sensitiveSessionMiddleware` doesn't).
 - [ ] `/admin/impersonate-user` and `/admin/set-user-password` are in `disabledPaths`. `emailAndPassword` is disabled and no email plugin is installed. Rate-limit storage is `database`, keyed by `cf-connecting-ip`.

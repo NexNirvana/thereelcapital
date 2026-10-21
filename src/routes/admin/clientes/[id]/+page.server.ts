@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
   return { client: await getClientDetail(env.DB, event.params.id) };
 };
 
-const context = () => ({ db: env.DB, secret: env.BETTER_AUTH_SECRET });
+const context = () => ({ db: env.DB });
 const form = async (event: RequestEvent) => Object.fromEntries(await event.request.formData());
 
 // A link is in this response only: it must not be cached or stored anywhere.

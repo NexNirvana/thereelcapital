@@ -1,8 +1,7 @@
 // Creates the first admin and prints an activation link: `bun run admin:create <email> [--remote]`.
 // Writes through `wrangler d1 execute`, local by default. The link is shown once and never stored;
-// only its HMAC is (docs/auth-and-security.md#flows). Consuming the link is the activation flow.
+// only its SHA-256 is (docs/auth-and-security.md#flows). Consuming the link is the activation flow.
 import { tmpdir } from "node:os";
-import { parseEnv } from "node:util";
 import { Schema } from "effect";
 import { ACTIVATION_LINK_LIFETIME_HOURS } from "#lib/domain/config.ts";
 import { activationUrl, newInvitation } from "#lib/server/activation-link.ts";
@@ -38,21 +37,9 @@ try {
 }
 const { email, remote } = cli;
 
-// Local runs read the same git-ignored .dev.vars that `wrangler dev` uses; remote runs need the
-// production value in the environment, which is never printed.
-const secret = process.env.BETTER_AUTH_SECRET ?? (remote ? undefined : await readDevVarsSecret());
-if (!secret) {
-  console.error(
-    remote
-      ? "BETTER_AUTH_SECRET must be set in the environment for --remote."
-      : "BETTER_AUTH_SECRET is missing from the environment and .dev.vars.",
-  );
-  process.exit(1);
-}
-
 const now = Date.now();
 const userId = crypto.randomUUID();
-const { token, tokenHash, expiresAt } = await newInvitation(secret, now);
+const { token, tokenHash, expiresAt } = await newInvitation(now);
 
 // One file means one D1 batch: either the admin, the link and the audit row all exist, or none do.
 const sql = bootstrapAdminSql({ userId, email, tokenHash, expiresAt, now });
@@ -79,10 +66,3 @@ console.log(
   `Activation link (valid ${ACTIVATION_LINK_LIFETIME_HOURS} hours, shown once, share it personally):`,
 );
 console.log(activationUrl(origin, token));
-
-async function readDevVarsSecret(): Promise<string | undefined> {
-  const file = Bun.file(".dev.vars");
-  if (!(await file.exists())) return undefined;
-  // Same dotenv syntax Wrangler uses, including inline comments and quotes.
-  return parseEnv(await file.text()).BETTER_AUTH_SECRET || undefined;
-}

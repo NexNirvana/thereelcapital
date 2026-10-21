@@ -38,7 +38,7 @@ export function activationPlugin(db: D1Database, secret: string) {
           );
           if (body._tag === "Failure")
             throw APIError.from("BAD_REQUEST", recoveryErrors.invalidInput);
-          const open = await findOpenInvitation(db, body.success.token, secret);
+          const open = await findOpenInvitation(db, body.success.token);
           if (open === null) {
             await auditRejectedAttempt(db, secret, ctx, "activation.redeem_failed", "invalid_link");
             throw APIError.from("UNAUTHORIZED", activationErrors.invalidLink);

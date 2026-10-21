@@ -20,7 +20,6 @@ export const actions: Actions = {
       event,
       {
         db: env.DB,
-        secret: env.BETTER_AUTH_SECRET,
         origin: env.APP_ORIGIN,
         createUser: createUserWith(createAuth(env)),
       },

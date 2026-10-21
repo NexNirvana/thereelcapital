@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
@@ -22,8 +23,6 @@ import { createAuth } from "./auth.ts";
 import { sqliteD1 } from "./sqlite-d1.test.ts";
 import { hashToken } from "./token-hash.ts";
 
-const secret = crypto.randomUUID();
-
 function migratedSqlite() {
   const sqlite = new DatabaseSync(":memory:");
   const dir = new URL("../../../migrations/", import.meta.url);
@@ -44,7 +43,7 @@ function dbWithClient(banned = false) {
 }
 
 async function withLink(db = dbWithClient(), at = now) {
-  const link = await newInvitation(secret, at);
+  const link = await newInvitation(at);
   db.sqlite.run(
     `INSERT INTO invitations (id, user_id, token_hash, expires_at, created_by)
      VALUES ('inv-1','client-1',?,?,'admin-1')`,
@@ -65,13 +64,14 @@ const countOf = (db: ReturnType<typeof sqliteD1>, sql: string) =>
   db.sqlite.query<{ n: number }, []>(sql).get()?.n;
 
 describe("activation link", () => {
-  test("is 32 random bytes expiring after 72 hours, stored only as a domain-separated HMAC", async () => {
-    const link = await newInvitation(secret, now);
+  test("is 32 random bytes expiring after 72 hours, stored only as a domain-separated SHA-256", async () => {
+    const link = await newInvitation(now);
     expect(link.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(link.expiresAt - now).toBe(72 * 3_600_000);
     expect(ACTIVATION_LINK_LIFETIME_MS).toBe(72 * 3_600_000);
-    expect(link.tokenHash).toBe(await hashToken("activation-link", link.token, secret));
-    expect(link.tokenHash).not.toBe(await hashToken("recovery-code", link.token, secret));
+    const independent = createHash("sha256").update(`activation-link:${link.token}`).digest("hex");
+    expect(link.tokenHash).toBe(independent);
+    expect(link.tokenHash).not.toBe(await hashToken("recovery-code", link.token, "any-secret"));
     expect(link.tokenHash).not.toContain(link.token);
   });
 
@@ -85,31 +85,30 @@ describe("activation link", () => {
 describe("findOpenInvitation", () => {
   test("finds an open link by its token", async () => {
     const { db, token } = await withLink();
-    expect(await findOpenInvitation(db, token, secret, now)).toEqual({
+    expect(await findOpenInvitation(db, token, now)).toEqual({
       invitationId: "inv-1",
       userId: "client-1",
     });
   });
 
-  test("rejects unknown, wrong-secret, expired, used, revoked and suspended-account links alike", async () => {
+  test("rejects unknown, expired, used, revoked and suspended-account links alike", async () => {
     const { db, token } = await withLink();
-    expect(await findOpenInvitation(db, "x".repeat(43), secret, now)).toBeNull();
-    expect(await findOpenInvitation(db, token, "other-secret", now)).toBeNull();
-    expect(await findOpenInvitation(db, token, secret, now + 72 * 3_600_000)).toBeNull();
+    expect(await findOpenInvitation(db, "x".repeat(43), now)).toBeNull();
+    expect(await findOpenInvitation(db, token, now + 72 * 3_600_000)).toBeNull();
 
     db.sqlite.run("UPDATE invitations SET used_at = 1");
-    expect(await findOpenInvitation(db, token, secret, now)).toBeNull();
+    expect(await findOpenInvitation(db, token, now)).toBeNull();
     db.sqlite.run("UPDATE invitations SET used_at = NULL, revoked_at = 1");
-    expect(await findOpenInvitation(db, token, secret, now)).toBeNull();
+    expect(await findOpenInvitation(db, token, now)).toBeNull();
     db.sqlite.run("UPDATE invitations SET revoked_at = NULL");
     db.sqlite.run(`UPDATE "user" SET banned = 1`);
-    expect(await findOpenInvitation(db, token, secret, now)).toBeNull();
+    expect(await findOpenInvitation(db, token, now)).toBeNull();
   });
 
   test("a read never spends the link", async () => {
     const { db, token } = await withLink();
-    await findOpenInvitation(db, token, secret, now);
-    await findOpenInvitation(db, token, secret, now);
+    await findOpenInvitation(db, token, now);
+    await findOpenInvitation(db, token, now);
     expect(countOf(db, "SELECT COUNT(*) AS n FROM invitations WHERE used_at IS NULL")).toBe(1);
   });
 });
@@ -148,7 +147,7 @@ describe("claimInvitation", () => {
       expect(countOf(db, "SELECT COUNT(*) AS n FROM audit_log")).toBe(0);
     }
     const { db } = await withLink();
-    await regenerateActivationLink(db, secret, admin, "client-1", now + 1);
+    await regenerateActivationLink(db, admin, "client-1", now + 1);
     expect(await claim(db, now + 2)).toBe(false);
   });
 
@@ -205,9 +204,9 @@ describe("ending other sessions", () => {
 describe("isLinkOfToken", () => {
   test("is true only for the link the token belongs to", async () => {
     const { db, token } = await withLink();
-    expect(await isLinkOfToken(db, "inv-1", token, secret)).toBe(true);
-    expect(await isLinkOfToken(db, "inv-1", "x".repeat(43), secret)).toBe(false);
-    expect(await isLinkOfToken(db, "inv-2", token, secret)).toBe(false);
+    expect(await isLinkOfToken(db, "inv-1", token)).toBe(true);
+    expect(await isLinkOfToken(db, "inv-1", "x".repeat(43))).toBe(false);
+    expect(await isLinkOfToken(db, "inv-2", token)).toBe(false);
   });
 });
 
@@ -215,10 +214,10 @@ describe("revoking and regenerating", () => {
   test("regenerating replaces the open link, ends its sessions and audits without the token", async () => {
     const { db, token } = await withLink();
     enrollmentSession(db, "t1");
-    const issued = await regenerateActivationLink(db, secret, admin, "client-1", now + 1000);
+    const issued = await regenerateActivationLink(db, admin, "client-1", now + 1000);
 
-    expect(await findOpenInvitation(db, token, secret, now + 1000)).toBeNull();
-    expect(await findOpenInvitation(db, issued.token, secret, now + 1000)).not.toBeNull();
+    expect(await findOpenInvitation(db, token, now + 1000)).toBeNull();
+    expect(await findOpenInvitation(db, issued.token, now + 1000)).not.toBeNull();
     expect(countOf(db, `SELECT COUNT(*) AS n FROM "session"`)).toBe(0);
     expect(issued.expiresAt).toBe(now + 1000 + ACTIVATION_LINK_LIFETIME_MS);
     const rows = JSON.stringify(db.sqlite.query("SELECT * FROM audit_log").all());
@@ -235,7 +234,7 @@ describe("revoking and regenerating", () => {
       { invitationId: "inv-1", userId: "client-1", sessionToken: "t1" },
       now,
     );
-    await regenerateActivationLink(db, secret, admin, "client-1", now + 1);
+    await regenerateActivationLink(db, admin, "client-1", now + 1);
     expect(countOf(db, `SELECT COUNT(*) AS n FROM "session"`)).toBe(1);
   });
 
@@ -243,13 +242,13 @@ describe("revoking and regenerating", () => {
     const { db, token } = await withLink();
     enrollmentSession(db, "t1");
     await revokeActivationLink(db, admin, "client-1", now + 1);
-    expect(await findOpenInvitation(db, token, secret, now + 1)).toBeNull();
+    expect(await findOpenInvitation(db, token, now + 1)).toBeNull();
     expect(countOf(db, `SELECT COUNT(*) AS n FROM "session"`)).toBe(0);
   });
 
   test("regenerating for an unknown user changes nothing", async () => {
     const { db } = await withLink();
-    await expect(regenerateActivationLink(db, secret, admin, "ghost", now + 1)).rejects.toThrow();
+    await expect(regenerateActivationLink(db, admin, "ghost", now + 1)).rejects.toThrow();
     expect(countOf(db, "SELECT COUNT(*) AS n FROM invitations WHERE revoked_at IS NULL")).toBe(1);
   });
 });
@@ -266,7 +265,7 @@ describe("createClient", () => {
   test("creates the settings and a link with the configured defaults, and audits it", async () => {
     const db = sqliteD1();
     const issued = await createClient(
-      { db, secret, createUser: insertUser(db) },
+      { db, createUser: insertUser(db) },
       admin,
       "nuevo@example.com",
       now,
@@ -283,7 +282,7 @@ describe("createClient", () => {
     expect(DEFAULT_SIZE_USD).toBe(20_000);
     expect(DEFAULT_STOP_PCT).toBe(30);
     expect(DEFAULT_TRAILING_UNLOCK_PCT).toBe(70);
-    expect(await findOpenInvitation(db, issued.token, secret, now)).toEqual({
+    expect(await findOpenInvitation(db, issued.token, now)).toEqual({
       invitationId: expect.any(String),
       userId: "u1",
     });
@@ -299,7 +298,7 @@ describe("createClient", () => {
     const db = sqliteD1();
     db.sqlite.run("DROP TABLE client_settings");
     await expect(
-      createClient({ db, secret, createUser: insertUser(db) }, admin, "x@example.com", now),
+      createClient({ db, createUser: insertUser(db) }, admin, "x@example.com", now),
     ).rejects.toThrow();
     expect(countOf(db, `SELECT COUNT(*) AS n FROM "user"`)).toBe(0);
     expect(countOf(db, "SELECT COUNT(*) AS n FROM invitations")).toBe(0);
@@ -312,7 +311,7 @@ describe("createClient", () => {
       sqlite.exec(readFileSync(new URL(file, dir), "utf8"));
     const auth = createAuth({
       DB: sqlite,
-      BETTER_AUTH_SECRET: secret,
+      BETTER_AUTH_SECRET: crypto.randomUUID(),
       APP_ORIGIN: "http://localhost",
     });
     const { id } = await createUserWith(auth)("Nuevo@Example.com");
@@ -328,7 +327,7 @@ describe("no email, no sign-up", () => {
   test("auth sends no email and offers no password or sign-up", () => {
     const auth = createAuth({
       DB: migratedSqlite(),
-      BETTER_AUTH_SECRET: secret,
+      BETTER_AUTH_SECRET: crypto.randomUUID(),
       APP_ORIGIN: "http://localhost",
     });
     expect(auth.options.emailAndPassword?.enabled).toBe(false);

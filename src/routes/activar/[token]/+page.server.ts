@@ -16,7 +16,6 @@ export const load: PageServerLoad = async ({ locals, params, setHeaders }) => {
   // came from the link in this URL; a session from another link must not be mistaken for it.
   const invitationId = locals.enrollment?.invitationId ?? null;
   const enrolling =
-    invitationId !== null &&
-    (await isLinkOfToken(env.DB, invitationId, params.token, env.BETTER_AUTH_SECRET));
+    invitationId !== null && (await isLinkOfToken(env.DB, invitationId, params.token));
   return { enrolling };
 };
