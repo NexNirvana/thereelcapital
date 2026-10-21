@@ -26,12 +26,7 @@
       {
         "path": "docs/auth-and-security.md",
         "description": "Auth, sessions and secrets",
-        "scope": [
-          "src/lib/server/**",
-          "src/routes/**",
-          "src/hooks.server.ts",
-          "engine/**"
-        ]
+        "scope": ["src/lib/server/**", "src/routes/**", "src/hooks.server.ts", "engine/**"]
       },
       {
         "path": "docs/design-system.md",
