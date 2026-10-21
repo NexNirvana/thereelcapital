@@ -6,6 +6,6 @@
 - [Nueva entrada](02-new-order.png)
 - [Gestión de posición](03-position.png)
 
-Origen y prompts: [versión 2](../../output/imagegen/thereelcapital-brutalism/v2-simple/README.md).
+Cada imagen tiene su prompt exacto en el archivo `.prompt.md` del mismo nombre. Origen: [versión 2](../explorations/v2-simple/README.md).
 
 Paleta de referencia para móvil: fondo negro, grises neutros, texto claro y botones blancos con texto negro.

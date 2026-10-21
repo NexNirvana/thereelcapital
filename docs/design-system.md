@@ -1,8 +1,8 @@
 # Design system
 
-How the UI looks. **The PNGs in [`desings/desktop/`](../desings/desktop/) and [`desings/mobile/`](../desings/mobile/) are the reference for layout and copy**; this file gives the tokens and rules for reproducing them in code, plus what the PNGs don't show. The exact Spanish copy of each designed screen is in its `.prompt.md` (mobile) and in `output/imagegen/thereelcapital-brutalism/v2-simple/*.prompt.md` (desktop).
+How the UI looks. **The PNGs in [`designs/desktop/`](../designs/desktop/) and [`designs/mobile/`](../designs/mobile/) are the reference for layout and copy**; this file gives the tokens and rules for reproducing them in code, plus what the PNGs don't show. The exact Spanish copy of each designed screen is in the `.prompt.md` next to its PNG.
 
-Ignore the blue/green/red accents of the demo HTMLs and the cream/orange explorations (`output/imagegen/.../03-mobile-color.png`, `v2-simple/04-mobile-light.png`).
+Ignore the blue/green/red accents of the demo HTMLs and the cream/orange explorations in [`designs/explorations/`](../designs/explorations/).
 
 ## Principles
 
@@ -58,14 +58,14 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 
 ## Layout shell
 
-**Desktop** (see `desings/desktop/02-new-order.png`):
+**Desktop** (see `designs/desktop/02-new-order.png`):
 - Left sidebar **190px**, `--surface`: stacked wordmark `REEL / CAPITAL`; nav `Operar · Posiciones · Historial · Conexión`; active item = slim white vertical bar + brighter text; `thereelcapital.com` at the bottom.
 - Top utility row, separated by one hairline: `● TradeStation conectado` · outlined `SIM` badge … `•• 4821` | `10:42 ET` (market time, from the server).
 - Content max-width about 1000px, generous padding. Breadcrumb (`Operar / Nueva entrada`) → H1 → subtitle; quiet limits line top-right (`1/2 posiciones · 2/3 entradas hoy`).
 - Two unboxed columns (about 55/40) split by **one** thin vertical rule.
 - (The PNGs' footer `SIM · Datos de ejemplo` marks sample data; it is not a UI element.)
 
-**Mobile / iPad** (see `desings/mobile/`):
+**Mobile / iPad** (see `designs/mobile/`):
 - Header: wordmark left, outlined `SIM` right; line `TradeStation · •• 4821`.
 - Single column, stacked. Bottom tab nav `Operar · Posiciones · Historial` (active = underline). Conexión is reachable from the header/menu.
 - Touch targets **≥ 44px**. Safe-area padding.

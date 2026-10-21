@@ -4,9 +4,9 @@ Generadas el 2026-10-20 con la herramienta integrada image_gen, a partir de la d
 
 ## Imágenes finales
 
-- [Acceso en escritorio](05-desktop-access.png)
-- [Nueva entrada en escritorio](02-desktop-new-order.png)
-- [Gestión de posición en escritorio](03-desktop-position.png)
+- [Acceso en escritorio](../../desktop/01-access.png)
+- [Nueva entrada en escritorio](../../desktop/02-new-order.png)
+- [Gestión de posición en escritorio](../../desktop/03-position.png)
 - [Móvil monocromático: acceso, compra y posición](01-mobile-monochrome.png)
 - [Móvil claro: acceso, compra y posición](04-mobile-light.png)
 
@@ -20,9 +20,9 @@ La variante clara con naranja es una exploración de la nueva referencia. La def
 
 ## Prompts y fuentes
 
-Cada imagen tiene su prompt exacto en el archivo .prompt.md del mismo nombre. Generador: built-in image_gen.
+Cada imagen tiene su prompt exacto en el archivo .prompt.md del mismo nombre; los de escritorio están junto a sus imágenes en `designs/desktop/`. Generador: built-in image_gen.
 
-- [Definición del producto](../../../../ONBOARDING.md)
+- [Definición del producto](../../../ONBOARDING.md)
 - [Referencia visual de Hitesh Tapaniya](https://dribbble.com/shots/27580284-Taxi-Rider-Mobile-App-UI-UX-Design-Brutalism-Ride-Booking-App)
 - [Primera exploración](../README.md)
 

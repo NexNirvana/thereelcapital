@@ -248,9 +248,9 @@ Validar la fuente de cotizaciones y eventos necesaria para stop y trailing. Trad
 
 ## Documentos existentes
 
-- [Informe para el programador](REEL_CAPITAL_Informe_Para_Programador.pdf).
-- [Proyecto integral](REEL_CAPITAL_Proyecto_Integral.pdf).
-- [Demo HTML](REEL_CAPITAL_DASHBOARD_DEMO.html).
+- [Informe para el programador](references/REEL_CAPITAL_Informe_Para_Programador.pdf).
+- [Proyecto integral](references/REEL_CAPITAL_Proyecto_Integral.pdf).
+- [Demo HTML](references/REEL_CAPITAL_DASHBOARD_DEMO.html).
 - [Referencia del terminal privado aportada en la conversación](references/REEL_CAPITAL_PRIVATE_TERMINAL.html).
 - [Referencia visual principal: terminal oscuro monocromático](references/REEL_CAPITAL_VISUAL_REFERENCE.png).
 - [Comunicación de aprobación de la Web API key de TradeStation](references/TRADESTATION_API_APPROVAL.md).

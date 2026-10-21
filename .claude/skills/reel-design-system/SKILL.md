@@ -5,7 +5,7 @@ description: Use when building or reviewing any REEL CAPITAL UI (Svelte componen
 
 # REEL CAPITAL UI
 
-Before building a screen, open its PNG in `desings/desktop/` and `desings/mobile/` and its `.prompt.md` (exact Spanish copy). Then use `docs/design-system.md` (tokens, type, shell, components) and `docs/screens-and-flows.md` (routes and contents).
+Before building a screen, open its PNG in `designs/desktop/` and `designs/mobile/` and its `.prompt.md` (exact Spanish copy). Then use `docs/design-system.md` (tokens, type, shell, components) and `docs/screens-and-flows.md` (routes and contents).
 
 ## Checklist
 
