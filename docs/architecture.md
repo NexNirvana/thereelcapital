@@ -50,7 +50,7 @@ audit_log          id, at, actor_id, action, target_user_id, before_json, after_
 entry_counters     mode, session_date, consumed, reserved               PK(mode, session_date)
 intents            id, mode, kind (entry|exit|stop|trailing|cancel), account_id, position_id,
                    symbol, asset_type, trade_action, qty, size_applied, quote_json, state,
-                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, created_at, updated_at
+                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at
 positions          id, mode, account_id, symbol, underlying, expiry, strike, right, point_value,
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
                    trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on
@@ -62,7 +62,9 @@ events             id, at, mode, level, type, message, data_json   -- operationa
 
 The schema is built by append-only, versioned migrations (`schema_migrations`) that the DO constructor applies inside `blockConcurrencyWhile`, so every RPC sees the full schema. Prices are integer micro-dollars. `scaleout_steps` carries `mode` as well so that every table can be scoped by it.
 
-**RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `history`, `connection`. Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (`INVALID_INPUT`, `MODE_NOT_SIM`, `NOT_IMPLEMENTED`). Rejections and not-implemented calls go to `events` (never the input).
+**Entry RPCs** (`engine/src/entries.ts`): `prepareEntry({ mode, accountId, symbol, assetType })` returns a preview (quantity, ask, SIZE, estimated cost, a fresh `intentId`) or `BLOCKED` with reasons, and writes nothing. `sendEntry({ ...same, intentId, confirmedQty })` returns `BLOCKED`, `RECONFIRM` (the server's quantity differs from `confirmedQty`; nothing reserved) or `PLACED` with the intent state. The engine reads SIZE from `client_settings` in D1 and the ask from the broker; `confirmedQty` is only compared, never sent. See [order-lifecycle.md](order-lifecycle.md#entries).
+
+**RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `history`, `connection`. Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (`INVALID_INPUT`, `MODE_NOT_SIM`, `BROKER_UNAVAILABLE`, `NOT_IMPLEMENTED`). Rejections and not-implemented calls go to `events` (never the input).
 
 **Invariants the store enforces** (migration 3): `CHECK (sold_qty <= original_qty)` on `positions`, and a unique partial index `positions_one_open_per_symbol` on `(mode, symbol) WHERE status != 'CLOSED'`, so a second open position on a symbol cannot exist whatever the code does ([domain-rules.md §5](domain-rules.md#5-order-guards)). The guard still rejects first, with a clear reason; the index is the backstop for a race or a bug.
 

@@ -9,15 +9,33 @@ import { Mode } from "./mode.ts";
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
 const Symbol = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32));
 
-export const PrepareEntryArgs = Schema.Struct({
+/**
+ * What identifies an entry: the instrument and the account. Nothing that sizes or prices it: the
+ * engine reads SIZE from the client's settings and the ask from the broker (CLAUDE.md, rule 3).
+ */
+const EntryTarget = {
   mode: Mode,
   accountId: Id,
   symbol: Symbol,
   assetType: Schema.Literals(["equity", "option"]),
-});
+};
+
+export const PrepareEntryArgs = Schema.Struct(EntryTarget);
 export type PrepareEntryArgs = typeof PrepareEntryArgs.Type;
 
-export const SendEntryArgs = Schema.Struct({ mode: Mode, intentId: Id });
+/** 16 random bytes in base64url: the length TradeStation allows for an OrderConfirmID (22). */
+export const INTENT_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+
+/**
+ * `intentId` is the one `prepareEntry` returned; repeating it repeats the same order, never a new
+ * one. `confirmedQty` is only what the client saw: it is compared with the server's own quantity
+ * and never used to size or send anything.
+ */
+export const SendEntryArgs = Schema.Struct({
+  ...EntryTarget,
+  intentId: Schema.String.check(Schema.isPattern(INTENT_ID_PATTERN)),
+  confirmedQty: Schema.Int.check(Schema.isGreaterThan(0)),
+});
 export type SendEntryArgs = typeof SendEntryArgs.Type;
 
 /** A scale-out step (index 0 to 6, docs/domain-rules.md §6) or ALL OUT. */

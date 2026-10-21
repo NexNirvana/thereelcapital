@@ -10,6 +10,15 @@ import {
 import { REFRESH_REQUEST_RETRY_DELAY_MS, REFRESH_RETRY_DELAY_MS } from "#lib/domain/config.ts";
 import { createCipher, CredentialsKeyError } from "./crypto.ts";
 import { TokenRefresher } from "./refresh.ts";
+import { resolveBroker } from "./broker/provider.ts";
+import type { BrokerAdapterShape } from "./broker/adapter.ts";
+import {
+  prepareEntry,
+  sendEntry,
+  type EntryContext,
+  type PrepareEntryResult,
+  type SendEntryResult,
+} from "./entries.ts";
 import { writeEvent } from "./events.ts";
 import { migrate } from "./schema.ts";
 import {
@@ -37,6 +46,7 @@ type Row = Record<string, SqlStorageValue>;
  */
 export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
+  #broker: BrokerAdapterShape | null = null;
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
@@ -48,16 +58,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     return "pong";
   }
 
-  // Trading methods: decoded and guarded now, implemented by the trading issues (M4 and M5).
-  prepareEntry(input: unknown): EngineResult<never> {
-    return this.enter("prepareEntry", PrepareEntryArgs, input, () =>
-      this.notImplemented("prepareEntry"),
-    );
+  /** A sized, guarded preview of an entry. Creates no intent and reserves nothing. */
+  prepareEntry(input: unknown): Promise<EngineResult<PrepareEntryResult>> {
+    return this.enterWithBroker("prepareEntry", PrepareEntryArgs, input, prepareEntry);
   }
 
-  sendEntry(input: unknown): EngineResult<never> {
-    return this.enter("sendEntry", SendEntryArgs, input, () => this.notImplemented("sendEntry"));
+  /** Reserves, persists the intent, then places the MARKET order once. */
+  sendEntry(input: unknown): Promise<EngineResult<SendEntryResult>> {
+    return this.enterWithBroker("sendEntry", SendEntryArgs, input, sendEntry);
   }
+
+  // Trading methods still to come: decoded and guarded now, implemented by the trading issues.
 
   exit(input: unknown): EngineResult<never> {
     return this.enter("exit", ExitArgs, input, () => this.notImplemented("exit"));
@@ -183,6 +194,46 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       return failure(decoded.code);
     }
     return run(decoded.args);
+  }
+
+  /** Like enterWithConnection, with the broker this client trades through (SIM only). */
+  private enterWithBroker<
+    S extends Schema.Top & {
+      readonly DecodingServices: never;
+      readonly Type: { readonly mode: Mode };
+    },
+    T,
+  >(
+    method: string,
+    schema: S,
+    input: unknown,
+    run: (ctx: EntryContext, args: S["Type"]) => Promise<EngineResult<T>>,
+  ): Promise<EngineResult<T>> {
+    return this.enterWithConnection(method, schema, input, (ctx, args) => {
+      const broker = this.brokerFor(ctx);
+      if (broker === null) return Promise.resolve(failure("BROKER_UNAVAILABLE"));
+      return run({ ...ctx, broker }, args);
+    });
+  }
+
+  /** One adapter per Durable Object, so the SIM account guard's cache is shared by its requests. */
+  private brokerFor(ctx: ConnectionContext): BrokerAdapterShape | null {
+    if (this.#broker !== null) return this.#broker;
+    const resolved = resolveBroker({
+      settings: this.env,
+      userId: ctx.userId,
+      now: () => Date.now(),
+      accessToken: async () => {
+        const access = await ctx.tokens.accessToken();
+        return access.ok ? { ok: true, token: access.token } : { ok: false };
+      },
+    });
+    if (!resolved.ok) {
+      this.log("error", "SIM", "broker.unavailable", resolved.reason);
+      return null;
+    }
+    this.#broker = resolved.broker;
+    return this.#broker;
   }
 
   private async enterWithConnection<
