@@ -47,4 +47,11 @@ if printf '%s\n' "$added" | grep -Eq -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
   err "staged changes contain what looks like a secret or private key"
 fi
 
+# TradeStation SIM only: the live API host must never appear in code or config.
+live=$(git diff --cached -U0 --diff-filter=ACMR -- . ':(exclude)docs/**' ':(exclude).githooks/pre-commit' |
+  grep '^+' | grep -v '^+++' | sed 's/sim-api\.tradestation\.com//g' | grep -E 'api\.tradestation\.com/v[0-9]' || true)
+if [ -n "$live" ]; then
+  err "staged changes reference the live TradeStation API host; only sim-api.tradestation.com is allowed"
+fi
+
 exit "$status"
