@@ -64,6 +64,10 @@ The schema is built by append-only, versioned migrations (`schema_migrations`) t
 
 **RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `history`, `connection`. Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (`INVALID_INPUT`, `MODE_NOT_SIM`, `NOT_IMPLEMENTED`). Rejections and not-implemented calls go to `events` (never the input).
 
+**Invariants the store enforces** (migration 3): `CHECK (sold_qty <= original_qty)` on `positions`, and a unique partial index `positions_one_open_per_symbol` on `(mode, symbol) WHERE status != 'CLOSED'`, so a second open position on a symbol cannot exist whatever the code does ([domain-rules.md §5](domain-rules.md#5-order-guards)). The guard still rejects first, with a clear reason; the index is the backstop for a race or a bug.
+
+**Reserved opens are derived, not stored.** `open` is the count of `positions` with `status != 'CLOSED'` in the mode. `reservedOpens` is the count of `intents` in that mode with `kind = 'entry'`, `filled_qty = 0` and a state other than `REJECTED` or `CANCELED`, that is `ARMED`, `SENT`, `ACKNOWLEDGED`, `CANCEL_PENDING` (a MARKET order may still fill first) or `UNKNOWN`: an entry that has not filled has no position yet, and one that has filled is counted in `open`. Only a zero-fill `REJECTED` or `CANCELED` entry frees the slot. Both counts and the reservation insert run in one `transactionSync`. The daily `entry_counters.reserved` is a stored counter by design (it must survive a state change), unlike slots.
+
 Fills are not a table: TradeStation reports executed quantity and price per order leg, and the intent stores `filled_qty` and `avg_fill_price` from the broker.
 
 ## Runtime behavior
