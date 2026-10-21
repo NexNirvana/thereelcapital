@@ -2,8 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  // On CI, also write the HTML report that the workflow uploads when a test fails.
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  // On CI each shard writes a blob report; the `e2e` job merges them into the HTML report.
+  reporter: process.env.CI ? [["list"], ["blob"]] : "list",
   // The specs seed the one local D1 file through the wrangler CLI while the dev server uses it;
   // parallel workers contend for its lock (SQLITE_BUSY).
   workers: 1,
