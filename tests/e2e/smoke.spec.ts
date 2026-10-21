@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("smoke page shows the engine ping result inside the shell", async ({ page, baseURL }) => {
+test("the shell is served from /operar and / redirects there", async ({ page, baseURL }) => {
   // A missing baseURL makes the origin "null", so every request counts as external.
   const origin = new URL(baseURL ?? "about:blank").origin;
   const external: string[] = [];
@@ -9,7 +9,9 @@ test("smoke page shows the engine ping result inside the shell", async ({ page, 
   });
 
   await page.goto("/");
-  await expect(page.getByTestId("ping")).toHaveText("pong");
+  await expect(page).toHaveURL(/\/operar$/);
+  await expect(page.getByRole("heading", { name: "Operar" })).toBeVisible();
+  await expect(page.getByText("Disponible próximamente")).toBeVisible();
   await expect(page.getByRole("banner").getByText("SIM")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Principal" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Operar" }).first()).toHaveAttribute(
@@ -25,7 +27,7 @@ test("narrow viewport shows the mobile header and bottom nav, not the sidebar", 
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/operar");
   const header = page.getByRole("banner");
   await expect(header.getByRole("link", { name: "REEL CAPITAL" })).toBeVisible();
   await expect(header.getByText("SIM")).toBeVisible();

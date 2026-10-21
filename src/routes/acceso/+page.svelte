@@ -20,7 +20,7 @@
       return;
     }
     await invalidateAll();
-    await goto(resolve("/(app)"));
+    await goto(resolve("/(app)/operar"));
   }
 </script>
 

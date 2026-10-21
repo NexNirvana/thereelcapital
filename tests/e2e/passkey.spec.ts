@@ -29,7 +29,7 @@ test("signs in with a user-verified passkey", async ({ context, page }) => {
   await page.goto("/acceso");
   await page.getByRole("button", { name: "Entrar con passkey" }).click();
 
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/operar");
   expect((await currentUser(page)).user.id).toBe(userId);
 });
 

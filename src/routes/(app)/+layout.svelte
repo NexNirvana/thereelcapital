@@ -3,34 +3,33 @@
   import { page } from "$app/state";
   import Badge from "#lib/ui/Badge.svelte";
   import { indicatorFor } from "#lib/ui/connection-indicator.ts";
+  import MarketClock from "#lib/ui/MarketClock.svelte";
+  import RecoveryCodesPrompt from "#lib/ui/RecoveryCodesPrompt.svelte";
+  import { maskAccount } from "#lib/ui/shell.ts";
+  import SignOutButton from "#lib/ui/SignOutButton.svelte";
   import type { LayoutProps } from "./$types";
 
   let { children, data }: LayoutProps = $props();
   const indicator = $derived(indicatorFor(data.health));
 
-  // Conexión is reachable from the header on mobile (docs/design-system.md#layout-shell).
-  // "/" and /conexion exist; the other routes arrive with #30 /posiciones and #31 /historial,
-  // and move to resolve() once their ids exist in the route types.
-  const nav: { href: string; label: string }[] = [
-    { href: resolve("/(app)"), label: "Operar" },
-    { href: "/posiciones", label: "Posiciones" },
-    { href: "/historial", label: "Historial" },
+  // Only built screens are listed. TODO(#30): add Posiciones (/posiciones); TODO(#31): add
+  // Historial (/historial). Conexión is also reachable from the top bar.
+  const nav = $derived([
+    { href: resolve("/(app)/operar"), label: "Operar" },
     { href: resolve("/(app)/conexion"), label: "Conexión" },
-  ];
-  const mobileNav = nav.slice(0, 3);
+    ...(data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []),
+  ]);
 
-  const isCurrent = (href: string) =>
-    href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href);
+  const isCurrent = (href: string) => page.url.pathname.startsWith(href);
 </script>
 
 <div class="shell">
   <aside class="sidebar">
-    <a class="wordmark" href={resolve("/(app)")}>REEL<br />CAPITAL</a>
+    <a class="wordmark" href={resolve("/(app)/operar")}>REEL<br />CAPITAL</a>
     <nav aria-label="Principal">
       <ul>
         {#each nav as item (item.href)}
           <li>
-            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30 and #31 -->
             <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
               {item.label}
             </a>
@@ -38,13 +37,13 @@
         {/each}
       </ul>
     </nav>
+    <div class="signout"><SignOutButton /></div>
     <small class="domain">thereelcapital.com</small>
   </aside>
 
   <div class="main">
-    <!-- Placeholders until the account and clock are wired by later issues. -->
     <header class="topbar">
-      <a class="wordmark mobile-only" href={resolve("/(app)")}>REEL CAPITAL</a>
+      <a class="wordmark mobile-only" href={resolve("/(app)/operar")}>REEL CAPITAL</a>
       <p class="connection" aria-live="polite">
         <span class="dot" class:hollow={!indicator.healthy} aria-hidden="true"></span>
         <a class="plain" href={resolve("/(app)/conexion")}>{indicator.label}</a>
@@ -53,25 +52,28 @@
         {/if}
       </p>
       <div class="mode"><Badge label="SIM" /></div>
-      <p class="account" title="Cuenta (pendiente)"><span aria-hidden="true">••</span> —</p>
-      <p class="clock desktop-only" title="Hora de mercado (pendiente)">— ET</p>
+      {#if data.account}
+        <p class="account" title="Cuenta">{maskAccount(data.account)}</p>
+      {/if}
+      <p class="clock desktop-only"><MarketClock /></p>
     </header>
 
     <main>
+      {#if data.unusedCodes === 0}<RecoveryCodesPrompt />{/if}
       {@render children()}
     </main>
   </div>
 
   <nav class="tabbar" aria-label="Principal">
     <ul>
-      {#each mobileNav as item (item.href)}
+      {#each nav as item (item.href)}
         <li>
-          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30 and #31 -->
           <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
             {item.label}
           </a>
         </li>
       {/each}
+      <li><SignOutButton /></li>
     </ul>
   </nav>
 </div>
@@ -131,8 +133,13 @@
     color: var(--text);
     font-weight: 500;
   }
-  .domain {
+  .signout {
     margin-top: auto;
+    padding: 0 1.5rem;
+    color: var(--text-muted);
+  }
+  .domain {
+    margin-top: 1rem;
     font-size: 13px;
     overflow-wrap: normal;
     padding: 0 1.5rem;
@@ -266,6 +273,9 @@
     .tabbar ul {
       display: flex;
       justify-content: space-between;
+    }
+    .tabbar {
+      color: var(--text-muted);
     }
     .tabbar a {
       display: flex;

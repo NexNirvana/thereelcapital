@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import Badge from "#lib/ui/Badge.svelte";
+  import SignOutButton from "#lib/ui/SignOutButton.svelte";
   import type { LayoutProps } from "./$types";
 
   let { children }: LayoutProps = $props();
@@ -10,10 +11,12 @@
   <header>
     <a class="wordmark" href={resolve("/admin")}>REEL CAPITAL</a>
     <Badge label="Admin" />
+    <Badge label="SIM" />
     <nav aria-label="Administración">
       <a href={resolve("/admin")} aria-current="page">Clientes</a>
     </nav>
-    <a class="back" href={resolve("/(app)")}>Operar</a>
+    <a class="back" href={resolve("/(app)/operar")}>Operar</a>
+    <span class="signout"><SignOutButton /></span>
   </header>
   <main>{@render children()}</main>
 </div>
@@ -53,6 +56,9 @@
   }
   .back {
     margin-left: auto;
+  }
+  .signout {
+    color: var(--text-muted);
   }
   main {
     max-width: 1100px;
