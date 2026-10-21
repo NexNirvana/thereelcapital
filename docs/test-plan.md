@@ -32,7 +32,7 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 
 ### Local-sim broker
 
-`engine/src/broker/local-sim/` implements the same `BrokerAdapter` service as the TradeStation adapter, in memory and without any network call. Time comes from an injected `now` and order ids from a `seed`, so a scenario replays identically. It is labelled «simulación local» (`LOCAL_SIM_LABEL`, on every account it returns). It is selected only with `BROKER=local-sim` and `ENVIRONMENT` set to `development` or `test`; a missing or production `ENVIRONMENT` refuses it (`engine/src/broker/select.ts`).
+`engine/src/broker/local-sim/` implements the same `BrokerAdapter` service as the TradeStation adapter, in memory and without any network call. Time comes from an injected `now` and order ids from a `seed`, so a scenario replays identically. It is labelled «simulación local» (`LOCAL_SIM_LABEL`, on every account it returns). It is selected only with `BROKER=local-sim` and `ENVIRONMENT` set to `development` or `test`; a missing or production `ENVIRONMENT` refuses it (`engine/src/broker/select.ts`). The Playwright specs run both Workers this way: `tests/e2e/engine.env` (passed with `--env-file`) selects it and sets `TEST_NOW`, which pins the engine's clock inside a regular session and is ignored anywhere else (`engine/src/clock.ts`). The specs write a client's SIM accounts straight into its Durable Object's SQLite file (`seedTradingClient`), because only a real TradeStation connection fills them in.
 
 Fills are `instant`, `partial` (some now, the rest later or never) or `delayed`. Faults are queued with `inject` and each fires once (or `times` times):
 

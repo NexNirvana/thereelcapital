@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { createHmac, randomUUID } from "node:crypto";
 import { type BrowserContext, type Page } from "@playwright/test";
 import { newInvitation } from "../../src/lib/server/activation-link.ts";
@@ -127,4 +129,66 @@ export function registerPasskey(page: Page, requestUv: boolean) {
     const body = await response.json().catch(() => null);
     return { status: response.status, code: body?.code ?? null };
   }, requestUv);
+}
+
+// The engine runs on a pinned clock (TEST_NOW in engine.env), so anything the engine compares with
+// the time (a token expiry) must be written relative to this, not to the real clock.
+export const ENGINE_NOW = Date.parse(
+  /^TEST_NOW=(.+)$/m.exec(readFileSync("tests/e2e/engine.env", "utf8"))?.[1] ?? "",
+);
+
+const DO_DIR = ".wrangler/state/v3/do/reel-engine-ClientCoordinator";
+
+// The engine keeps a client's SIM accounts in its Durable Object, which only a real connection
+// fills in (it needs TradeStation). For the specs they are written straight into the object's
+// SQLite file, once a request has created and migrated it. Test-only, like d1() above.
+// The directory does not exist until the first Durable Object of a fresh checkout is created.
+const engineFiles = () =>
+  new Set(
+    existsSync(DO_DIR)
+      ? readdirSync(DO_DIR).filter((name) => name.endsWith(".sqlite") && name !== "metadata.sqlite")
+      : [],
+  );
+
+function seedEngineAccounts(file: string, accountIds: readonly string[]) {
+  const db = new DatabaseSync(`${DO_DIR}/${file}`);
+  try {
+    // The engine holds the file open: wait for its write lock instead of failing.
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("DELETE FROM broker_accounts");
+    const insert = db.prepare(
+      "INSERT INTO broker_accounts (mode, account_id, account_type) VALUES ('SIM', ?, 'Margin')",
+    );
+    for (const accountId of accountIds) insert.run(accountId);
+  } finally {
+    db.close();
+  }
+}
+
+// A signed-in client with a CONNECTED TradeStation SIM connection, SIZE and stop % in D1, and
+// `accounts` in its engine. The engine runs the local simulation (tests/e2e/engine.env).
+export async function seedTradingClient(
+  context: BrowserContext,
+  page: Page,
+  {
+    accounts = ["SIM-1"],
+    sizeUsd = 20_000,
+  }: { accounts?: readonly string[]; sizeUsd?: number } = {},
+) {
+  const userId = await seedSignedInUser(context);
+  d1(
+    `INSERT INTO client_settings (user_id, size_usd, stop_pct, trailing_unlock_pct, updated_at)
+     VALUES ('${userId}', ${sizeUsd}, 30, 70, 0);
+     INSERT INTO broker_connection (user_id, client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status, last_ok_at)
+     VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', NULL, 'CONNECTED', 0);
+     INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('${randomUUID()}', '${userId}', 'h-${randomUUID()}')`,
+  );
+  // Any shell page reaches the engine and creates this client's object; the one new file is it.
+  const existing = engineFiles();
+  await page.goto("/conexion");
+  const created = [...engineFiles()].filter((file) => !existing.has(file));
+  if (created.length !== 1)
+    throw new Error(`expected one new Durable Object, got ${created.length}`);
+  seedEngineAccounts(created[0] as string, accounts);
+  return userId;
 }
