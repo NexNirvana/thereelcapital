@@ -1,10 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
-  import { authClient } from "#lib/auth-client.ts";
-  import { passkeyErrorMessage } from "#lib/auth-messages.ts";
+  import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
+  import ActivationLink from "#lib/ui/ActivationLink.svelte";
   import Notice from "#lib/ui/Notice.svelte";
+  import ReauthButton from "#lib/ui/ReauthButton.svelte";
   import type { PageProps } from "./$types";
 
   let { data, form }: PageProps = $props();
@@ -14,52 +14,14 @@
   // in broker_connection means the client has connected.
   const connection = ["Sin conectar", "Conectada"] as const;
 
-  const expiry = new Intl.DateTimeFormat("es", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/New_York",
-  });
-
   let creating = $state(false);
-  let copied = $state(false);
-  let copyFailed = $state(false);
   let submitFailure = $state<string | null>(null);
   let closedLink = $state<string | null>(null);
-  let reauthenticating = $state(false);
   let confirmed = $state(false);
-  let reauthFailure = $state<string | null>(null);
 
   const created = $derived(form && "created" in form ? form.created : null);
   const failure = $derived(form && "code" in form ? form : null);
   const visibleLink = $derived(created && created.link !== closedLink ? created : null);
-
-  async function copyLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      copied = true;
-      copyFailed = false;
-    } catch {
-      copied = false;
-      copyFailed = true;
-    }
-  }
-
-  // A new passkey sign-in makes the session fresh again; the admin then sends the form again.
-  async function confirmIdentity() {
-    reauthenticating = true;
-    reauthFailure = null;
-    const { error } = await authClient.signIn.passkey();
-    reauthenticating = false;
-    if (error) {
-      reauthFailure = passkeyErrorMessage("code" in error ? error.code : undefined);
-      return;
-    }
-    confirmed = true;
-    await invalidateAll();
-  }
 </script>
 
 <svelte:head><title>Clientes · Admin · Reel Capital</title></svelte:head>
@@ -73,8 +35,6 @@
     action="?/create"
     use:enhance={() => {
       creating = true;
-      copied = false;
-      copyFailed = false;
       confirmed = false;
       submitFailure = null;
       return async ({ result, update }) => {
@@ -123,41 +83,19 @@
       <div id="create-failure">
         <Notice title="No se creó el cliente" role="alert">{failure.message}</Notice>
         {#if failure.code === "REAUTH_REQUIRED"}
-          <Button onclick={confirmIdentity} disabled={reauthenticating}>
-            {reauthenticating ? "Esperando tu passkey" : "Confirmar con passkey"}
-          </Button>
-          {#if reauthFailure}<Notice title="No pudimos confirmar" role="alert"
-              >{reauthFailure}</Notice
-            >{/if}
+          <ReauthButton onconfirmed={() => (confirmed = true)} />
         {/if}
       </div>
     {/if}
     {#if visibleLink}
-      <Notice title="Cliente creado: {visibleLink.email}">
-        Comparte este enlace personalmente; no enviamos correos. Se muestra una sola vez y vence el
-        {expiry.format(visibleLink.expiresAt)} ET.
-      </Notice>
-      <label for="activation-link">Enlace de activación</label>
-      <div class="copy">
-        <input
-          id="activation-link"
-          type="text"
-          readonly
-          value={visibleLink.link}
-          onfocus={(event) => event.currentTarget.select()}
+      {#key visibleLink.link}
+        <ActivationLink
+          title="Cliente creado: {visibleLink.email}"
+          link={visibleLink.link}
+          expiresAt={visibleLink.expiresAt}
+          onhide={() => (closedLink = visibleLink.link)}
         />
-        <Button onclick={() => copyLink(visibleLink.link)}>
-          {copied ? "Copiado" : "Copiar enlace"}
-        </Button>
-      </div>
-      {#if copyFailed}
-        <Notice title="No se copió el enlace" role="alert">
-          Selecciona el enlace del campo y cópialo a mano; no volverá a mostrarse.
-        </Notice>
-      {/if}
-      <Button variant="link" onclick={() => (closedLink = visibleLink.link)}>
-        Ya lo copié, ocultar
-      </Button>
+      {/key}
     {/if}
   </div>
 </section>
@@ -179,7 +117,9 @@
         <tbody>
           {#each data.clients as client (client.id)}
             <tr>
-              <th scope="row">{client.email}</th>
+              <th scope="row">
+                <a href={resolve("/admin/clientes/[id]", { id: client.id })}>{client.email}</a>
+              </th>
               <td data-label="Acceso">{access[client.access]}</td>
               <td data-label="Conexión">{connection[client.hasConnection]}</td>
             </tr>
@@ -222,14 +162,6 @@
   input[aria-invalid="true"] {
     border: 2px solid var(--text);
   }
-  .copy {
-    display: flex;
-    gap: 0.75rem;
-  }
-  .copy input {
-    flex: 1;
-    min-width: 0;
-  }
   .scroll {
     overflow-x: auto;
   }
@@ -252,13 +184,16 @@
   tbody th {
     font-weight: 500;
   }
+  tbody th a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+    color: var(--text);
+  }
 
   /* docs/design-system.md#layout-shell: on a phone each client is one stacked row, so the email
      wraps and the status columns are never scrolled out of sight. */
   @media (max-width: 600px) {
-    .copy {
-      flex-direction: column;
-    }
     thead {
       position: absolute;
       width: 1px;
