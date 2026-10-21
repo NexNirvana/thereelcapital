@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compact PR status: state, required checks, reviews, unresolved threads, bot summary.
+# Compact PR status: state, required checks, reviews (and the local review's confidence), unresolved threads, bot summary.
 # Usage: scripts/pr-status.sh <pr-number> [--wait]
 # --wait blocks until all required checks finish. Repo: $GH_REPO or the current one.
 set -eu
@@ -74,8 +74,24 @@ if [ -z "$head" ]; then
   echo "  reviews: unavailable: head commit unknown"
   unavailable=1
 elif fetch "  reviews" gh pr view "$pr" -R "$repo" --json reviews --jq '.reviews | sort_by(if .commit.oid == "'"$head"'" then 0 else 1 end)[]
+  | select(.body != "" or .state != "COMMENTED")
   | "  \(.author.login) \(.state) \(.commit.oid[0:7]) \(if .commit.oid == "'"$head"'" then "covers head" else "stale" end)"'; then
   printf '%s\n' "$out" | head -n 10
+fi
+
+# The local reviewer (bun run review) marks its review body with a hidden comment:
+# <!-- local-review sha=<sha> confidence=<N> actionable=<K> -->. Only reviews posted by the
+# account running this script count, the last marker in a body wins, and empty-body reviews
+# (thread replies) are ignored. Shows the newest one plus the number of local rounds.
+me=$(gh api user --jq .login 2>/dev/null || true)
+if [ -n "$head" ] && [ -n "$me" ] && fetch "  local review" gh pr view "$pr" -R "$repo" --json reviews --jq '
+  [.reviews[] | select(.author.login == "'"$me"'") | select(.body != "")
+   | {t: .submittedAt, m: ([.body | scan("<!-- local-review sha=([0-9a-f]+) confidence=([1-5]) actionable=([0-9]+) -->")] | last)}
+   | select(.m != null)] | sort_by(.t) as $rounds
+  | if ($rounds | length) == 0 then empty else
+    $rounds[-1].m as $m
+    | "  local review \($m[0][0:7]) confidence \($m[1])/5 actionable \($m[2]) (\(if "'"$head"'" | startswith($m[0]) then "covers head" else "stale" end)), round \($rounds | length)\(if ($rounds | length) >= 3 and ($m[1] | tonumber) < 4 then " NON-CONVERGING: stop and ask the coordinator" else "" end)" end'; then
+  [ -z "$out" ] || printf '%s\n' "$out"
 fi
 
 echo "unresolved threads:"
