@@ -7,6 +7,7 @@
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
   import Notice from "#lib/ui/Notice.svelte";
+  import { indicatorFor } from "#lib/ui/connection-indicator.ts";
   import type { PageProps } from "./$types";
 
   let { data, form }: PageProps = $props();
@@ -15,6 +16,9 @@
   // The failure of the last attempt: from this page's own action or from the OAuth callback.
   const problem = $derived(form && "message" in form ? form.message : data.error);
   const needsLogin = $derived(form !== null && "code" in form && form.code === "REAUTH_REQUIRED");
+  const indicator = $derived(
+    data.connection?.status === "CONNECTED" ? indicatorFor(data.connection.health) : null,
+  );
   let reconnect = $state(false);
   let confirming = $state(false);
   let confirmFailure = $state<string | null>(null);
@@ -67,9 +71,30 @@
   <section aria-labelledby="estado">
     <h2 id="estado">Estado</h2>
     <dl>
-      <DefinitionRow label="TradeStation" value="Conectado" />
+      <DefinitionRow label="TradeStation" value={indicator?.state ?? "Conectado"} />
       <DefinitionRow label="Vencimiento" value={data.connection.expiresAt ?? "desconocido"} />
     </dl>
+    {#if data.connection.health.status !== "ok"}
+      <Notice
+        title={data.connection.health.status === "expiring"
+          ? "Tu conexión vence pronto"
+          : "Tu conexión con TradeStation no está disponible"}
+        role={data.connection.health.status === "expiring" ? "status" : "alert"}
+      >
+        {#if data.connection.health.status === "expiring"}
+          Reconecta antes del vencimiento para no interrumpir tus operaciones.
+        {:else}
+          No se pueden abrir entradas y la protección de tus posiciones no está verificada.
+          Reconecta con TradeStation para continuar.
+        {/if}
+      </Notice>
+    {/if}
+    {#if data.connection.entriesBlocked && ["ok", "expiring"].includes(data.connection.health.status)}
+      <Notice title="Verificando tus posiciones">
+        La conexión se restableció. Revisamos tus órdenes y posiciones antes de abrir nuevas
+        entradas.
+      </Notice>
+    {/if}
     <p class="mode">
       <span>Modo</span>
       <Badge label="SIM" />

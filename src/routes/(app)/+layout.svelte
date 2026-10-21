@@ -2,9 +2,11 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import Badge from "#lib/ui/Badge.svelte";
+  import { indicatorFor } from "#lib/ui/connection-indicator.ts";
   import type { LayoutProps } from "./$types";
 
-  let { children }: LayoutProps = $props();
+  let { children, data }: LayoutProps = $props();
+  const indicator = $derived(indicatorFor(data.health));
 
   // Conexión is reachable from the header on mobile (docs/design-system.md#layout-shell).
   // "/" and /conexion exist; the other routes arrive with #30 /posiciones and #31 /historial,
@@ -40,14 +42,15 @@
   </aside>
 
   <div class="main">
-    <!-- Placeholders until the connection, account and clock are wired by later issues. -->
+    <!-- Placeholders until the account and clock are wired by later issues. -->
     <header class="topbar">
       <a class="wordmark mobile-only" href={resolve("/(app)")}>REEL CAPITAL</a>
-      <p class="connection">
-        <span class="dot" aria-hidden="true"></span>
-        <a class="plain" href={resolve("/(app)/conexion")}
-          >TradeStation <span class="desktop-only">—</span></a
-        >
+      <p class="connection" aria-live="polite">
+        <span class="dot" class:hollow={!indicator.healthy} aria-hidden="true"></span>
+        <a class="plain" href={resolve("/(app)/conexion")}>{indicator.label}</a>
+        {#if indicator.action}
+          <a class="reconnect" href={resolve("/(app)/conexion")}>{indicator.action}</a>
+        {/if}
       </p>
       <div class="mode"><Badge label="SIM" /></div>
       <p class="account" title="Cuenta (pendiente)"><span aria-hidden="true">••</span> —</p>
@@ -166,6 +169,14 @@
     border-radius: 50%;
     background: var(--text);
   }
+  .dot.hollow {
+    border: 1.5px solid var(--text);
+    background: transparent;
+  }
+  .reconnect {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   .account {
     margin-left: auto;
     font-weight: 500;
@@ -225,6 +236,8 @@
     }
     .connection {
       grid-area: conn;
+      flex-wrap: wrap;
+      gap: 0 0.75rem;
       color: var(--text-muted);
     }
     .dot {
@@ -232,6 +245,10 @@
     }
     .account {
       grid-area: acct;
+      align-self: start;
+      display: flex;
+      align-items: center;
+      min-height: var(--target);
       margin: 0;
       color: var(--text-muted);
     }
