@@ -66,6 +66,18 @@ Everything in CONTRIBUTING.md applies to you, in particular:
 - Never push to `main`. Work on a `feature/`, `fix/` or `hotfix/` branch for the issue, organize the commits as CONTRIBUTING.md describes, and open one PR.
 - Never use `--no-verify`.
 
+## Working economically
+
+Long sessions cost most through tool output kept in context.
+
+- Delegate polling, review-fix and restack loops to Sonnet subagents that report in at most 10 lines. Research subagents use Sonnet too.
+- Screenshots and design comparisons happen in a subagent that reports in text; don't read images in the main session.
+- Read big docs with `grep -n` and `sed -n`, not whole. Cap command output (`| head -c 4000`).
+- Use Write or Edit for file changes, not nested heredocs.
+- Check a PR with `scripts/pr-status.sh <pr>`; wait for CI with `scripts/pr-status.sh <pr> --wait` instead of monitors or sleep loops.
+- Collect all review findings of a PR and fix them in one batch.
+- Past about 250k tokens of context, restart with a short handoff note (open PRs, next steps).
+
 ## Also for you
 
 - UI copy in Spanish, matching the designs. Code, comments, commits and docs in English.

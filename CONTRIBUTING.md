@@ -86,6 +86,7 @@ Every PR shows how it was verified, in the template's sections:
 - Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Push all fixes together, then request one follow-up review of those commits from Greptile (`@greptileai review`), since CodeRabbit reviews each PR only once. Resolve the threads.
 - Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
 - Green CI is required as well, once CI exists (#3).
+- `scripts/pr-status.sh <pr> [--wait]` prints state, required checks, reviews, unresolved threads and the latest bot summary in one block; `--wait` first blocks until required checks finish.
 
 ### Organizing commits
 
