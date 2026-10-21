@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # Reviews are rate-limited, so CodeRabbit reviews a PR once, when it leaves
 # draft, on any base branch (stacked PRs included). Pushes don't re-trigger a
-# review; request the follow-up with `@coderabbitai review` after the fixes.
+# review: CodeRabbit reviews each PR once. Follow-up reviews go to Greptile.
 language: en-US
 reviews:
   profile: chill
