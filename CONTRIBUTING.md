@@ -41,6 +41,22 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 - Behavior changes update the relevant `docs/` file in the same PR.
 - Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
 
+### Branch rulesets
+
+GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
+
+- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin can bypass the pull request requirement only through a pull request, never force-push or deletion protection.
+- `pr-assets`: no force push, no deletion. Normal pushes are allowed.
+- `feature/*`, `fix/*` and `hotfix/*` are unrestricted, since they are force-pushed during review. Branch names are checked by the `pre-push` hook (a GitHub name-pattern rule would also block bot-created branches).
+
+There are no required status checks yet. Issue #3 (CI) adds them to `.github/rulesets/main.json` as a `required_status_checks` rule.
+
+Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as a repo admin, for example after the transfer:
+
+```sh
+bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
+```
+
 ### Verification and screenshots
 
 Every PR shows how it was verified, in the template's sections:
