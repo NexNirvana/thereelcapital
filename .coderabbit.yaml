@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# The plan allows about one review per hour, so reviews run only on request:
+# once when a PR is ready, and once more after its fixes are pushed together.
+language: en-US
+reviews:
+  profile: chill
+  auto_review:
+    enabled: false
+    drafts: false

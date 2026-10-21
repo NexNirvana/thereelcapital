@@ -54,9 +54,10 @@ Every PR shows how it was verified, in the template's sections:
 
 **No PR is merged until CodeRabbit has reviewed its final commit.**
 
-- Wait for CodeRabbit's review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review.
-- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Resolve the thread either way.
-- Pushing new commits needs a new review of those commits before merging. If the rate limit delays it, the PR waits; ask for it again with `@coderabbitai review` when the limit resets.
+- Reviews are rate-limited (about one per hour), so automatic reviews are off (`.coderabbit.yaml`). Request one with a `@coderabbitai review` comment only when the PR is ready: commits organized, checks passing, verification filled in.
+- Wait for the review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review. If the limit is reached, the PR waits and the request is repeated after the reset.
+- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Push all fixes together, then request one follow-up review of those commits. Resolve the threads.
+- Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
 - Green CI is required as well, once CI exists (#3).
 
 ### Organizing commits
