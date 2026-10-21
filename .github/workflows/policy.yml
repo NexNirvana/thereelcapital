@@ -1,0 +1,81 @@
+name: Policy
+
+# Runs from the base branch's copy of this file, so a pull request cannot weaken it. It must
+# never execute pull request code: the base commit is the only working tree, and the PR's
+# commits are fetched as data and only read by git. No secrets are used.
+on:
+  pull_request_target:
+    # edited: re-run when only the PR title changes.
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guards:
+    name: guards
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      # The trusted scripts come from this checkout of the base commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      # Object data only: nothing is checked out from the PR.
+      - name: Fetch the PR commits
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/$PR/head:refs/remotes/pull/head"
+          git cat-file -e "$HEAD^{commit}"
+      # Every step below runs even if an earlier one failed, so one run reports all violations.
+      - name: PR title
+        if: always()
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
+          .githooks/commit-msg "$RUNNER_TEMP/title"
+      - name: Commit messages
+        if: always()
+        run: |
+          status=0
+          for commit in $(git rev-list "$BASE..$HEAD"); do
+            git log -1 --format=%B "$commit" > "$RUNNER_TEMP/msg"
+            subject=$(git log -1 --format=%s "$commit")
+            case "$subject" in
+              "fixup! "* | "squash! "* | "amend! "*)
+                echo "::error::$commit is a '$subject' commit; squash it before review"
+                status=1 ;;
+            esac
+            .githooks/commit-msg "$RUNNER_TEMP/msg" || { echo "::error::$commit breaks the message rules"; status=1; }
+          done
+          exit "$status"
+      - name: Branch name
+        if: always()
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: .githooks/check-branch-name "$HEAD_REF"
+      - name: No live TradeStation host
+        if: always()
+        run: .githooks/no-live-host "$BASE" "$HEAD"
+      # gitleaks-action needs a license for organization repos; the MIT binary does not.
+      - name: Secret scan
+        if: always()
+        run: |
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --verbose --log-opts="$BASE..$HEAD"
