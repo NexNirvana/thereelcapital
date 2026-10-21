@@ -196,7 +196,8 @@ test("an enrollment session cannot reach anything but passkey registration", asy
   // It is signed out as far as the app is concerned, and passkey registration still works.
   await page.goto("/recuperacion");
   expect(await registerPasskey(page, true)).toEqual({ status: 200, code: null });
-  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId"='${userId}'`)).toBe(2);
+  // The old passkey was deleted at redemption, so the new one is the only one.
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId"='${userId}'`)).toBe(1);
 });
 
 test("an expired enrollment session can do nothing, not even register", async ({
@@ -218,13 +219,15 @@ test("an expired enrollment session can do nothing, not even register", async ({
   }
 });
 
-test("an expired enrollment session still lets the client sign in with a passkey", async ({
+test("an expired enrollment session still lets the client sign in with the new passkey", async ({
   context,
   page,
 }) => {
-  const { userId, codes } = await clientWithCodes(context, page);
+  const { userId, codes, authenticator } = await clientWithCodes(context, page);
+  await authenticator.forgetCredentials();
   await context.clearCookies();
   expect((await redeem(page, codes[0] ?? "")).status()).toBe(200);
+  expect(await registerPasskey(page, true)).toEqual({ status: 200, code: null });
   const twentyMinutesAgo = new Date(Date.now() - 20 * 60_000).toISOString();
   d1(`UPDATE "session" SET "createdAt" = '${twentyMinutesAgo}' WHERE "userId" = '${userId}'`);
 
@@ -232,6 +235,63 @@ test("an expired enrollment session still lets the client sign in with a passkey
   await page.getByRole("button", { name: "Entrar con passkey" }).click();
   await expect(page).toHaveURL("/");
   expect((await sessionOf(page)).session.enrollment).toBe(false);
+});
+
+test("redeeming a code deletes the old passkeys so they can no longer sign in", async ({
+  context,
+  page,
+}) => {
+  const { userId, codes } = await clientWithCodes(context, page);
+  // Another client with a passkey, a session and a code of their own.
+  const other = await seedSignedInUser(context);
+  d1(
+    `INSERT INTO "passkey" ("id","publicKey","userId","credentialID","counter","deviceType","backedUp")
+     VALUES ('${randomUUID()}','pk','${other}','${randomUUID()}',0,'singleDevice',0)`,
+  );
+  const [otherCode] = await seedCodes(other, 1);
+  await context.clearCookies();
+
+  expect((await redeem(page, codes[0] ?? "")).status()).toBe(200);
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId"='${userId}'`)).toBe(0);
+  expect(
+    count(
+      `SELECT COUNT(*) AS n FROM audit_log WHERE action='recovery.passkeys_delete' AND target_user_id='${userId}' AND before_json='{"count":1}'`,
+    ),
+  ).toBe(1);
+  // The other client keeps everything, including their unused code.
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId"='${other}'`)).toBe(1);
+  expect(
+    count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id='${other}' AND used_at IS NULL`),
+  ).toBe(1);
+  expect(otherCode).toBeDefined();
+
+  // The authenticator still holds the old credential, but the server no longer knows it.
+  await context.clearCookies();
+  await page.goto("/acceso");
+  const verification = page.waitForResponse("**/api/auth/passkey/verify-authentication");
+  await page.getByRole("button", { name: "Entrar con passkey" }).click();
+  expect((await verification).ok()).toBe(false);
+  await expect(page).not.toHaveURL("/");
+  expect(await sessionOf(page)).toBeNull();
+  expect(
+    count(`SELECT COUNT(*) AS n FROM "session" WHERE "userId"='${userId}' AND "enrollment"=0`),
+  ).toBe(0);
+});
+
+test("an interrupted recovery can be retried with another unused code", async ({
+  context,
+  page,
+}) => {
+  const { userId, codes } = await clientWithCodes(context, page);
+  await context.clearCookies();
+  expect((await redeem(page, codes[0] ?? "")).status()).toBe(200);
+  // The client never registers a passkey and the enrollment session lapses.
+  await context.clearCookies();
+  expect((await redeem(page, codes[1] ?? "")).status()).toBe(200);
+  expect(
+    count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id='${userId}' AND used_at IS NULL`),
+  ).toBe(1);
+  expect(sessionCount(userId)).toBe(1);
 });
 
 test("finishing needs a new passkey, then returns a full session and ten fresh codes", async ({

@@ -29,9 +29,11 @@ export function sqliteD1() {
     sqlite,
     prepare,
     batch: async (statements: Statement[]) => {
-      sqlite.transaction(() => {
-        for (const statement of statements) sqlite.query(statement.sql).run(...statement.bindings);
-      })();
+      return sqlite.transaction(() =>
+        statements.map((statement) => ({
+          meta: { changes: sqlite.query(statement.sql).run(...statement.bindings).changes },
+        })),
+      )();
     },
   };
 }

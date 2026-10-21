@@ -39,16 +39,21 @@ export interface RecoveryStatement {
   first(): Promise<Record<string, unknown> | null>;
 }
 export interface RecoveryDb<S extends RecoveryStatement> extends AuditDb<S> {
-  batch(statements: S[]): Promise<unknown>;
+  batch(statements: S[]): Promise<{ meta: { changes: number } }[]>;
 }
 
 const hashOf = (code: string, secret: string) =>
   hashToken("recovery-code", normalizeRecoveryCode(code), secret);
 
 /**
- * Atomically marks the matching unused code as used and returns its owner, or null when the code
- * is wrong, already used or belongs to a banned user. One statement decides, so two concurrent
- * redemptions of one code cannot both succeed.
+ * Spends the matching unused code and returns its owner, or null when the code is wrong, already
+ * used or belongs to a banned user. In the same batch, and only if this call spent the code, every
+ * session and every passkey of the owner is deleted and two audit rows are written (the redemption
+ * and the number of passkeys deleted, never their material): a lost or stolen passkey stops
+ * working at once, with no window between spending the code and removing it. The owner's other
+ * unused codes stay valid so an interrupted recovery can be retried with one of them
+ * (docs/auth-and-security.md#flows). The UPDATE decides, so two concurrent redemptions of one
+ * code cannot both succeed.
  */
 export async function redeemRecoveryCode<S extends RecoveryStatement>(
   db: RecoveryDb<S>,
@@ -56,16 +61,59 @@ export async function redeemRecoveryCode<S extends RecoveryStatement>(
   secret: string,
   now = Date.now(),
 ): Promise<string | null> {
-  const row = await db
+  const codeHash = await hashOf(code, secret);
+  const notBanned = `user_id IN (SELECT "id" FROM "user" WHERE "banned" IS NOT 1)`;
+  const owner = await db
     .prepare(
-      `UPDATE recovery_codes SET used_at = ?
-       WHERE code_hash = ? AND used_at IS NULL
-         AND user_id IN (SELECT "id" FROM "user" WHERE "banned" IS NOT 1)
-       RETURNING user_id`,
+      `SELECT user_id FROM recovery_codes WHERE code_hash = ? AND used_at IS NULL AND ${notBanned}`,
     )
-    .bind(now, await hashOf(code, secret))
+    .bind(codeHash)
     .first();
-  return typeof row?.user_id === "string" ? row.user_id : null;
+  if (typeof owner?.user_id !== "string") return null;
+  const userId = owner.user_id;
+
+  // Tied to this call, not to a timestamp: the audit row is written only when the UPDATE above it
+  // in the batch changed a row (`changes()`), and the statements after it act only when that row
+  // exists, so a concurrent loser (even within the same millisecond) deletes and audits nothing.
+  const redemptionAuditId = crypto.randomUUID();
+  const spentHere = "EXISTS (SELECT 1 FROM audit_log WHERE id = ?)";
+  const auditInsert = `INSERT INTO audit_log (id, at, actor_id, action, target_user_id, before_json, after_json)`;
+  const redemptionAudit = db
+    .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, NULL, NULL WHERE changes() = 1`)
+    .bind(redemptionAuditId, now, userId, "recovery.redeem", userId);
+  const passkeysAudit = db
+    .prepare(
+      `${auditInsert} SELECT ?, ?, ?, ?, ?,
+         json_object('count', (SELECT COUNT(*) FROM "passkey" WHERE "userId" = ?)),
+         json_object('count', 0)
+       WHERE ${spentHere}`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      now,
+      userId,
+      "recovery.passkeys_delete",
+      userId,
+      userId,
+      redemptionAuditId,
+    );
+  const [spent] = await db.batch([
+    db
+      .prepare(
+        `UPDATE recovery_codes SET used_at = ?
+         WHERE code_hash = ? AND used_at IS NULL AND ${notBanned}`,
+      )
+      .bind(now, codeHash),
+    redemptionAudit,
+    passkeysAudit,
+    db
+      .prepare(`DELETE FROM "passkey" WHERE "userId" = ? AND ${spentHere}`)
+      .bind(userId, redemptionAuditId),
+    db
+      .prepare(`DELETE FROM "session" WHERE "userId" = ? AND ${spentHere}`)
+      .bind(userId, redemptionAuditId),
+  ]);
+  return spent?.meta.changes === 1 ? userId : null;
 }
 
 /**

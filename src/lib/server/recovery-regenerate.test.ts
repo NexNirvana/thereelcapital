@@ -44,9 +44,15 @@ describe("regenerateRecoveryCodes", () => {
     const codes = await codesOf(response);
     expect(codes).toHaveLength(RECOVERY_CODE_COUNT);
     expect(await redeemRecoveryCode(db, codes[0] ?? "", secret)).toBe("user-1");
-    expect(db.sqlite.query("SELECT action, actor_id, target_user_id FROM audit_log").all()).toEqual(
-      [{ action: "recovery_codes.regenerate", actor_id: "user-1", target_user_id: "user-1" }],
-    );
+    expect(
+      db.sqlite
+        .query(
+          "SELECT action, actor_id, target_user_id FROM audit_log WHERE action LIKE 'recovery_codes.%'",
+        )
+        .all(),
+    ).toEqual([
+      { action: "recovery_codes.regenerate", actor_id: "user-1", target_user_id: "user-1" },
+    ]);
   });
 
   test("leaves other users' codes alone", async () => {

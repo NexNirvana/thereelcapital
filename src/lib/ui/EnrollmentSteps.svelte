@@ -45,7 +45,7 @@
   const copy = {
     recovery: {
       title: ["Registra tu", "nueva passkey."],
-      lead: "Cerramos tus sesiones anteriores. Tienes 15 minutos para registrar una passkey nueva con huella, rostro o PIN.",
+      lead: "Cerramos tus sesiones y eliminamos tus passkeys anteriores. Tienes 15 minutos para registrar una passkey nueva con huella, rostro o PIN.",
       codes:
         "Estos son tus nuevos códigos de recuperación. Se muestran una sola vez y los anteriores ya no sirven.",
     },
