@@ -61,7 +61,12 @@ describe("ClientCoordinator store", () => {
       };
     });
     expect(result.counters).toEqual([{ consumed: 2 }]);
-    expect(result.versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(result.versions).toEqual([
+      { version: 1 },
+      { version: 2 },
+      { version: 3 },
+      { version: 4 },
+    ]);
   });
 
   it("never shares rows between two clients", async () => {

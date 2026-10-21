@@ -149,6 +149,11 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // the store as well as by the guard, so a race or a bug cannot create one.
     `CREATE UNIQUE INDEX positions_one_open_per_symbol ON positions (mode, symbol) WHERE status != 'CLOSED'`,
   ],
+  [
+    // docs/domain-rules.md §1: an entry intent keeps the SIZE, quote and point value it was sized
+    // with. The first two had columns already; the point value did not. Null for non-entry intents.
+    `ALTER TABLE intents ADD COLUMN point_value INTEGER CHECK (point_value IS NULL OR point_value > 0)`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */
