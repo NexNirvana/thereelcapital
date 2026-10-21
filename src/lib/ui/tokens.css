@@ -1,0 +1,18 @@
+/* docs/design-system.md#tokens. Single dark theme; no color outside these. */
+:root {
+  color-scheme: dark;
+  --bg: #101010;
+  --surface: #161616;
+  --rule: #333333;
+  --rule-strong: #777777;
+  --text: #f3f3f0;
+  --text-muted: #b3b3b3;
+  --text-dim: #7a7a7a;
+  --done: #2a2a2a;
+  --on-primary: #0a0a0a;
+  --focus: #f3f3f0;
+
+  --font: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sidebar-width: 190px;
+  --target: 44px;
+}
