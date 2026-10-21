@@ -12,6 +12,7 @@
     "engine/test",
     "worker-configuration.d.ts",
     "engine/worker-configuration.d.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "scripts"
   ]
 }

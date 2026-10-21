@@ -17,9 +17,10 @@
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "test": "bun run test:unit && bun run test:engine && bun run test:e2e",
-    "test:unit": "bun test",
+    "test:unit": "bun test ./src/lib ./scripts",
     "test:engine": "vitest run -c engine/vitest.config.ts",
     "test:e2e": "playwright test",
+    "review": "bun scripts/review-pr.ts",
     "admin:create": "bun scripts/admin-create.ts",
     "prepare": "git config core.hooksPath .githooks && svelte-kit sync"
   },
