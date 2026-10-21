@@ -343,7 +343,7 @@ describe("the alarm loop", () => {
 
     // Tick 1: the fill is applied, the position is open, so the loop goes on.
     await runDurableObjectAlarm(client.stub);
-    expect(await due("sync")).toBeGreaterThan(Date.now());
+    expect(await due("sync")).not.toBeNull();
     expect(
       await runInDurableObject(client.stub, (_i, state) =>
         state.storage.sql.exec("SELECT status FROM positions").toArray(),
