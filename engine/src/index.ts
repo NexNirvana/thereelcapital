@@ -28,6 +28,13 @@ import {
   type PrepareEntryResult,
   type SendEntryResult,
 } from "./entries.ts";
+import {
+  optionChain,
+  optionContract,
+  optionExpirations,
+  type OptionChain,
+  type OptionContractView,
+} from "./chain.ts";
 import { writeEvent } from "./events.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { migrate } from "./schema.ts";
@@ -40,6 +47,9 @@ import {
   ExitArgs,
   failure,
   ModeOnlyArgs,
+  OptionChainArgs,
+  OptionContractArgs,
+  OptionExpirationsArgs,
   PrepareEntryArgs,
   SendEntryArgs,
   success,
@@ -109,6 +119,32 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   limits(input: unknown): EngineResult<EntryLimits> {
     return this.enter("limits", ModeOnlyArgs, input, () =>
       success(entryLimits({ sql: this.ctx.storage.sql, now: engineNow(this.env) })),
+    );
+  }
+
+  /** Expiration dates of an underlying's options. Read-only. */
+  optionExpirations(
+    input: unknown,
+  ): Promise<EngineResult<{ underlying: string; expirations: ReadonlyArray<string> }>> {
+    return this.enterWithBroker(
+      "optionExpirations",
+      OptionExpirationsArgs,
+      input,
+      optionExpirations,
+    );
+  }
+
+  /** One snapshot of an expiration's chain, read on demand and closed. Read-only. */
+  optionChain(input: unknown): Promise<EngineResult<OptionChain>> {
+    return this.enterWithBroker("optionChain", OptionChainArgs, input, (ctx, args) =>
+      optionChain({ ...ctx, stamp: () => engineNow(this.env) }, args),
+    );
+  }
+
+  /** The underlying, expiration, strike and right behind an option symbol. Read-only. */
+  optionContract(input: unknown): Promise<EngineResult<OptionContractView>> {
+    return this.enterWithBroker("optionContract", OptionContractArgs, input, (ctx, args) =>
+      optionContract(ctx, args),
     );
   }
 

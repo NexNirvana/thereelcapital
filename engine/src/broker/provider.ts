@@ -4,7 +4,12 @@
 // broker (CLAUDE.md, SIM only).
 
 import type { BrokerAdapterShape } from "./adapter.ts";
-import { makeLocalSim, type LocalSim, type LocalSimConfig } from "./local-sim/sim.ts";
+import {
+  makeLocalSim,
+  type LocalSim,
+  type LocalSimConfig,
+  type SimSymbol,
+} from "./local-sim/sim.ts";
 import { selectBroker, type BrokerSettings } from "./select.ts";
 import { makeTradeStationAdapter } from "../tradestation/adapter.ts";
 import type { AccessTokenSource } from "../tradestation/http.ts";
@@ -18,11 +23,47 @@ const localSims = new Map<string, LocalSim>();
 
 const usd = (dollars: number) => dollars * 1_000_000;
 
+/** The Fridays at least two weeks out: the dev chain is always in the future, with no dates kept in the repo. */
+function developmentExpirations(now: number): ReadonlyArray<Date> {
+  const first = new Date(now + 14 * 24 * 60 * 60 * 1000);
+  first.setUTCDate(first.getUTCDate() + ((5 - first.getUTCDay() + 7) % 7));
+  return [first, new Date(first.getTime() + 7 * 24 * 60 * 60 * 1000)];
+}
+
+/** MSFT options: 395 to 405 calls and puts, the 405 put listed but with no market. */
+function developmentOptions(now: number): ReadonlyArray<SimSymbol> {
+  const two = (value: number) => String(value).padStart(2, "0");
+  return developmentExpirations(now).flatMap((date) =>
+    [395, 400, 405].flatMap((strike) =>
+      (["call", "put"] as const).map((right) => {
+        const yymmdd = `${two(date.getUTCFullYear() % 100)}${two(date.getUTCMonth() + 1)}${two(date.getUTCDate())}`;
+        const premium = right === "call" ? usd(405 - strike + 2) : usd(strike - 395 + 2);
+        return {
+          symbol: `MSFT ${yymmdd}${right === "call" ? "C" : "P"}${strike}`,
+          assetType: "option" as const,
+          bid: premium,
+          ask: premium + usd(0.1),
+          noChainMarket: strike === 405 && right === "put",
+          option: {
+            underlying: "MSFT",
+            expiration: date.toISOString().slice(0, 10),
+            strike: usd(strike),
+            right,
+          },
+        };
+      }),
+    ),
+  );
+}
+
 const developmentConfig = (now: () => number, seed: string): LocalSimConfig => ({
   now,
   seed,
   accounts: [{ accountId: "SIM-1" }],
-  symbols: [{ symbol: "MSFT", assetType: "equity", bid: usd(100), ask: usd(101) }],
+  symbols: [
+    { symbol: "MSFT", assetType: "equity", bid: usd(100), ask: usd(101) },
+    ...developmentOptions(now()),
+  ],
 });
 
 /**
