@@ -30,6 +30,22 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 - **Mode**: SIM and REAL data never mix; REAL is rejected.
 - **Degraded states**: each row of the [degraded-states table](order-lifecycle.md#degraded-states).
 
+### Local-sim broker
+
+`engine/src/broker/local-sim/` implements the same `BrokerAdapter` service as the TradeStation adapter, in memory and without any network call. Time comes from an injected `now` and order ids from a `seed`, so a scenario replays identically. It is labelled «simulación local» (`LOCAL_SIM_LABEL`, on every account it returns). It is selected only with `BROKER=local-sim` and `ENVIRONMENT` set to `development` or `test`; a missing or production `ENVIRONMENT` refuses it (`engine/src/broker/select.ts`).
+
+Fills are `instant`, `partial` (some now, the rest later or never) or `delayed`. Faults are queued with `inject` and each fires once (or `times` times):
+
+| Fault | What the engine sees |
+| --- | --- |
+| `dropPlaceResponse` | the order exists, the caller gets `Timeout` |
+| `rejectAfterAck` | the place is acknowledged, the next read shows REJECTED with no fill |
+| `fillRacesCancel` | the cancel is refused because the order filled first |
+| `quoteStale`, `quoteMissing` | a delayed quote with an old trade time, or no quote for the symbol |
+| `authExpired`, `rateLimited` | `AuthExpired` or `RateLimited` (with or without a retry hint) on the next call, optionally of one operation |
+
+A repeated `OrderConfirmID` returns the order it already made; whether TradeStation rejects or returns the original is unverified (**verify** in the SIM spike).
+
 ## Security
 
 - Public sign-up → rejected. No route sends email.

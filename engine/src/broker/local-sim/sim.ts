@@ -18,7 +18,14 @@ import {
   type Quote,
   type SymbolDetails,
 } from "../adapter.ts";
-import { Rejected, type BrokerError, type BrokerOperation } from "../errors.ts";
+import {
+  AuthExpired,
+  RateLimited,
+  Rejected,
+  Timeout,
+  type BrokerError,
+  type BrokerOperation,
+} from "../errors.ts";
 
 /** How a MARKET order fills after it is accepted. */
 export type FillMode =
@@ -27,6 +34,33 @@ export type FillMode =
   | { readonly kind: "partial"; readonly qty: number; readonly completeAfterMs?: number }
   /** Acknowledged now, filled in full `afterMs` later. */
   | { readonly kind: "delayed"; readonly afterMs: number };
+
+/**
+ * A scripted failure. Each injected fault fires on the first matching call (or the first `times`
+ * matching calls) and is then spent, so a scenario reads top to bottom.
+ */
+export type Fault =
+  /** The next call (of `operation`, when given) fails with AuthExpired. */
+  | { readonly kind: "authExpired"; readonly operation?: BrokerOperation }
+  /** The next call (of `operation`, when given) fails with RateLimited. */
+  | {
+      readonly kind: "rateLimited";
+      readonly operation?: BrokerOperation;
+      readonly retryAfterMs?: number;
+    }
+  /** The next accepted placeOrder creates the order but the caller gets Timeout. */
+  | { readonly kind: "dropPlaceResponse" }
+  /** The next accepted placeOrder is acknowledged, then the order turns REJECTED on the next call. */
+  | { readonly kind: "rejectAfterAck" }
+  /** The next cancel of an open order loses the race: the order fills first and the cancel is refused. */
+  | { readonly kind: "fillRacesCancel" }
+  /** The next quotes call returns `symbol` as delayed, with an old trade time. */
+  | { readonly kind: "quoteStale"; readonly symbol: string }
+  /** The next quotes call leaves `symbol` out. */
+  | { readonly kind: "quoteMissing"; readonly symbol: string };
+
+/** How old a stale quote's trade time is. */
+export const STALE_QUOTE_AGE_MS = 15 * 60 * 1000;
 
 export interface SimSymbol {
   readonly symbol: string;
@@ -85,6 +119,8 @@ interface SimOrder {
   filledQty: number;
   closedAt: number | null;
   ended: "CANCELED" | "REJECTED" | null;
+  /** Set by the rejectAfterAck fault: the next call turns the order REJECTED. */
+  rejectOnNextCall: boolean;
   schedule: ScheduledFill[];
 }
 
@@ -101,6 +137,8 @@ export interface LocalSim {
   /** Quote and fill-mode controls for scripting scenarios. */
   readonly setFill: (fill: FillMode) => void;
   readonly setQuote: (symbol: string, update: Partial<QuoteState>) => void;
+  /** Queue a scripted failure; it fires `times` times (default once). */
+  readonly inject: (fault: Fault, times?: number) => void;
 }
 
 const isEntry = (action: OrderRequest["tradeAction"]) => action === "BUY" || action === "BUYTOOPEN";
@@ -139,6 +177,7 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
       },
     ]),
   );
+  const faults: Array<{ readonly fault: Fault; remaining: number }> = [];
   const orders = new Map<string, SimOrder>();
   const orderIdByConfirmId = new Map<string, string>();
   const positions = new Map<string, SimPosition>();
@@ -147,12 +186,38 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
   const reject = (operation: BrokerOperation, code: string, reason: string) =>
     Effect.fail(new Rejected({ operation, code, reason }));
 
-  /** Every operation applies the fills that came due before it looks at state. */
+  /** Spends and returns the first queued fault that `matches`. */
+  function takeFault<F extends Fault>(matches: (fault: Fault) => fault is F): F | undefined {
+    for (const [index, queued] of faults.entries()) {
+      if (matches(queued.fault)) {
+        queued.remaining -= 1;
+        if (queued.remaining <= 0) faults.splice(index, 1);
+        return queued.fault;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Every operation first meets the access faults, then applies the fills that came due before it
+   * looks at state.
+   */
   const call = <A>(
     operation: BrokerOperation,
     body: (operation: BrokerOperation) => Effect.Effect<A, BrokerError>,
   ): Effect.Effect<A, BrokerError> =>
     Effect.suspend(() => {
+      const access = takeFault(
+        (f): f is Extract<Fault, { kind: "authExpired" | "rateLimited" }> =>
+          (f.kind === "authExpired" || f.kind === "rateLimited") &&
+          (f.operation === undefined || f.operation === operation),
+      );
+      if (access?.kind === "authExpired") return Effect.fail(new AuthExpired({ operation }));
+      if (access?.kind === "rateLimited") {
+        return Effect.fail(
+          new RateLimited({ operation, retryAfterMs: access.retryAfterMs ?? null }),
+        );
+      }
       settle();
       return body(operation);
     });
@@ -182,13 +247,23 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
     if (order.filledQty === order.request.quantity) order.closedAt = at;
   }
 
+  function applyDueFills(order: SimOrder, at: number): void {
+    const due = order.schedule.filter((f) => f.at <= at).sort((a, b) => a.at - b.at);
+    order.schedule = order.schedule.filter((f) => f.at > at);
+    for (const f of due) applyFill(order, f.qty, f.at);
+  }
+
   function settle(): void {
     const at = now();
     for (const order of orders.values()) {
       if (order.ended !== null) continue;
-      const due = order.schedule.filter((f) => f.at <= at).sort((a, b) => a.at - b.at);
-      order.schedule = order.schedule.filter((f) => f.at > at);
-      for (const f of due) applyFill(order, f.qty, f.at);
+      if (order.rejectOnNextCall) {
+        order.ended = "REJECTED";
+        order.closedAt = at;
+        order.schedule = [];
+      } else {
+        applyDueFills(order, at);
+      }
     }
   }
 
@@ -348,7 +423,24 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
         const found: Quote[] = [];
         for (const symbol of requested) {
           const q = quotes.get(symbol);
-          if (q !== undefined) found.push({ symbol, ...q, receivedAt: received });
+          if (q === undefined) continue;
+          const missing = takeFault(
+            (f): f is Extract<Fault, { kind: "quoteMissing" }> =>
+              f.kind === "quoteMissing" && f.symbol === symbol,
+          );
+          if (missing !== undefined) continue;
+          const stale = takeFault(
+            (f): f is Extract<Fault, { kind: "quoteStale" }> =>
+              f.kind === "quoteStale" && f.symbol === symbol,
+          );
+          found.push({
+            symbol,
+            ...q,
+            ...(stale === undefined
+              ? {}
+              : { isDelayed: true, tradeTime: received - STALE_QUOTE_AGE_MS }),
+            receivedAt: received,
+          });
         }
         return Effect.succeed(found);
       }),
@@ -408,7 +500,7 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
         // A repeated OrderConfirmID returns the order it already made (verify against SIM).
         const existing = orderIdByConfirmId.get(request.orderConfirmId);
         if (existing !== undefined) return Effect.succeed({ orderId: existing });
-        return Effect.map(validate(operation, request), (priceMicros) => {
+        return Effect.flatMap(validate(operation, request), (priceMicros) => {
           sequence += 1;
           const openedAt = now();
           const order: SimOrder = {
@@ -419,12 +511,26 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
             filledQty: 0,
             closedAt: null,
             ended: null,
+            rejectOnNextCall: false,
             schedule: scheduleFor(request.quantity, openedAt),
           };
           orders.set(order.orderId, order);
           orderIdByConfirmId.set(request.orderConfirmId, order.orderId);
-          settle();
-          return { orderId: order.orderId };
+          const rejectsLater = takeFault(
+            (f): f is Extract<Fault, { kind: "rejectAfterAck" }> => f.kind === "rejectAfterAck",
+          );
+          if (rejectsLater !== undefined) {
+            order.rejectOnNextCall = true;
+            order.schedule = [];
+          }
+          applyDueFills(order, openedAt);
+          const dropped = takeFault(
+            (f): f is Extract<Fault, { kind: "dropPlaceResponse" }> =>
+              f.kind === "dropPlaceResponse",
+          );
+          return dropped === undefined
+            ? Effect.succeed({ orderId: order.orderId })
+            : Effect.fail(new Timeout({ operation }));
         });
       }),
 
@@ -436,6 +542,14 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
         }
         if (statusOf(order) === "FILLED" || order.ended !== null) {
           return reject(operation, "ORDER_NOT_CANCELABLE", `Order ${orderId} is already closed`);
+        }
+        const racing = takeFault(
+          (f): f is Extract<Fault, { kind: "fillRacesCancel" }> => f.kind === "fillRacesCancel",
+        );
+        if (racing !== undefined) {
+          applyFill(order, order.request.quantity - order.filledQty, now());
+          order.schedule = [];
+          return reject(operation, "ORDER_NOT_CANCELABLE", `Order ${orderId} filled first`);
         }
         order.ended = "CANCELED";
         order.closedAt = now();
@@ -490,6 +604,9 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
     setQuote: (symbol, update) => {
       const q = quotes.get(symbol);
       if (q !== undefined) Object.assign(q, update);
+    },
+    inject: (fault, times = 1) => {
+      faults.push({ fault, remaining: times });
     },
   };
 }

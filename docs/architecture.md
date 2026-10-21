@@ -90,7 +90,7 @@ src/
 engine/
   src/index.ts         # export class ClientCoordinator; default fetch → 404
   src/coordinator/     # DO implementation, SQLite migrations, sync loop
-  src/broker/          # BrokerAdapter, tradestation/, local-sim/
+  src/broker/          # BrokerAdapter service + typed errors, select.ts, tradestation/, local-sim/ (test-plan.md#local-sim-broker)
   src/crypto.ts        # AES-GCM for credentials
   wrangler.jsonc
 migrations/            # D1 SQL (Better Auth generated + app)
