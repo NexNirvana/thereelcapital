@@ -42,9 +42,11 @@ Trading requires all steps. Using, regenerating or revoking a link ends every en
 
 **Sign-in:** passkey only.
 
-**Recovery (self-service):** recovery code → atomic `UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL` (rate-limited) → revoke all sessions → short-lived enrollment session that can only register a new passkey → new codes.
+**Recovery (self-service):** recovery code → atomic `UPDATE recovery_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND <user not banned> RETURNING user_id` (rate-limited; the owner comes from the matching hash, so the client types only the code) → revoke all sessions → short-lived enrollment session that can only register a new passkey → new codes.
 
 **Recovery (admin-controlled):** the admin verifies identity outside the app, then revokes sessions, deletes passkeys and codes, and generates a new activation link to share personally. It requires a fresh admin session, is audited, and never logs the admin in as the client.
+
+A set is 10 codes (`RECOVERY_CODE_COUNT`), each 25 symbols from a 31-symbol alphabet without ambiguous characters (about 124 bits, `ABCDE-FGHJK-…`), drawn with WebCrypto and hashed with `hashToken("recovery-code", …)` over the normalized form (`src/lib/server/recovery-codes.ts`). Codes have no expiry of their own: they stay valid until used or replaced. Issuing a new set deletes every earlier code.
 
 Recovery codes and activation tokens are high-entropy random strings stored as HMAC-SHA-256 with a server key.
 
