@@ -5,7 +5,7 @@ import { localSimFor } from "../src/broker/provider.ts";
 import { makeLocalSim, type LocalSim } from "../src/broker/local-sim/sim.ts";
 import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
 import { createCipher } from "../src/crypto.ts";
-import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
+import { entryLimits, prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { holdForReconciliation, TokenRefresher } from "../src/refresh.ts";
 import { makeTradeStationAdapter } from "../src/tradestation/adapter.ts";
 import accountsFixture from "./fixtures/accounts.json";
@@ -548,6 +548,35 @@ describe("sendEntry", () => {
     expect(
       script.calls.every((call) => call.url.startsWith("https://sim-api.tradestation.com/v3/")),
     ).toBe(true);
+  });
+});
+
+describe("entryLimits", () => {
+  it("counts the entries and slots that block a new entry, today only", async () => {
+    const client = await newClient();
+    const counts = await inClient(client, async (ctx, state) => {
+      const empty = entryLimits(ctx);
+      await send(ctx, "AAPL");
+      const afterOne = entryLimits(ctx);
+      // Yesterday's consumed entries belong to another market day.
+      state.storage.sql.exec(
+        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', '2026-11-03', 3, 0)",
+      );
+      return { empty, afterOne, withOldDay: entryLimits(ctx) };
+    });
+    expect(counts.empty).toEqual({ positions: 0, maxPositions: 2, entriesToday: 0, maxEntries: 3 });
+    expect(counts.afterOne).toMatchObject({ positions: 1, entriesToday: 1 });
+    expect(counts.withOldDay).toEqual(counts.afterOne);
+  });
+
+  it("is served by the limits RPC, SIM only and without extra fields", async () => {
+    const client = await newClient();
+    expect(await client.stub.limits({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: { positions: 0, maxPositions: 2, entriesToday: 0, maxEntries: 3 },
+    });
+    expect(await client.stub.limits({ mode: "REAL" })).toMatchObject({ ok: false });
+    expect(await client.stub.limits({ mode: "SIM", size: 1 })).toMatchObject({ ok: false });
   });
 });
 
