@@ -38,8 +38,26 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 - Title in the commit format below; body starts with `Closes #<issue>` and fills in the template.
 - Open it early as a draft; mark it ready when the commits are organized and CI passes.
 - Keep the branch current by rebasing on `main` (`git rebase origin/main`), never by merging `main` into it.
-- Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
 - Behavior changes update the relevant `docs/` file in the same PR.
+- Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
+
+### Verification and screenshots
+
+Every PR shows how it was verified, in the template's sections:
+
+- The exact commands run (check, lint, tests) and their results.
+- **UI changes:** screenshots from a real browser at desktop (about 1440px) and mobile (about 390px) width, next to the matching design in `designs/` when one exists. Upload them to the `pr-assets` branch under `<branch>/<name>.png` and embed them with `![name](https://github.com/OnishellT/thereelcapital/blob/pr-assets/<branch>/<name>.png?raw=true)`. `pr-assets` is an orphan branch for images only; it is never merged.
+- **No UI change:** state why there is nothing to show in a browser, and how the behavior was exercised instead.
+- Anything not verified is listed as such. Never claim a check you didn't run.
+
+### Review gate: CodeRabbit
+
+**No PR is merged until CodeRabbit has reviewed its final commit.**
+
+- Wait for CodeRabbit's review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review.
+- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Resolve the thread either way.
+- Pushing new commits needs a new review of those commits before merging. If the rate limit delays it, the PR waits; ask for it again with `@coderabbitai review` when the limit resets.
+- Green CI is required as well, once CI exists (#3).
 
 ### Organizing commits
 
@@ -116,6 +134,8 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 
 ### Design
 
+- **Elegant over clever.** The best code is the least code that is obviously correct. Before writing logic for a solved problem (calendars, time zones, money and decimals, cryptography, parsing, validation, retries), look for a well-chosen library; hand-roll only when none fits, and say why in the PR.
+- **No hand-kept data that changes over time.** Holidays, trading hours, fee tables, symbol lists or anything else that goes stale comes from a library, the broker's API or computed rules, never from a literal list in `src/`. Known values may appear in tests as fixtures that check the source.
 - **Simple first.** Write the most direct code that meets the issue. No speculative options, layers or generic helpers. Three similar lines beat a premature abstraction.
 - **One owner per piece of state.** Order state lives in the `ClientCoordinator` DO; identity and settings live in D1. Never copy state between them.
 - **Pure core, thin shell.** Rules live in `src/lib/domain/` as pure functions. Routes, the DO and adapters decode input, call the rules, perform IO and map the results.
@@ -161,7 +181,7 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 
 ### Dependencies
 
-- Add one only when it removes real complexity, and say why in the PR. Use `bun add` (exact versions via `bunfig.toml`) and commit `bun.lock`. No other package manager or lockfile.
+- Add one only when it removes real complexity, and say why in the PR. Check that it is maintained, licensed for us, runs in workerd (no Node-only or Bun-only APIs in Worker code), and is small enough for the Worker bundle (report the gzipped size). A young or lightly used library is acceptable only with an exact pin and tests that check its output against an authoritative source. Use `bun add` (exact versions via `bunfig.toml`) and commit `bun.lock`. No other package manager or lockfile.
 - Prefer platform APIs (WebCrypto, `fetch`, `Intl`).
 
 ### Bun

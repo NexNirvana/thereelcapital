@@ -4,6 +4,18 @@ Closes #
 
 ## How it was verified
 
+Commands run and their results:
+
+```
+```
+
 - [ ] Tests added or updated
 - [ ] Docs updated if behavior changed
-- [ ] UI checked against the design at desktop and mobile widths (UI changes only)
+
+## Screenshots
+
+Desktop and mobile browser screenshots next to the design, or why there is nothing to show in a browser.
+
+## Review
+
+- [ ] CodeRabbit has reviewed the final commit, and every actionable comment is fixed or answered
