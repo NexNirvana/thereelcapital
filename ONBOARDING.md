@@ -267,18 +267,18 @@ Para implementar, configurar invitaciones y verificación de correo, passkeys co
 
 ## Decisiones posteriores (20 de octubre de 2026)
 
-Respuestas del usuario a las preguntas abiertas de `docs/open-questions.md`. Se distinguen las decisiones confirmadas de las propuestas pendientes.
+Respuestas del usuario a las preguntas abiertas de `docs/open-questions.md`. Las marcadas «decidido el 21 de octubre de 2026» las tomó el equipo por delegación del propietario, eligiendo opciones gratuitas y viables que no alteran ninguna funcionalidad confirmada.
 
 - **Scale-out que redondea a cero (confirmado):** igual que el demo. El botón queda marcado como usado y su porcentaje se suma al objetivo acumulado, pero no se envía una orden de cantidad cero. Mostrar «0 contratos por redondeo». Esto no aumenta el porcentaje realmente vendido a efectos de habilitar el trailing.
-- **Porcentaje de trailing:** confirmado que el cliente lo ajusta, con 10% inicial. *Propuesto, no confirmado:* conservar las opciones del demo: 1%, 5%, 8%, 10%, 15% y 20%.
-- **Límites del stop y del umbral de trailing:** el servidor aplica un mínimo y un máximo. Valores por defecto confirmados: stop 30% y 70% vendido de la cantidad original para habilitar el trailing, configurables por cliente. *Pendiente:* los valores mínimo y máximo.
-- **Aumentar una posición existente:** la regla de conteo está definida: cada compra intencional adicional consume una entrada diaria al recibir su primer fill; los fills parciales y los reintentos de la misma orden no consumen entradas adicionales. *Pendiente:* cómo afecta un aumento a la cantidad original, los scale-outs, el precio medio de entrada y las protecciones.
-- **Retención del historial:** *pendiente* el plazo. Órdenes, ejecuciones, eventos operativos y auditoría administrativa deben persistir entre sesiones.
+- **Porcentaje de trailing (decidido el 21 de octubre de 2026):** el cliente elige entre 1%, 5%, 8%, 10%, 15% y 20%, con 10% inicial.
+- **Límites del stop y del umbral de trailing (decidido el 21 de octubre de 2026):** el servidor los aplica. Stop entre 10% y 50% (30% por defecto). Umbral vendido para habilitar el trailing entre 30% y 90% (70% por defecto): 30% coincide con la primera salida parcial y 90% todavía deja el último 10% para el trailing.
+- **Aumentar una posición existente (decidido el 21 de octubre de 2026):** no se admite en el piloto. El servidor rechaza una compra sobre un instrumento que ya tiene una posición abierta en ese modo; el cliente puede volver a entrar después de cerrarla por completo, como una posición nueva. La regla de conteo (cada compra intencional adicional consume una entrada en su primer fill) queda definida por si se habilita más adelante.
+- **Retención y presupuesto (decidido el 21 de octubre de 2026):** órdenes, ejecuciones, eventos operativos y auditoría se conservan 6 años, siguiendo la práctica de registros de los brókers en EE. UU.; no hace falta código de borrado antes de ese plazo. Los datos de sesión y los códigos temporales caducan según Better Auth. Presupuesto del piloto: US$0 al mes con los planes gratuitos de Cloudflare, Resend, Blacksmith y los revisores; Workers Paid (US$5 al mes) solo cuando se alcancen los umbrales de `docs/architecture.md#costs-and-free-tier-limits`.
 - **Revisión técnica de la arquitectura propuesta:**
   - Un Durable Object **por cliente**, en lugar de uno por cliente y modo. Cada registro, contador e identificador sigue separado por modo, y ese objeto es el único que se comunica con TradeStation para el cliente.
   - El Durable Object reside en un segundo Worker del mismo repositorio, porque el adaptador de SvelteKit no permite exportarlo.
   - Detalle en `docs/decisions.md` (T1–T13).
-- **Tipografía, panel de administración y Better Auth:** confirmados; ver [Dirección visual confirmada](#dirección-visual-confirmada), [Panel de administración completo](#panel-de-administración-completo) y [Autenticación y recuperación](#autenticación-y-recuperación). *Pendiente:* el proveedor de envío de correo para invitaciones y códigos.
+- **Tipografía, panel de administración y Better Auth:** confirmados; ver [Dirección visual confirmada](#dirección-visual-confirmada), [Panel de administración completo](#panel-de-administración-completo) y [Autenticación y recuperación](#autenticación-y-recuperación). **Proveedor de correo (decidido el 21 de octubre de 2026): Resend**, plan gratuito (3.000 correos al mes, 100 al día, dominio propio `thereelcapital.com`), mediante su API HTTP desde el Worker web.
 
 ## Fuentes técnicas
 

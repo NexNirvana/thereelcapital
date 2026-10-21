@@ -28,13 +28,27 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | # | Decision | Open part |
 | --- | --- | --- |
 | D18 | A scale-out step that rounds to 0 is marked used, its % counts toward the target, no order is sent, and the UI says «0 contratos por redondeo»; it doesn't count toward trailing | — |
-| D19 | Trailing % chosen by the client, default 10 | allowed set (proposed 1/5/8/10/15/20) |
-| D20 | Stop % and unlock % have server-enforced bounds; defaults 30/70 | bound values |
-| D21 | Each additional BUY consumes an entry on its first fill | effect of additions on the position, so additions are rejected for now |
-| D22 | History and audit persist | retention period |
+| D19 | Trailing % chosen by the client from {1, 5, 8, 10, 15, 20}, default 10 | — |
+| D20 | Server-enforced bounds: stop % 10–50 (default 30), trailing-unlock % 30–90 (default 70) | — |
+| D21 | Additions to an open position are not supported in the pilot: a BUY on an instrument already open in that mode is rejected; re-entry after a full close is a new position. The counting rule (an additional BUY consumes an entry on its first fill) stays defined for later | — |
+| D22 | Orders, fills, events and audit are kept 6 years; no deletion code until then. Pilot budget US$0/month on free tiers | — |
 | D23 | IBM Plex Mono 400/500/600, self-hosted | — |
 | D24 | Full admin panel in the pilot | — |
-| D25 | Better Auth | email provider |
+| D25 | Better Auth; email through Resend (free plan) | — |
+
+### Delegated decisions of 2026-10-21
+
+The owner delegated D19–D22 and the email provider, asking for free, feasible options that keep every confirmed feature.
+
+| Decision | Chosen | Why | Rejected |
+| --- | --- | --- | --- |
+| Email provider | Resend free plan (3,000 emails/month, 100/day, custom domain) via its HTTP API with `fetch` | free, works from Workers without SDK or SMTP, DNS records live on Cloudflare; a pilot sends a few invitations and codes a day | Cloudflare Email Sending (beta; arbitrary recipients need Workers Paid), Postmark (100/month free), Amazon SES (AWS account, sandbox) |
+| Trailing % set | {1, 5, 8, 10, 15, 20}, default 10 | the set from the demo the owner proposed; covers tight to wide trails | free-form input (error-prone) |
+| Stop bounds | 10–50 %, default 30 | below 10 % a premium stop fires on normal option noise; above 50 % it stops being a protective stop | unbounded |
+| Unlock bounds | 30–90 %, default 70 | 30 % is the first scale-out step; 90 % still leaves the last 10 % to trail | values that can never unlock (> 90 %) or unlock before any sale (< 30 %) |
+| Adding to a position | not supported in the pilot | simplest rule with no new behavior to get wrong; re-entry after a full close still works | new-position semantics (uses a slot, confusing with the 2-position limit), merging (redefines base, steps, average and protections) |
+| Retention | 6 years for orders, fills, events and audit | follows US broker recordkeeping practice (SEC Rule 17a-4); the data is tiny next to the free 5 GB | 1 year (too short for disputes and taxes), indefinite (no bound to plan storage against) |
+| Budget | US$0/month on free tiers; Workers Paid (US$5/month) on the triggers in [architecture.md](architecture.md#costs-and-free-tier-limits) | the pilot fits the free limits | paying up front |
 
 ## Technical decisions of 2026-10-20
 
