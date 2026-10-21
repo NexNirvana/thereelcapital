@@ -64,6 +64,16 @@ export const accessErrors = {
     code: "NO_SESSIONS",
     message: "El cliente no tiene sesiones abiertas.",
   },
+  ownAccount: {
+    status: 403,
+    code: "OWN_ACCOUNT",
+    message: "No puedes recuperar tu propia cuenta. Pide a otro administrador que lo haga.",
+  },
+  adminDisabled: {
+    status: 409,
+    code: "ADMIN_DISABLED",
+    message: "El administrador está desactivado y no podría entrar con un enlace nuevo.",
+  },
   unconfirmed: {
     status: 400,
     code: "UNCONFIRMED",
@@ -172,7 +182,11 @@ export interface ClientDetail {
 
 type Target = { id: string; email: string; banned: boolean; passkeys: number };
 
-async function loadTarget<S extends AccessStatement>(db: AccessDb<S>, rawId: string) {
+async function loadTarget<S extends AccessStatement>(
+  db: AccessDb<S>,
+  rawId: string,
+  role: "user" | "admin" = "user",
+) {
   const id = decode(ClientId, rawId);
   const row = await db
     .prepare(
@@ -184,8 +198,9 @@ async function loadTarget<S extends AccessStatement>(db: AccessDb<S>, rawId: str
     .bind(id)
     .first();
   const profile = row === null ? null : Schema.decodeUnknownSync(Profile)(row);
-  // Admins are not clients: they are never a target, and look the same as a missing id.
-  if (profile === null || profile.role !== "user")
+  // Client actions never reach an admin (it looks like a missing id); only admin recovery asks
+  // for role "admin", and then a client looks like a missing id.
+  if (profile === null || profile.role !== role)
     error(404, "Cliente no encontrado.", { code: "NOT_FOUND" });
   return profile;
 }
@@ -264,7 +279,8 @@ type Context<S extends AccessStatement> = { db: AccessDb<S> };
 
 // Admin and a session under 10 minutes old are required (the first throws 401/403, the second
 // becomes a result the screen offers re-auth for); then the target must be a client.
-async function guarded<L extends GuardLocals, S extends AccessStatement, T>(
+async function guardedAs<L extends GuardLocals, S extends AccessStatement, T>(
+  role: "user" | "admin",
   event: GuardEvent<L>,
   db: AccessDb<S>,
   targetId: string,
@@ -280,7 +296,7 @@ async function guarded<L extends GuardLocals, S extends AccessStatement, T>(
     }
     throw failure;
   }
-  const profile = await loadTarget(db, targetId);
+  const profile = await loadTarget(db, targetId, role);
   return run(actor, {
     id: profile.id,
     email: profile.email,
@@ -288,6 +304,14 @@ async function guarded<L extends GuardLocals, S extends AccessStatement, T>(
     passkeys: profile.passkeys,
   });
 }
+
+const guarded = <L extends GuardLocals, S extends AccessStatement, T>(
+  event: GuardEvent<L>,
+  db: AccessDb<S>,
+  targetId: string,
+  now: number,
+  run: (actor: Actor, target: Target) => Promise<Outcome<T>>,
+) => guardedAs("user", event, db, targetId, now, run);
 
 const refuse = (error: Failure): { ok: false; error: Failure } => ({ ok: false, error });
 
@@ -458,6 +482,51 @@ export function revokeAllSessions<L extends GuardLocals, S extends AccessStateme
 // The admin states they verified the client outside the app; the check is the server's, not the form's.
 const RecoveryForm = Schema.Struct({ verified: Schema.Literal("on") });
 
+type RecoveryAction = "client.recover" | "admin.recover";
+
+// One batch for both targets, with a single audit row (counts only).
+async function recoverTarget<S extends AccessStatement>(
+  db: AccessDb<S>,
+  actor: Actor,
+  target: Target,
+  action: RecoveryAction,
+  now: number,
+): Promise<Issued> {
+  const link = await newInvitation(now);
+  await db.batch([
+    // First, so the counts are those of the state being replaced.
+    db
+      .prepare(
+        `${auditInsert} VALUES (?, ?, ?, ?, ?,
+           json_object('passkeys', (SELECT COUNT(*) FROM "passkey" WHERE "userId" = ?),
+             'unusedCodes', (SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL),
+             'sessions', (SELECT COUNT(*) FROM "session" WHERE "userId" = ?)),
+           json_object('passkeys', 0, 'unusedCodes', 0, 'sessions', 0, 'linkOpen', json('true')))`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        now,
+        actor.user.id,
+        action,
+        target.id,
+        target.id,
+        target.id,
+        target.id,
+      ),
+    db
+      .prepare(
+        `UPDATE invitations SET revoked_at = ?
+         WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`,
+      )
+      .bind(now, target.id),
+    db.prepare(`DELETE FROM "passkey" WHERE "userId" = ?`).bind(target.id),
+    db.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(target.id),
+    db.prepare(`DELETE FROM recovery_codes WHERE user_id = ?`).bind(target.id),
+    insertInvitation(db, target.id, link, actor),
+  ]);
+  return { ok: true, issued: { token: link.token, expiresAt: link.expiresAt } };
+}
+
 /**
  * Admin-controlled recovery: ends every session, deletes every passkey and recovery code, closes
  * the open link and issues a new one, in one batch with a single audit row (counts only). The
@@ -479,40 +548,54 @@ export function recoverClient<L extends GuardLocals, S extends AccessStatement>(
     ) {
       return refuse(accessErrors.unconfirmed);
     }
-    const link = await newInvitation(now);
-    await db.batch([
-      // First, so the counts are those of the state being replaced.
-      db
-        .prepare(
-          `${auditInsert} VALUES (?, ?, ?, ?, ?,
-             json_object('passkeys', (SELECT COUNT(*) FROM "passkey" WHERE "userId" = ?),
-               'unusedCodes', (SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL),
-               'sessions', (SELECT COUNT(*) FROM "session" WHERE "userId" = ?)),
-             json_object('passkeys', 0, 'unusedCodes', 0, 'sessions', 0, 'linkOpen', json('true')))`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          now,
-          actor.user.id,
-          "client.recover",
-          target.id,
-          target.id,
-          target.id,
-          target.id,
-        ),
-      db
-        .prepare(
-          `UPDATE invitations SET revoked_at = ?
-           WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`,
-        )
-        .bind(now, target.id),
-      db.prepare(`DELETE FROM "passkey" WHERE "userId" = ?`).bind(target.id),
-      db.prepare(`DELETE FROM "session" WHERE "userId" = ?`).bind(target.id),
-      db.prepare(`DELETE FROM recovery_codes WHERE user_id = ?`).bind(target.id),
-      insertInvitation(db, target.id, link, actor),
-    ]);
-    return { ok: true, issued: { token: link.token, expiresAt: link.expiresAt } };
+    return recoverTarget(db, actor, target, "client.recover", now);
   });
+}
+
+/**
+ * Admin-run recovery of ANOTHER admin (D31), same effects as `recoverClient` with the audit
+ * action `admin.recover`. Needs a fresh session, refuses the actor's own account (a locked-out
+ * admin has no session anyway; a signed-in one must not strip their own passkeys) and a disabled
+ * admin. Clients never reach it: `loadTarget` is asked for role "admin".
+ */
+export function recoverAdmin<L extends GuardLocals, S extends AccessStatement>(
+  event: GuardEvent<L>,
+  { db }: Context<S>,
+  targetId: string,
+  form: unknown,
+  now = Date.now(),
+): Promise<Issued> {
+  return guardedAs("admin", event, db, targetId, now, async (actor, target) => {
+    if (target.id === actor.user.id) return refuse(accessErrors.ownAccount);
+    if (target.banned) return refuse(accessErrors.adminDisabled);
+    if (
+      Schema.decodeUnknownResult(RecoveryForm, { onExcessProperty: "error" })(form)._tag ===
+      "Failure"
+    ) {
+      return refuse(accessErrors.unconfirmed);
+    }
+    return recoverTarget(db, actor, target, "admin.recover", now);
+  });
+}
+
+/** The recovery page's data for another admin: no credential material. */
+export async function getAdminSummary<S extends AccessStatement>(db: AccessDb<S>, rawId: string) {
+  const { id, email, banned, passkeys, unusedCodes } = await loadTarget(db, rawId, "admin");
+  return { id, email, disabled: banned === 1, passkeys, unusedCodes };
+}
+
+const AdminRow = Schema.Struct({ id: Schema.String, email: Schema.String });
+
+/** The other admins (never the signed-in one), for the list that leads to their recovery page. */
+export async function listOtherAdmins<S extends AccessStatement>(db: AccessDb<S>, selfId: string) {
+  const { results } = await db
+    .prepare(
+      `SELECT "id" AS id, "email" AS email FROM "user"
+       WHERE "role" = 'admin' AND "id" != ? ORDER BY "email"`,
+    )
+    .bind(selfId)
+    .all();
+  return Schema.decodeUnknownSync(Schema.Array(AdminRow))(results);
 }
 
 // Whole numbers typed in the form; anything else becomes NaN and fails the validators.

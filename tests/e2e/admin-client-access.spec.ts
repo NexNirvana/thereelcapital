@@ -291,3 +291,29 @@ test("the admin cannot impersonate a client or set their password", async ({ con
   expect(count(`SELECT COUNT(*) AS n FROM "session"`)).toBe(sessionsBefore);
   expect(count(`SELECT COUNT(*) AS n FROM "session" WHERE "impersonatedBy" IS NOT NULL`)).toBe(0);
 });
+
+test("an admin recovers another admin from the list on /admin, never their own account", async ({
+  context,
+  page,
+}) => {
+  const lockedOut = await seedSignedInUser(context, { role: "admin" });
+  d1(
+    `INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('${randomUUID()}','${lockedOut}','h-${randomUUID()}')`,
+  );
+  const actor = await seedSignedInUser(context, { role: "admin" });
+
+  await page.goto("/admin");
+  await page.getByRole("link", { name: `${lockedOut}@example.com` }).click();
+  await expect(page).toHaveURL(`/admin/administradores/${lockedOut}`);
+  await page.getByLabel("Verifiqué la identidad del administrador fuera de la app").check();
+  await page.getByRole("button", { name: "Iniciar recuperación" }).click();
+  const link = await page.getByRole("textbox", { name: "Enlace de activación" }).inputValue();
+  expect(link).toMatch(new RegExp(`^${origin}/activar/[A-Za-z0-9_-]{20,}$`));
+  expect(count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = '${lockedOut}'`)).toBe(0);
+  expect(audited("admin.recover", lockedOut)).toBe(1);
+
+  // Neither one's own account nor a client has this page.
+  expect((await page.request.get(`/admin/administradores/${actor}`)).status()).toBe(404);
+  const client = await seedPendingClient();
+  expect((await page.request.get(`/admin/administradores/${client.userId}`)).status()).toBe(404);
+});
