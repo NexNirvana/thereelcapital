@@ -41,9 +41,11 @@ test("shows the quantity the server computed, in read-only rows", async ({ conte
   await expect(page.locator(".summary")).toContainText("30%");
   await shoot(page, "acciones-preview");
 
-  // The review step is #26: the button stays disabled and says why.
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
-  await expect(page.getByText("La revisión de la orden todavía no está disponible.")).toBeVisible();
+  // With a preview, Revisar orden leads to the review step (order-review.spec.ts).
+  await expect(page.getByRole("link", { name: /Revisar orden/ })).toHaveAttribute(
+    "href",
+    "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=MSFT",
+  );
 });
 
 test("has no editable price, SIZE or quantity field", async ({ context, page }) => {
