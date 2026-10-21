@@ -1,0 +1,5 @@
+# Copy to .dev.vars (git-ignored) and fill in. Names only; never commit values.
+# web Worker
+BETTER_AUTH_SECRET=
+# engine Worker
+CREDENTIALS_KEY=
