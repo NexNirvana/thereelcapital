@@ -2,12 +2,12 @@
 
 | Layer | Tool | Runs against |
 | --- | --- | --- |
-| Unit | Vitest | `src/lib/domain/`, Schema decoders, crypto helpers |
-| Engine | `@cloudflare/vitest-plugin` (the renamed `vitest-pool-workers`) | `ClientCoordinator` DO + D1 with the local-sim broker, including fault injection |
-| End-to-end | Playwright | both Workers under `wrangler dev`, local-sim broker, a virtual WebAuthn authenticator |
+| Unit | `bun test` | `src/lib/domain/`, Schema decoders, crypto helpers: anything pure that runs on web-standard APIs |
+| Engine | Vitest + `@cloudflare/vitest-plugin`, launched with `bun run`, running on Node and executing tests inside workerd | `ClientCoordinator` DO + D1 with the local-sim broker, including fault injection |
+| End-to-end | Playwright (on Node) | both Workers under `wrangler dev`, local-sim broker, a virtual WebAuthn authenticator |
 | Broker SIM | manual checklist + scripted smoke | TradeStation SIM during regular session |
 
-The local-sim broker reproduces failures; it never counts as TradeStation verification. CI runs the first three on every PR.
+Only `bun test` runs on Bun; the engine and e2e layers need Node because their tools do. Unit tests import from `bun:test`, while engine tests import from `vitest`. The two runners are never mixed in one file. The local-sim broker reproduces failures; it never counts as TradeStation verification. CI runs the first three on every PR.
 
 ## Unit
 

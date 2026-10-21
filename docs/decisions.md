@@ -53,3 +53,4 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | T11 | **Admin overview by fan-out RPC** to client DOs, no read model | a few pilot clients; avoids keeping order state in two places |
 | T12 | **One production environment** (SIM) + local | YAGNI; add staging when REAL is prepared |
 | T13 | Stop/trailing **residency decided by the SIM spike** (broker StopMarket/TrailingStop vs DO monitoring) | v3 supports both order types; option support is unconfirmed |
+| T14 | **Bun** for installs, scripts, unit tests (`bun test`) and ops scripts with Bun-native APIs; Node CLIs (Vite, Wrangler, Vitest, Playwright) launched by Bun but run on Node; no Bun APIs in Worker code | user decision; production runs in workerd, and Wrangler and Playwright require Node |

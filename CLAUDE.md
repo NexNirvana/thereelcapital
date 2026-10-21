@@ -2,7 +2,7 @@
 
 Invitation-only web terminal where a few pilot clients trade US equities and long single-leg options in **their own TradeStation accounts** with **their own API key**. MARKET orders only, regular session only, SIM only for now. No charts or P&L in the terminal.
 
-Stack: SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers, with D1 and one SQLite Durable Object class. Two Workers in this repo: `web` (SvelteKit) and `engine` (the `ClientCoordinator` DO, the only component that talks to TradeStation). See `docs/architecture.md`.
+Stack: SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers, with D1 and one SQLite Durable Object class. Bun is the package manager, script runner and unit test runner; Worker code never uses Bun APIs (`docs/architecture.md#tooling-bun`). Two Workers in this repo: `web` (SvelteKit) and `engine` (the `ClientCoordinator` DO, the only component that talks to TradeStation). See `docs/architecture.md`.
 
 ## Commands
 

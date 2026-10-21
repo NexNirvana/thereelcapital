@@ -20,7 +20,7 @@ Better Auth's defaults do **not** meet our requirements in three places. Each ne
 - `admin({ adminRoles: ["admin"] })` with impersonation and password endpoints disabled through `disabledPaths` (`/admin/impersonate-user`, `/admin/set-user-password`).
 - `rateLimit: { enabled: true, storage: "database" }` (in-memory limits are per isolate on Workers) and `advanced.ipAddress.ipAddressHeaders: ["cf-connecting-ip"]`.
 - `session.freshAge`: Better Auth measures it from session creation, and its `sensitiveSessionMiddleware` does **not** check freshness. For sensitive app actions we check `now − session.createdAt < 10 min` ourselves; re-auth = a new passkey sign-in.
-- Secret in `BETTER_AUTH_SECRET` (Workers Secret). Schema via `npx auth@latest generate` → D1 migration.
+- Secret in `BETTER_AUTH_SECRET` (Workers Secret). Schema via `bunx auth@latest generate` → D1 migration.
 
 ## Flows
 
