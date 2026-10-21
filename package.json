@@ -11,8 +11,10 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
+    "test": "bun run test:unit && bun run test:engine && bun run test:e2e",
     "test:unit": "bun test",
     "test:engine": "vitest run -c engine/vitest.config.ts",
+    "test:e2e": "playwright test",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
