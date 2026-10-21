@@ -25,6 +25,8 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 
 ## Product decisions of 2026-10-20
 
+D15–D17 were never assigned; numbering continues from D18.
+
 | # | Decision | Open part |
 | --- | --- | --- |
 | D18 | A scale-out step that rounds to 0 is marked used, its % counts toward the target, no order is sent, and the UI says «0 contratos por redondeo»; it doesn't count toward trailing | — |
@@ -38,6 +40,9 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | D26 | Keep Cloudflare Web Analytics (owner, 2026-10-21): Cloudflare injects the `static.cloudflareinsights.com` beacon into production pages. It is cookieless and the only off-origin request; the app itself loads nothing from other origins, and local and e2e runs make no external requests | — |
 | D27 | Self-service recovery deletes **all** of the client's existing passkeys when a recovery code is redeemed (owner, 2026-10-21): a lost or stolen passkey stops working at once. Spending the code, revoking the sessions, deleting the passkeys and the audit rows are one D1 batch (count only, no credential material). The client's other unused codes stay valid until new ones are issued, so an interrupted recovery can be retried | — |
 | D28 | Redeeming a recovery code and opening an activation link are each rate limited to 5 attempts per 10 minutes per IP (owner, 2026-10-21; `RECOVERY_REDEEM_RATE_LIMIT`, `ACTIVATION_REDEEM_RATE_LIMIT`) | — |
+| D29 | Mobile tab bar keeps three tabs (Operar, Posiciones, Historial), as designed; Conexión is reached from the connection status in the top bar (owner, 2026-10-21) | — |
+| D30 | ETF options are allowed, but every option's regular session is treated as ending at 16:00 ET, like stock options; the 16:00–16:15 window of ETF options is not offered (owner, 2026-10-21) | — |
+| D31 | A locked-out admin is recovered by another admin through admin-run recovery (fresh session, audited, never one's own account); the last admin is recovered with `bun run admin:recover <email> --remote` from the owner's machine (owner, 2026-10-21; #109) | — |
 
 ### Delegated decisions of 2026-10-21
 
@@ -57,7 +62,7 @@ The owner delegated D19–D22, asking for free, feasible options that keep every
 | # | Decision | Why |
 | --- | --- | --- |
 | T1 | **Two Workers in one repo** (`web` SvelteKit, `engine` with the DO) | adapter-cloudflare can't export DO classes or `scheduled` (kit#13692 open; PRs #13739 and #15627 closed unmerged). Post-build export patching is unsupported |
-| T2 | **One DO per client**, mode as a column (refines ONBOARDING's "per client and mode" proposal) | one TradeStation connection serves both modes; a single owner means a single token refresher and one place for the limits. Every row and key is still mode-scoped |
+| T2 | **One DO per client**, mode as a column (refines ONBOARDING's "per client and mode" proposal; confirmed by the owner 2026-10-21) | one TradeStation connection serves both modes; a single owner means a single token refresher and one place for the limits. Every row and key is still mode-scoped |
 | T3 | **The DO is the only TradeStation gateway**, including quotes and the chain | no token sharing between Workers; one rate-limit budget per client key |
 | T4 | **Polling via DO alarms**, no HTTP streams initially (except the chain, which is stream-only) | fewer moving parts (no chunk parsing or reconnect logic); polling fits the per-key limits; revisit after the SIM spike |
 | T5 | **`OrderConfirmID` = intent id** for idempotency | TradeStation uses it to deduplicate orders; there is no other client tag |

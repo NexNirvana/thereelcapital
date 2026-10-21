@@ -83,4 +83,4 @@ Not supported in the pilot (D21): the guard in §5 rejects a BUY on an instrumen
 
 ## 10. Market calendar
 
-`isRegularSession(instrument, now)` and `sessionDate(now)` in America/New_York. Sessions, holidays and early closes come from the `market-calendar` library (equities: `NYSE`; options: `CBOE_Equity_Options`), never from hand-kept dates. The regular session is 09:30–16:00 ET, or 13:00 on early-close days. An instrument kind without an exchange calendar mapping is rejected with a clear reason.
+`isRegularSession(instrument, now)` and `sessionDate(now)` in America/New_York. Sessions, holidays and early closes come from the `market-calendar` library (equities: `NYSE`; options: `CBOE_Equity_Options`), never from hand-kept dates. The regular session is 09:30–16:00 ET, or 13:00 on early-close days. This includes ETF options, whose exchange session runs to 16:15: the app stops at 16:00 for every option (D30). An instrument kind without an exchange calendar mapping is rejected with a clear reason.

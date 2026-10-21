@@ -189,7 +189,7 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 
 ### Effect
 
-- Use it in server code and the engine for `Schema`, typed errors (`Data.TaggedError`) and services (`Context.Tag` + `Layer`) for things with IO: the broker, the clock, the email sender.
+- Use it in server code and the engine for `Schema`, typed errors (`Data.TaggedError`) and services (`Context.Tag` + `Layer`) for things with IO: the broker and the clock.
 - Keep `src/lib/domain/` and Svelte components free of Effect.
 - `Effect.retry` only on idempotent reads and token refresh. Never on order placement or cancellation.
 
