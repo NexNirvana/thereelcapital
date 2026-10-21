@@ -55,6 +55,8 @@ positions          id, mode, account_id, symbol, underlying, expiry, strike, rig
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
                    trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on
 scaleout_steps     position_id, mode, idx (0–6), state (available|pending|done|done_zero), intent_id
+oauth_attempts     state PK, mode, client_id, client_secret_enc, key_id, expires_at   -- one in flight, single use
+broker_accounts    mode, account_id, account_type (Cash|Margin)           PK(mode, account_id)
 events             id, at, mode, level, type, message, data_json   -- operational log and errors, no P&L
 ```
 

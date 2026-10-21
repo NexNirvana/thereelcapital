@@ -79,6 +79,25 @@ const MIGRATIONS: readonly (readonly string[])[] = [
        data_json TEXT
      ) STRICT`,
   ],
+  [
+    // One authorization in flight per client: the state is single use and expires, and the secret
+    // waits here encrypted until TradeStation sends the browser back with the code.
+    `CREATE TABLE oauth_attempts (
+       state TEXT PRIMARY KEY,
+       mode TEXT NOT NULL CHECK (mode IN ('SIM', 'REAL')),
+       client_id TEXT NOT NULL,
+       client_secret_enc TEXT NOT NULL,
+       key_id TEXT NOT NULL,
+       expires_at INTEGER NOT NULL
+     ) STRICT`,
+    // Active Cash and Margin accounts the key can see, as listed when the client connected.
+    `CREATE TABLE broker_accounts (
+       mode TEXT NOT NULL CHECK (mode IN ('SIM', 'REAL')),
+       account_id TEXT NOT NULL,
+       account_type TEXT NOT NULL CHECK (account_type IN ('Cash', 'Margin')),
+       PRIMARY KEY (mode, account_id)
+     ) STRICT`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */

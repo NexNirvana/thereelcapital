@@ -3,7 +3,15 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../src/schema.ts";
 
-const TABLES = ["entry_counters", "events", "intents", "positions", "scaleout_steps"];
+const TABLES = [
+  "broker_accounts",
+  "entry_counters",
+  "events",
+  "intents",
+  "oauth_attempts",
+  "positions",
+  "scaleout_steps",
+];
 
 function tableNames(sql: SqlStorage): string[] {
   return sql
@@ -53,7 +61,7 @@ describe("ClientCoordinator store", () => {
       };
     });
     expect(result.counters).toEqual([{ consumed: 2 }]);
-    expect(result.versions).toEqual([{ version: 1 }]);
+    expect(result.versions).toEqual([{ version: 1 }, { version: 2 }]);
   });
 
   it("never shares rows between two clients", async () => {
