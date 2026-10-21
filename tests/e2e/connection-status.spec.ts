@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { d1, seedSignedInUser } from "./support.ts";
+import { d1, ENGINE_NOW, seedSignedInUser } from "./support.ts";
 
 // The refresh itself talks to TradeStation from the engine and is covered against a mocked
 // TradeStation in engine/test; here a stored connection state is shown in the top bar.
@@ -18,7 +18,7 @@ const states = [
   {
     name: "expiring",
     status: "CONNECTED",
-    expiresAt: () => `${Date.now() + HOUR}`,
+    expiresAt: () => `${ENGINE_NOW + HOUR}`,
     text: "TradeStation vence pronto",
     action: "Reconectar con TradeStation",
   },

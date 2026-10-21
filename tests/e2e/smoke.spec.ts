@@ -16,8 +16,8 @@ test("the shell is served from /operar and / redirects there", async ({
 
   await page.goto("/");
   await expect(page).toHaveURL(/\/operar$/);
-  await expect(page.getByRole("heading", { name: "Operar" })).toBeVisible();
-  await expect(page.getByText("Disponible próximamente")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nueva entrada" })).toBeVisible();
+  await expect(page.getByText("Selecciona el instrumento y revisa tu orden.")).toBeVisible();
   await expect(page.getByRole("banner").getByText("SIM")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Principal" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Operar" }).first()).toHaveAttribute(
