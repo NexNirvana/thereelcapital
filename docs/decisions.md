@@ -34,15 +34,14 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | D22 | Orders, fills, events and audit are kept 6 years; no deletion code until then. Pilot budget US$0/month on free tiers | — |
 | D23 | IBM Plex Mono 400/500/600, self-hosted | — |
 | D24 | Full admin panel in the pilot | — |
-| D25 | Better Auth; email through Resend (free plan) | — |
+| D25 | Better Auth. **No email** (owner, 2026-10-21): the admin shares a single-use activation link; emails are identifiers only and are not verified | — |
 
 ### Delegated decisions of 2026-10-21
 
-The owner delegated D19–D22 and the email provider, asking for free, feasible options that keep every confirmed feature.
+The owner delegated D19–D22, asking for free, feasible options that keep every confirmed feature. The email question was then settled by the owner: no Cloudflare email option is free for arbitrary recipients (Email Sending needs Workers Paid; Email Routing only reaches verified destination addresses), so **the app sends no email**. The admin hands each client a single-use activation link (72 hours) in person, which replaces the email-OTP step; passkey-only sign-in and recovery codes are unchanged. Resend, Postmark and SES are not needed.
 
 | Decision | Chosen | Why | Rejected |
 | --- | --- | --- | --- |
-| Email provider | Resend free plan (3,000 emails/month, 100/day, custom domain) via its HTTP API with `fetch` | free, works from Workers without SDK or SMTP, DNS records live on Cloudflare; a pilot sends a few invitations and codes a day | Cloudflare Email Sending (beta; arbitrary recipients need Workers Paid), Postmark (100/month free), Amazon SES (AWS account, sandbox) |
 | Trailing % set | {1, 5, 8, 10, 15, 20}, default 10 | the set from the demo the owner proposed; covers tight to wide trails | free-form input (error-prone) |
 | Stop bounds | 10–50 %, default 30 | below 10 % a premium stop fires on normal option noise; above 50 % it stops being a protective stop | unbounded |
 | Unlock bounds | 30–90 %, default 70 | 30 % is the first scale-out step; 90 % still leaves the last 10 % to trail | values that can never unlock (> 90 %) or unlock before any sale (< 30 %) |
@@ -63,7 +62,7 @@ The owner delegated D19–D22 and the email provider, asking for free, feasible 
 | T7 | **`market-calendar`** (port of `pandas_market_calendars`, exact-pinned) for sessions, holidays and early closes; tests check it against NYSE's published dates | TradeStation has no calendar endpoint; a hand-kept date table goes stale. The port is young, so the pinned version and the fixture tests guard upgrades |
 | T8 | **App-owned hashed recovery codes** | Better Auth backup codes need TOTP 2FA and are encrypted, not hashed |
 | T9 | **Our own UV check** in the passkey `afterVerification` hooks | `@better-auth/passkey` hard-codes `requireUserVerification: false` |
-| T10 | **Email OTP only during onboarding** | Better Auth's email-OTP sign-in would otherwise bypass passkey-only sign-in |
+| T10 | **Enrollment session from an activation link** (replaces email OTP, 2026-10-21) | Better Auth needs a session to register a passkey; without email or password, a validated activation link creates a 15-minute session restricted to passkey registration |
 | T11 | **Admin overview by fan-out RPC** to client DOs, no read model | a few pilot clients; avoids keeping order state in two places |
 | T12 | **One production environment** (SIM) + local | YAGNI; add staging when REAL is prepared |
 | T13 | Stop/trailing **residency decided by the SIM spike** (broker StopMarket/TrailingStop vs DO monitoring) | v3 supports both order types; option support is unconfirmed |

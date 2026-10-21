@@ -1,6 +1,6 @@
 ---
 name: reel-security-review
-description: Use when implementing or reviewing REEL CAPITAL auth and access control — Better Auth config, invitations, email OTP, passkeys, recovery codes, sessions, admin routes, client isolation, credential encryption — and before merging any change to a route that mutates state or touches credentials.
+description: Use when implementing or reviewing REEL CAPITAL auth and access control — Better Auth config, activation links, passkeys, recovery codes, sessions, admin routes, client isolation, credential encryption — and before merging any change to a route that mutates state or touches credentials.
 ---
 
 # REEL CAPITAL security review
@@ -10,10 +10,10 @@ Spec: `docs/auth-and-security.md`. Run this checklist on the diff.
 ## Better Auth gaps (each must have a test)
 
 - [ ] Passkey UV enforced in **both** `registration.afterVerification` and `authentication.afterVerification` (the plugin itself accepts UV=false).
-- [ ] Email-OTP sign-in and verification are refused for users who already have a passkey.
+- [ ] Activation links: 32 random bytes, stored as HMAC, single use, 72 h expiry, regenerating invalidates the old one, never logged; the enrollment session they create can only register a passkey.
 - [ ] Recovery uses the app's hashed `recovery_codes` with an atomic single-use update, not Better Auth backup codes.
 - [ ] Sensitive actions check session age themselves (`sensitiveSessionMiddleware` doesn't).
-- [ ] `/admin/impersonate-user` and `/admin/set-user-password` are in `disabledPaths`. `emailAndPassword` is disabled. `emailOTP.disableSignUp` is true. Rate-limit storage is `database`, keyed by `cf-connecting-ip`.
+- [ ] `/admin/impersonate-user` and `/admin/set-user-password` are in `disabledPaths`. `emailAndPassword` is disabled and no email plugin is installed. Rate-limit storage is `database`, keyed by `cf-connecting-ip`.
 
 ## Every mutating route
 

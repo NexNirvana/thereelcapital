@@ -32,9 +32,9 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 
 ## Security
 
-- Public sign-up and `/sign-in/email-otp` for an onboarded user → rejected.
+- Public sign-up → rejected. No route sends email.
 - Passkey registration or sign-in without UV → rejected (virtual authenticator with UV off).
-- Expired or reused invitations, OTPs and recovery codes → rejected. Recovery revokes all sessions and allows only passkey enrollment.
+- Expired, reused or regenerated activation links and used recovery codes → rejected. An enrollment session can only register a passkey. Regenerating or revoking a link after its enrollment session started makes that session's passkey registration fail; opening one link twice leaves only the newest enrollment session usable. Recovery revokes all sessions and allows only passkey enrollment.
 - Client A can't read or act on client B through any route (the ids in requests are ignored).
 - Admin routes reject clients. Admin changes need a fresh session and write `audit_log`. Impersonation and password endpoints → 404.
 - Banning a client revokes sessions and leaves broker orders untouched.
@@ -43,7 +43,7 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 
 ## Broker SIM acceptance (first delivery)
 
-1. Admin creates a client (SIZE 20,000) → invitation → email code → passkey → recovery codes → own key → OAuth → SIM account.
+1. Admin creates a client (SIZE 20,000) → copies the activation link → the client opens it → passkey → recovery codes → own key → OAuth → SIM account.
 2. In session: MARKET BUY of a stock and BUYTOOPEN of a contract from the chain, both auto-sized from the live ask.
 3. Fills shown; a partial exit with the bar; ALL OUT; history visible after signing in again.
 4. A pending order cancelled while the broker still allows it.

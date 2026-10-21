@@ -9,7 +9,7 @@ Designed screens are reproduced from their PNGs. Undesigned screens use the same
 | Route | Screen | Design | Notes |
 | --- | --- | --- | --- |
 | `/acceso` | Sign in with passkey; link to recovery | `01-access.png` (desktop, mobile) | no password, no sign-up |
-| `/invitacion/[token]` | email code → register passkey → recovery codes (shown once) | — | one step per view |
+| `/activar/[token]` | validate the activation link → register passkey → recovery codes (shown once) | — | one step per view; expired or used links explain how to ask the admin for a new one |
 | `/recuperacion` | recovery code → register new passkey → new codes | — | |
 | `/conexion` | own API key + secret, callback URL to register, connect/reconnect, accounts, mode (SIM; REAL shown disabled), token expiry or «desconocido» | — | |
 | `/operar` | Nueva entrada: Acciones / Opciones, instrument, read-only SIZE, ask, quantity, MARKET; summary; `Revisar orden` | `02-new-order.png` | the old quote is cleared on contract change; every disabled state gives its reason (market closed, 3/3, 2/2, quote stale, not verified, qty < 1) |
@@ -22,8 +22,8 @@ Designed screens are reproduced from their PNGs. Undesigned screens use the same
 
 | Route | Screen | Notes |
 | --- | --- | --- |
-| `/admin` | Clients: list with access and connection status; create client (sends invitation) | |
-| `/admin/clientes/[id]` | Client detail: profile and role; invitation (resend/revoke); activate/deactivate; sessions (revoke); controlled recovery; settings (SIZE increase-only, stop %, unlock %, each "new entries/positions only"; the 2/3 limits read-only); connection (accounts, status, expiry, last sync; never secrets); open positions and orders | every change needs a fresh session and is audited |
+| `/admin` | Clients: list with access and connection status; create client (shows its activation link once, to share personally) | |
+| `/admin/clientes/[id]` | Client detail: profile and role; activation link (generate a new one, shown once; revoke); activate/deactivate; sessions (revoke); controlled recovery; settings (SIZE increase-only, stop %, unlock %, each "new entries/positions only"; the 2/3 limits read-only); connection (accounts, status, expiry, last sync; never secrets); open positions and orders | every change needs a fresh session and is audited |
 | `/admin/operativa` | all clients: open positions, pending orders, protection state, UNKNOWN intents, entries used today | read-only |
 | `/admin/historial` | orders, fills, events and errors across clients; filter by client, mode, account, symbol, state, date, type | |
 | `/admin/auditoria` | audit log: actor, action, target, before → after, time; access and invitation events | |
