@@ -27,6 +27,7 @@ const reads = [
   "state",
   "history",
   "connection",
+  "sync",
   "beginConnection",
   "completeConnection",
   "disconnect",

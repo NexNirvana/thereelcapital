@@ -350,20 +350,31 @@ export function reconciliationPending(storage: DurableObjectStorage): boolean {
 }
 
 /**
- * Called by the sync loop (M4) once orders and positions have been re-read from the broker.
+ * How many holds have been placed since the last lift (0 when none is pending). A reconciliation
+ * takes it before it reads the broker and hands it back to `markReconciled`, so a hold that lands
+ * while it reads is not lifted by a snapshot that predates it.
+ */
+export function reconciliationTicket(storage: DurableObjectStorage): number {
+  return storage.kv.get<number>(RECONCILIATION_PENDING_KEY) ?? 0;
+}
+
+/**
+ * Called by the sync loop (sync.ts) once orders and positions have been re-read from the broker.
  * Refuses while the connection is not usable, so a reconciliation that ran against a dead
- * connection cannot reopen entries.
+ * connection cannot reopen entries. `ticket` is the hold count taken before the broker was read;
+ * without it, the count at the time of the call is used.
  */
 export async function markReconciled(
   deps: Pick<RefresherDeps, "storage" | "db" | "userId">,
+  ticket?: number,
 ): Promise<boolean> {
-  const seen = deps.storage.kv.get<number>(RECONCILIATION_PENDING_KEY);
+  const seen = ticket ?? reconciliationTicket(deps.storage);
   const row = await deps.db
     .prepare("SELECT status FROM broker_connection WHERE user_id = ?")
     .bind(deps.userId)
     .first<{ status: string }>();
   // A refresh that failed while this was waiting bumped the counter: that block is not ours to lift.
-  if (row?.status !== "CONNECTED" || deps.storage.kv.get(RECONCILIATION_PENDING_KEY) !== seen) {
+  if (row?.status !== "CONNECTED" || reconciliationTicket(deps.storage) !== seen) {
     return false;
   }
   deps.storage.kv.delete(RECONCILIATION_PENDING_KEY);

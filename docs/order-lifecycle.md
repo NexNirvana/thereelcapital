@@ -77,4 +77,16 @@ Reconnecting never resets counters, reservations or scale-out steps.
 | outside regular session | blocked | blocked (orders only in session) | unchanged |
 | UNKNOWN intent on the position | blocked | blocked for that position | `unverified` |
 
+Each row is detected by the sync pass (`engine/src/sync.ts`) and logged as one event when the condition starts, not on every tick:
+
+| Event | Condition | Loop |
+| --- | --- | --- |
+| `sync.token_expired` | the broker answered 401 | retries each tick while the token can be renewed; stops when the connection is expired or revoked, until a reconnect |
+| `sync.rate_limited` | 429 | waits the broker's `Retry-After` (never less than a tick) |
+| `sync.broker_error` | rejected, timeout or an unusable answer | retries next tick |
+| `sync.recovered` | the next pass succeeded | hold lifted, protection back from `unverified` |
+| `sync.unknown_pending` | an UNKNOWN intent remains after the pass | the position stays `unverified` |
+
+A failed pass places a hold (entries blocked, protection `unverified`) and does nothing else: it never sends, cancels or retries an order, so exits and cancels stay as the table says. A good pass lifts the hold with `markReconciled`, using the hold count taken before the broker was read, so a hold that lands during the read survives. Quotes stale or missing block entries in `prepareEntry` (`QUOTE_STALE`, `QUOTE_MISSING`); the protection state they imply is the stop monitor's. Outside the regular session the pass keeps reconciling and the order guards refuse entries and exits.
+
 The UI always shows the reason. **ESTADO NO VERIFICADO** is shown whenever state can't be confirmed with the broker.

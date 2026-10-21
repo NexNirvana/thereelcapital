@@ -16,4 +16,4 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 11. Behavior of an option at expiry, and the resulting positions.
 12. Which rate-limit numbers apply (250 vs 320 / 5 min).
 
-Tunable, set in `src/lib/domain/config.ts`: how long before a known refresh expiry the client is warned (2 h) and how soon the access token is renewed (5 min before its expiry).
+Tunable, set in `src/lib/domain/config.ts`: how long before a known refresh expiry the client is warned (2 h) and how soon the access token is renewed (5 min before its expiry), the sync-loop tick (5 s), the grace before an unanswered SENT order counts as UNKNOWN (60 s) and the clock-skew allowance when matching a broker order's open time to an intent (60 s).

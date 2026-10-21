@@ -297,13 +297,16 @@ describe("alarm", () => {
 
     await run();
     expect(tokenCalls()).toHaveLength(2); // the code exchange and the refresh
-    const next = await runInDurableObject(client.stub, (_i, state) => state.storage.getAlarm());
-    expect(next).toBeGreaterThan(Date.now() + 10 * 60 * 1000);
+    // The renewal's own due time; the single alarm also serves the sync loop, which is sooner.
+    const dueOf = () =>
+      runInDurableObject(client.stub, (_i, state) =>
+        state.storage.kv.get<number>("alarm_due:refresh"),
+      );
+    expect(await dueOf()).toBeGreaterThan(Date.now() + 10 * 60 * 1000);
 
     responders.token = () => new Response(null, { status: 503 });
     await run();
-    const retry = await runInDurableObject(client.stub, (_i, state) => state.storage.getAlarm());
-    expect(retry).toBeLessThan(Date.now() + 2 * 60 * 1000);
+    expect(await dueOf()).toBeLessThan(Date.now() + 2 * 60 * 1000);
   });
 });
 
