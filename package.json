@@ -18,7 +18,7 @@
     "test:unit": "bun test",
     "test:engine": "vitest run -c engine/vitest.config.ts",
     "test:e2e": "playwright test",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks && svelte-kit sync"
   },
   "dependencies": {
     "market-calendar": "1.1.1"
