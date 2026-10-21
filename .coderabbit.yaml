@@ -5,6 +5,8 @@
 language: en-US
 reviews:
   profile: chill
+  # Don't post "Review skipped" status comments on every push.
+  review_status: false
   auto_review:
     enabled: true
     drafts: false
