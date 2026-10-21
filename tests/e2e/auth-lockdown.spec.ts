@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { count, seedSignedInUser } from "./support.ts";
+import { count, d1, registerPasskey, seedSignedInUser, virtualAuthenticator } from "./support.ts";
 
 const origin = "http://localhost:8790";
 
@@ -41,4 +41,59 @@ test("keeps every Better Auth admin endpoint closed, even to an admin session", 
 
 test("keeps the endpoints the app uses reachable", async ({ page }) => {
   expect((await page.request.get("/api/auth/get-session")).status()).toBe(200);
+});
+
+// Issue #104 item 2: passkey changes are sensitive actions, so a stale session (older than the
+// 10-minute window) must sign in again with a passkey first.
+test("asks a stale session to re-authenticate before changing passkeys", async ({
+  context,
+  page,
+}) => {
+  await page.goto("/acceso");
+  await virtualAuthenticator(context, page, true);
+  const userId = await seedSignedInUser(context, { sessionAgeMs: 20 * 60_000 });
+  const passkeyId = randomUUID();
+  d1(
+    `INSERT INTO "passkey" ("id","name","publicKey","userId","credentialID","counter","deviceType","backedUp")
+     VALUES ('${passkeyId}','Antes','k','${userId}','${randomUUID()}',0,'singleDevice',0)`,
+  );
+  const reauth = { status: 401, code: "REAUTH_REQUIRED" };
+  const send = async (method: string, path: string, data?: object) => {
+    const response = await page.request.fetch(path, { method, data, headers: { origin } });
+    const body = await response.json().catch(() => null);
+    return { status: response.status(), code: body?.code ?? null };
+  };
+
+  expect(await send("POST", "/api/auth/passkey/delete-passkey", { id: passkeyId })).toEqual(reauth);
+  expect(
+    await send("POST", "/api/auth/passkey/update-passkey", { id: passkeyId, name: "Después" }),
+  ).toEqual(reauth);
+  expect(await send("GET", "/api/auth/passkey/generate-register-options")).toEqual(reauth);
+  expect(await send("POST", "/api/auth/passkey/verify-registration", { response: {} })).toEqual(
+    reauth,
+  );
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId" = '${userId}'`)).toBe(1);
+});
+
+test("lets a fresh session list, rename, register and delete passkeys", async ({
+  context,
+  page,
+}) => {
+  await page.goto("/acceso");
+  await virtualAuthenticator(context, page, true);
+  const userId = await seedSignedInUser(context);
+  expect(await registerPasskey(page, true)).toEqual({ status: 200, code: null });
+  const listed = await page.request.get("/api/auth/passkey/list-user-passkeys");
+  const [passkey] = await listed.json();
+  const update = await page.request.post("/api/auth/passkey/update-passkey", {
+    data: { id: passkey.id, name: "Mi llave" },
+    headers: { origin },
+  });
+  expect(update.status()).toBe(200);
+  const remove = await page.request.post("/api/auth/passkey/delete-passkey", {
+    data: { id: passkey.id },
+    headers: { origin },
+  });
+  expect(remove.status()).toBe(200);
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId" = '${userId}'`)).toBe(0);
 });

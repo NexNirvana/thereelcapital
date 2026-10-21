@@ -47,6 +47,16 @@ export function requireAdmin<L extends GuardLocals>(event: GuardEvent<L>): Authe
   return auth;
 }
 
+/** A createdAt in the future is not fresh, it is wrong. */
+export function isFreshSession(
+  createdAt: Date,
+  now = new Date(),
+  maxAgeMs = freshSessionMaxAgeMs,
+): boolean {
+  const ageMs = now.getTime() - createdAt.getTime();
+  return ageMs >= 0 && ageMs < maxAgeMs;
+}
+
 /** Better Auth's sensitiveSessionMiddleware doesn't check age, so sensitive actions call this. */
 export function requireFreshSession<L extends GuardLocals>(
   event: GuardEvent<L>,
@@ -54,8 +64,6 @@ export function requireFreshSession<L extends GuardLocals>(
   now = new Date(),
 ): Authenticated<L> {
   const auth = requireUser(event);
-  const ageMs = now.getTime() - auth.session.createdAt.getTime();
-  // A createdAt in the future is not fresh, it is wrong.
-  if (!(ageMs >= 0 && ageMs < maxAgeMs)) fail(guardErrors.reauthRequired);
+  if (!isFreshSession(auth.session.createdAt, now, maxAgeMs)) fail(guardErrors.reauthRequired);
   return auth;
 }
