@@ -9,7 +9,13 @@ export default defineConfig({
       return {
         wrangler: { configPath: "./engine/wrangler.jsonc" },
         // Test-only binding read by apply-migrations.ts.
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+        // CREDENTIALS_KEY is a throwaway test value (base64 of 32 bytes), not a credential.
+        miniflare: {
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            CREDENTIALS_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+          },
+        },
       };
     }),
   ],
