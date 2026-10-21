@@ -16,6 +16,8 @@ import {
   canReserveEntry,
   canReserveSlot,
   checkOrder,
+  MAX_DAILY_ENTRIES,
+  MAX_OPEN_POSITIONS,
   type RejectionReason,
 } from "#lib/domain/guards.ts";
 import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/domain/sizing.ts";
@@ -173,8 +175,15 @@ function guardEntry(ctx: ConnectionContext, sized: Sized): RejectionReason | nul
   return result.ok ? null : result.reason;
 }
 
-/** Daily and slot limits (entries only). Read inside the reservation transaction. */
-function limitReasons(ctx: ConnectionContext): EntryBlockCode[] {
+interface LimitCounts {
+  readonly consumed: number;
+  readonly reserved: number;
+  readonly open: number;
+  readonly reservedOpens: number;
+}
+
+/** What the limits count today, read synchronously (callers rely on that inside the reservation transaction). */
+function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
   const date = sessionDate(new Date(ctx.now));
   const counters = ctx.sql
     .exec<{ consumed: number; reserved: number }>(
@@ -193,10 +202,36 @@ function limitReasons(ctx: ConnectionContext): EntryBlockCode[] {
          WHERE mode = 'SIM' AND kind = 'entry' AND filled_qty = 0 AND state IN ${SLOT_HOLDING_STATES}`,
     )
     .one().n;
+  return { ...counters, open, reservedOpens };
+}
+
+/** Daily and slot limits (entries only). Read inside the reservation transaction. */
+function limitReasons(ctx: ConnectionContext): EntryBlockCode[] {
+  const counts = limitCounts(ctx);
   const reasons: EntryBlockCode[] = [];
-  if (!canReserveEntry(counters)) reasons.push("DAILY_ENTRY_LIMIT");
-  if (!canReserveSlot({ open, reservedOpens })) reasons.push("OPEN_POSITION_LIMIT");
+  if (!canReserveEntry(counts)) reasons.push("DAILY_ENTRY_LIMIT");
+  if (!canReserveSlot(counts)) reasons.push("OPEN_POSITION_LIMIT");
   return reasons;
+}
+
+export interface EntryLimits {
+  /** Open positions plus entries still holding a slot, out of `maxPositions`. */
+  readonly positions: number;
+  readonly maxPositions: number;
+  /** Entries consumed or reserved on this market day, out of `maxEntries`. */
+  readonly entriesToday: number;
+  readonly maxEntries: number;
+}
+
+/** The numbers behind «x/2 posiciones · y/3 entradas hoy»: the same counts that block an entry. */
+export function entryLimits(ctx: Pick<ConnectionContext, "sql" | "now">): EntryLimits {
+  const counts = limitCounts(ctx);
+  return {
+    positions: counts.open + counts.reservedOpens,
+    maxPositions: MAX_OPEN_POSITIONS,
+    entriesToday: counts.consumed + counts.reserved,
+    maxEntries: MAX_DAILY_ENTRIES,
+  };
 }
 
 /** Everything that needs an await and writes nothing: connection, SIZE, details, quote, sizing. */

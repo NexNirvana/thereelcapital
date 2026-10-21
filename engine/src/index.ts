@@ -13,8 +13,10 @@ import { TokenRefresher } from "./refresh.ts";
 import { resolveBroker } from "./broker/provider.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
 import {
+  entryLimits,
   prepareEntry,
   sendEntry,
+  type EntryLimits,
   type EntryContext,
   type PrepareEntryResult,
   type SendEntryResult,
@@ -66,6 +68,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   /** Reserves, persists the intent, then places the MARKET order once. */
   sendEntry(input: unknown): Promise<EngineResult<SendEntryResult>> {
     return this.enterWithBroker("sendEntry", SendEntryArgs, input, sendEntry);
+  }
+
+  /** The counts behind «x/2 posiciones · y/3 entradas hoy». Read-only. */
+  limits(input: unknown): EngineResult<EntryLimits> {
+    return this.enter("limits", ModeOnlyArgs, input, () =>
+      success(entryLimits({ sql: this.ctx.storage.sql, now: Date.now() })),
+    );
   }
 
   // Trading methods still to come: decoded and guarded now, implemented by the trading issues.
