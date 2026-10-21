@@ -124,5 +124,6 @@ test("retrying after finishing fails does not register a second passkey", async 
   // A second registration would be refused (the credential already exists); finishing is enough.
   await page.getByRole("button", { name: "Crear passkey" }).click();
   await expect(page.getByRole("heading", { name: /Guarda tus/i })).toBeVisible();
-  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId" = '${userId}'`)).toBe(2);
+  // The old passkey was deleted at redemption; the one registered now is the only one.
+  expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId" = '${userId}'`)).toBe(1);
 });

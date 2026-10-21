@@ -164,3 +164,125 @@ describe("redeemRecoveryCode", () => {
     expect(await redeemRecoveryCode(db, code ?? "", secret, 3000)).toBe("user-1");
   });
 });
+
+describe("redeemRecoveryCode deletes the old access", () => {
+  const options = { actor, userId: "user-1", action: "recovery_codes.regenerate" };
+
+  function seedAccess(db: ReturnType<typeof dbWithUser>, userId: string) {
+    db.sqlite.run(
+      `INSERT INTO "passkey" ("id","publicKey","userId","credentialID","counter","deviceType","backedUp")
+       VALUES (?, 'pk', ?, ?, 0, 'singleDevice', 0)`,
+      [`passkey-${userId}`, userId, `cred-${userId}`],
+    );
+    db.sqlite.run(
+      `INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId")
+       VALUES (?, 0, ?, 0, 0, ?)`,
+      [`session-${userId}`, `token-${userId}`, userId],
+    );
+  }
+  const rows = (db: ReturnType<typeof dbWithUser>, table: string, userId: string) =>
+    db.sqlite.query(`SELECT COUNT(*) AS n FROM "${table}" WHERE "userId" = ?`).get(userId);
+
+  test("deletes the owner's passkeys and sessions, audits the count and keeps the other codes", async () => {
+    const db = dbWithUser();
+    db.sqlite
+      .run(`INSERT INTO "user" ("id","name","email","emailVerified","banned","createdAt","updatedAt")
+      VALUES ('user-2','Otro','user-2@example.com',0,0,0,0)`);
+    seedAccess(db, "user-1");
+    seedAccess(db, "user-2");
+    const [code] = await replaceRecoveryCodes(db, secret, options);
+    db.sqlite.run("DELETE FROM audit_log");
+
+    expect(await redeemRecoveryCode(db, code ?? "", secret)).toBe("user-1");
+
+    expect(rows(db, "passkey", "user-1")).toEqual({ n: 0 });
+    expect(rows(db, "session", "user-1")).toEqual({ n: 0 });
+    expect(rows(db, "passkey", "user-2")).toEqual({ n: 1 });
+    expect(rows(db, "session", "user-2")).toEqual({ n: 1 });
+    expect(
+      db.sqlite.query("SELECT COUNT(*) AS n FROM recovery_codes WHERE used_at IS NULL").get(),
+    ).toEqual({ n: RECOVERY_CODE_COUNT - 1 });
+    expect(
+      db.sqlite
+        .query(
+          "SELECT action, actor_id, target_user_id, before_json, after_json FROM audit_log ORDER BY action",
+        )
+        .all(),
+    ).toEqual([
+      {
+        action: "recovery.passkeys_delete",
+        actor_id: "user-1",
+        target_user_id: "user-1",
+        before_json: '{"count":1}',
+        after_json: '{"count":0}',
+      },
+      {
+        action: "recovery.redeem",
+        actor_id: "user-1",
+        target_user_id: "user-1",
+        before_json: null,
+        after_json: null,
+      },
+    ]);
+  });
+
+  test("another unused code still works after an interrupted recovery", async () => {
+    const db = dbWithUser();
+    seedAccess(db, "user-1");
+    const [first, second] = await replaceRecoveryCodes(db, secret, options);
+    expect(await redeemRecoveryCode(db, first ?? "", secret)).toBe("user-1");
+    expect(await redeemRecoveryCode(db, second ?? "", secret)).toBe("user-1");
+  });
+
+  test("changes nothing when any statement of the batch fails", async () => {
+    const db = dbWithUser();
+    seedAccess(db, "user-1");
+    const [code] = await replaceRecoveryCodes(db, secret, options);
+    db.sqlite.run("DROP TABLE audit_log");
+    await expect(redeemRecoveryCode(db, code ?? "", secret)).rejects.toThrow();
+    expect(rows(db, "passkey", "user-1")).toEqual({ n: 1 });
+    expect(rows(db, "session", "user-1")).toEqual({ n: 1 });
+    expect(
+      db.sqlite.query("SELECT COUNT(*) AS n FROM recovery_codes WHERE used_at IS NULL").get(),
+    ).toEqual({ n: RECOVERY_CODE_COUNT });
+  });
+
+  test("concurrent redemptions in the same millisecond audit the deletion once", async () => {
+    const db = dbWithUser();
+    seedAccess(db, "user-1");
+    const [code] = await replaceRecoveryCodes(db, secret, options);
+    db.sqlite.run("DELETE FROM audit_log");
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => redeemRecoveryCode(db, code ?? "", secret, 1000)),
+    );
+    expect(results.filter((owner) => owner === "user-1")).toHaveLength(1);
+    expect(db.sqlite.query("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual({ n: 2 });
+  });
+
+  test("a failure on the last deletion restores the passkeys, sessions and code", async () => {
+    const db = dbWithUser();
+    seedAccess(db, "user-1");
+    const [code] = await replaceRecoveryCodes(db, secret, options);
+    const auditsBefore = db.sqlite.query("SELECT COUNT(*) AS n FROM audit_log").get();
+    db.sqlite.run(
+      `CREATE TRIGGER fail_session_delete BEFORE DELETE ON "session"
+       BEGIN SELECT RAISE(ABORT, 'session delete failed'); END`,
+    );
+    await expect(redeemRecoveryCode(db, code ?? "", secret)).rejects.toThrow();
+    expect(rows(db, "passkey", "user-1")).toEqual({ n: 1 });
+    expect(rows(db, "session", "user-1")).toEqual({ n: 1 });
+    expect(db.sqlite.query("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual(auditsBefore);
+    expect(
+      db.sqlite.query("SELECT COUNT(*) AS n FROM recovery_codes WHERE used_at IS NULL").get(),
+    ).toEqual({ n: RECOVERY_CODE_COUNT });
+  });
+
+  test("a rejected code deletes nothing", async () => {
+    const db = dbWithUser();
+    seedAccess(db, "user-1");
+    await replaceRecoveryCodes(db, secret, options);
+    expect(await redeemRecoveryCode(db, newRecoveryCode(), secret)).toBeNull();
+    expect(rows(db, "passkey", "user-1")).toEqual({ n: 1 });
+    expect(rows(db, "session", "user-1")).toEqual({ n: 1 });
+  });
+});

@@ -6,7 +6,6 @@ import type { BetterAuthPlugin } from "better-auth";
 import { Schema } from "effect";
 import { RECOVERY_REDEEM_RATE_LIMIT } from "#lib/domain/config.ts";
 import { recoveryErrors } from "#lib/auth-messages.ts";
-import { audit } from "./audit.ts";
 import { enrollmentMaxAgeMs } from "./enrollment.ts";
 import { startEnrollmentSession, startFullSession } from "./enrollment-session.ts";
 import { redeemRecoveryCode, releaseRecoveryCode, replaceRecoveryCodes } from "./recovery-codes.ts";
@@ -25,7 +24,10 @@ export function recoveryPlugin(db: D1Database, secret: string) {
       },
     ],
     endpoints: {
-      /** Recovery code -> every session revoked -> enrollment-only session. */
+      /**
+       * Recovery code -> every session and passkey deleted (one batch with spending the code) ->
+       * enrollment-only session.
+       */
       redeemRecoveryCode: createAuthEndpoint(
         "/recovery/redeem",
         { method: "POST" },
@@ -40,17 +42,10 @@ export function recoveryPlugin(db: D1Database, secret: string) {
           const userId = await redeemRecoveryCode(db, code, secret, spentAt);
           if (userId === null) throw APIError.from("UNAUTHORIZED", recoveryErrors.invalidCode);
           try {
-            await audit(db, {
-              actor: { user: { id: userId } },
-              action: "recovery.redeem",
-              targetUserId: userId,
-              before: null,
-              after: null,
-            });
             await startEnrollmentSession(ctx, userId);
           } catch (failure) {
-            // Nothing was granted, so give the code back: the client must not lose a code (their
-            // last one, perhaps) to a failed write.
+            // No access was granted, so give the code back: the client must not lose a code (their
+            // last one, perhaps) to a failed write. The old passkeys and sessions stay deleted.
             await releaseRecoveryCode(db, code, secret, spentAt);
             throw failure;
           }
