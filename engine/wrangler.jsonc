@@ -1,0 +1,21 @@
+// Engine Worker: owns the ClientCoordinator Durable Object. docs/architecture.md#configuration-and-deploy
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "reel-engine",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reel",
+      // PLACEHOLDER: local-only. Must be the same database as the web Worker.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "COORDINATOR", "class_name": "ClientCoordinator" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClientCoordinator"] }],
+}
