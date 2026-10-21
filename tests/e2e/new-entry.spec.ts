@@ -130,7 +130,7 @@ test("shows the option entry point without the chain", async ({ context, page })
   );
   await expect(page.getByRole("link", { name: /Elegir contrato/ })).toHaveAttribute(
     "href",
-    "/operar/cadena",
+    "/operar/cadena?cuenta=SIM-1",
   );
   await expect(page.getByLabel("Símbolo")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
