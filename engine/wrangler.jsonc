@@ -16,5 +16,8 @@
   "durable_objects": {
     "bindings": [{ "name": "COORDINATOR", "class_name": "ClientCoordinator" }],
   },
+  // Set with `wrangler secret put CREDENTIALS_KEY --name reel-engine`: base64 of 32 random bytes
+  // (`openssl rand -base64 32`). Never in this file.
+  "secrets": { "required": ["CREDENTIALS_KEY"] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClientCoordinator"] }],
 }

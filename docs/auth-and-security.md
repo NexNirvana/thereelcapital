@@ -72,7 +72,7 @@ Recovery codes and activation tokens are high-entropy random strings stored as H
 ## Secrets
 
 - Never in Git, logs, responses, bundles or URLs: TradeStation client secret and tokens, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`. `client_id` appears only in the OAuth redirect. Activation tokens appear only in their activation link and in the one-time admin response that shows it; never in Git, logs, bundles or any other response.
-- TradeStation secret and refresh token: AES-GCM via WebCrypto, random nonce per value, `key_id` stored for rotation. Encryption and decryption happen in the engine Worker.
+- TradeStation secret and refresh token: AES-GCM via WebCrypto, random 12-byte nonce per value, `key_id` stored for rotation (the first 4 bytes of SHA-256 of the key, hex), the user id and field authenticated as additional data. `CREDENTIALS_KEY` is base64 of 32 random bytes. Encryption and decryption happen in the engine Worker.
 - `audit_log` stores before/after of settings and roles, never credential values.
 
 ## Isolation

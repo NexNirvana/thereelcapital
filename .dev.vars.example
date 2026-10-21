@@ -3,5 +3,6 @@
 BETTER_AUTH_SECRET=
 # Overrides the production origin in wrangler.jsonc; passkeys are bound to it
 APP_ORIGIN=http://localhost:8787
-# engine Worker
-CREDENTIALS_KEY=
+# engine Worker: put it in engine/.dev.vars (git-ignored), not here.
+# AES-GCM key for broker credentials: base64 of 32 random bytes. Generate: openssl rand -base64 32
+# CREDENTIALS_KEY=
