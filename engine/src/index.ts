@@ -12,6 +12,7 @@ import { createCipher, CredentialsKeyError } from "./crypto.ts";
 import { TokenRefresher } from "./refresh.ts";
 import { resolveBroker } from "./broker/provider.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
+import { engineNow } from "./clock.ts";
 import {
   entryLimits,
   prepareEntry,
@@ -73,7 +74,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   /** The counts behind «x/2 posiciones · y/3 entradas hoy». Read-only. */
   limits(input: unknown): EngineResult<EntryLimits> {
     return this.enter("limits", ModeOnlyArgs, input, () =>
-      success(entryLimits({ sql: this.ctx.storage.sql, now: Date.now() })),
+      success(entryLimits({ sql: this.ctx.storage.sql, now: engineNow(this.env) })),
     );
   }
 
@@ -270,7 +271,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           storage: this.ctx.storage,
           db: this.env.DB,
           userId,
-          now: Date.now(),
+          now: engineNow(this.env),
           cipher: () => createCipher(this.env.CREDENTIALS_KEY),
           tokens,
         },

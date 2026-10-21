@@ -15,7 +15,9 @@
   ],
   // Which broker the engine talks to. "tradestation" is TradeStation SIM; "local-sim" is honoured only
   // when ENVIRONMENT is "development" or "test" (broker/select.ts). Local runs override in .dev.vars.
-  "vars": { "BROKER": "tradestation", "ENVIRONMENT": "production" },
+  // TEST_NOW stays empty: it only pins the clock of the local simulation (clock.ts), and a var must be
+  // declared here for a local env file to set it.
+  "vars": { "BROKER": "tradestation", "ENVIRONMENT": "production", "TEST_NOW": "" },
   "durable_objects": {
     "bindings": [{ "name": "COORDINATOR", "class_name": "ClientCoordinator" }],
   },
