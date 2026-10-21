@@ -73,9 +73,11 @@ Every PR shows how it was verified, in the template's sections:
 
 **No PR is merged until one AI reviewer has reviewed its final commit**, and every actionable comment is addressed.
 
+**Exception: documentation-only PRs.** A PR that changes only Markdown files (`*.md`) needs no AI review: mark it ready and enable auto-merge once the self-review is done, and it merges when CI is green. A PR that also touches code, configuration, workflows or hooks follows the full gate.
+
 | Reviewer | How to request | Notes |
 | --- | --- | --- |
-| CodeRabbit (first choice) | automatic, once, when the PR leaves draft | one review per PR: incremental reviews are off, so `@coderabbitai review` again does nothing; rate-limited to about one review per hour; configured in `.coderabbit.yaml` |
+| CodeRabbit (first choice) | automatic, once, when the PR leaves draft | one review per PR: incremental reviews are off, so `@coderabbitai review` again does nothing; about 10 reviews per hour on the current plan; skips Markdown files (`path_filters`); configured in `.coderabbit.yaml` |
 | GitHub Copilot | `gh pr edit <n> --add-reviewer @copilot` | reads `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md` |
 | Greptile | comment `@greptileai review` | reviews only on request (`greptile.json`); requires the Greptile app on the repository |
 
