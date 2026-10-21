@@ -37,7 +37,7 @@ Not scaffolded yet. The scaffolding issue records the real commands here (instal
 9. Undecided values (`docs/open-questions.md`) stay in one config module. Don't invent values or features (YAGNI).
 10. Elegant code: use a well-chosen library for solved problems, and never hand-keep data that changes over time (dates, hours, tables) in `src/`. See CONTRIBUTING.md#design.
 11. Every PR carries verification evidence; UI changes carry desktop and mobile browser screenshots (CONTRIBUTING.md#verification-and-screenshots).
-12. **Never merge a PR before CodeRabbit has reviewed its final commit** and every actionable comment is fixed or answered (CONTRIBUTING.md#review-gate-coderabbit). Rate limits mean waiting, not skipping.
+12. **Never merge a PR before one AI reviewer (CodeRabbit, Copilot or Greptile, one at a time) has reviewed its final commit** and every actionable comment is fixed or answered (CONTRIBUTING.md#review-gate). If CodeRabbit is rate-limited, request Copilot or Greptile; never skip the review.
 
 ## Contributing rules
 

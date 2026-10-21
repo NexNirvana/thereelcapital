@@ -18,4 +18,4 @@ Desktop and mobile browser screenshots next to the design, or why there is nothi
 
 ## Review
 
-- [ ] CodeRabbit has reviewed the final commit, and every actionable comment is fixed or answered
+- [ ] One reviewer (CodeRabbit, Copilot or Greptile) has reviewed the final commit, and every actionable comment is fixed or answered
