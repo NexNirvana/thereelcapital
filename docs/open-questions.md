@@ -4,9 +4,7 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 
 ## Product (user decides)
 
-1–5. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget; and no email (activation links shared by the admin). See [decisions.md](decisions.md) (D19–D22, D25).
-
-13. Rate limits for redeeming a recovery code and opening an activation link. Provisional in `config.ts`: 5 attempts per 10 minutes per IP each.
+1–5, 13. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget; no email (activation links shared by the admin); and the recovery and activation redemption rate limits. See [decisions.md](decisions.md) (D19–D22, D25, D28).
 
 ## TradeStation (SIM spike)
 

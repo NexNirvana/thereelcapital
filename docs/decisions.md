@@ -37,6 +37,7 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | D25 | Better Auth. **No email** (owner, 2026-10-21): the admin shares a single-use activation link; emails are identifiers only and are not verified | — |
 | D26 | Keep Cloudflare Web Analytics (owner, 2026-10-21): Cloudflare injects the `static.cloudflareinsights.com` beacon into production pages. It is cookieless and the only off-origin request; the app itself loads nothing from other origins, and local and e2e runs make no external requests | — |
 | D27 | Self-service recovery deletes **all** of the client's existing passkeys when a recovery code is redeemed (owner, 2026-10-21): a lost or stolen passkey stops working at once. Spending the code, revoking the sessions, deleting the passkeys and the audit rows are one D1 batch (count only, no credential material). The client's other unused codes stay valid until new ones are issued, so an interrupted recovery can be retried | — |
+| D28 | Redeeming a recovery code and opening an activation link are each rate limited to 5 attempts per 10 minutes per IP (owner, 2026-10-21; `RECOVERY_REDEEM_RATE_LIMIT`, `ACTIVATION_REDEEM_RATE_LIMIT`) | — |
 
 ### Delegated decisions of 2026-10-21
 
