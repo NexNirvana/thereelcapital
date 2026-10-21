@@ -1,0 +1,91 @@
+// Creates the first admin and prints an activation link: `bun run admin:create <email> [--remote]`.
+// Writes through `wrangler d1 execute`, local by default. The link is shown once and never stored;
+// only its HMAC is (docs/auth-and-security.md#flows). Consuming the link is the activation flow.
+import { tmpdir } from "node:os";
+import { parseEnv } from "node:util";
+import { Schema } from "effect";
+import { hashToken, newActivationToken } from "#lib/server/token-hash.ts";
+
+const linkLifetimeMs = 72 * 60 * 60 * 1000;
+const productionOrigin = "https://thereelcapital.com";
+const localOrigin = "http://localhost:8787";
+// Deliberately strict: the value is placed inside a SQL literal.
+const emailPattern = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
+
+const CliArgs = Schema.Struct({
+  email: Schema.String.check(Schema.isPattern(emailPattern)),
+  remote: Schema.Boolean,
+});
+
+// Any argument that is not one email and the optional --remote flag fails the decode.
+function parseArgs(argv: string[]) {
+  const flags = argv.filter((arg) => arg.startsWith("--"));
+  const positional = argv.filter((arg) => !arg.startsWith("--"));
+  return Schema.decodeUnknownSync(CliArgs)({
+    email: positional.length === 1 ? positional[0]?.trim().toLowerCase() : undefined,
+    remote:
+      flags.length === 0 ? false : flags.length === 1 && flags[0] === "--remote" ? true : undefined,
+  });
+}
+
+let cli: ReturnType<typeof parseArgs>;
+try {
+  cli = parseArgs(process.argv.slice(2));
+} catch {
+  console.error("usage: bun run admin:create <email> [--remote]");
+  process.exit(1);
+}
+const { email, remote } = cli;
+
+// Local runs read the same git-ignored .dev.vars that `wrangler dev` uses; remote runs need the
+// production value in the environment, which is never printed.
+const secret = process.env.BETTER_AUTH_SECRET ?? (remote ? undefined : await readDevVarsSecret());
+if (!secret) {
+  console.error(
+    remote
+      ? "BETTER_AUTH_SECRET must be set in the environment for --remote."
+      : "BETTER_AUTH_SECRET is missing from the environment and .dev.vars.",
+  );
+  process.exit(1);
+}
+
+const now = Date.now();
+const userId = crypto.randomUUID();
+const token = newActivationToken();
+const tokenHash = await hashToken("activation-link", token, secret);
+
+// One file means one D1 batch: either the admin and the link both exist, or neither does.
+const sql = `
+INSERT INTO "user" ("id", "name", "email", "emailVerified", "role", "createdAt", "updatedAt")
+VALUES ('${userId}', '${email}', '${email}', 0, 'admin', '${new Date(now).toISOString()}', '${new Date(now).toISOString()}');
+INSERT INTO invitations ("id", "user_id", "token_hash", "expires_at", "created_by")
+VALUES ('${crypto.randomUUID()}', '${userId}', '${tokenHash}', ${now + linkLifetimeMs}, '${userId}');
+`;
+
+const sqlFile = `${tmpdir()}/admin-create-${userId}.sql`;
+await Bun.write(sqlFile, sql);
+try {
+  const result =
+    await Bun.$`bunx wrangler d1 execute DB ${remote ? "--remote" : "--local"} --yes --file ${sqlFile}`
+      .quiet()
+      .nothrow();
+  if (result.exitCode !== 0) {
+    // wrangler's output can name the failing statement, which contains the token hash; show the tail only.
+    console.error(`wrangler failed (exit ${result.exitCode}). Is the email already registered?`);
+    process.exit(1);
+  }
+} finally {
+  await Bun.file(sqlFile).delete();
+}
+
+const origin = remote ? productionOrigin : localOrigin;
+console.log(`Admin created: ${email}`);
+console.log(`Activation link (valid 72 hours, shown once, share it personally):`);
+console.log(`${origin}/activar/${token}`);
+
+async function readDevVarsSecret(): Promise<string | undefined> {
+  const file = Bun.file(".dev.vars");
+  if (!(await file.exists())) return undefined;
+  // Same dotenv syntax Wrangler uses, including inline comments and quotes.
+  return parseEnv(await file.text()).BETTER_AUTH_SECRET || undefined;
+}

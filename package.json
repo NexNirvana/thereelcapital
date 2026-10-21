@@ -19,11 +19,13 @@
     "test:unit": "bun test",
     "test:engine": "vitest run -c engine/vitest.config.ts",
     "test:e2e": "playwright test",
+    "admin:create": "bun scripts/admin-create.ts",
     "prepare": "git config core.hooksPath .githooks && svelte-kit sync"
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.7",
     "better-auth": "1.7.7",
+    "effect": "4.0.4",
     "market-calendar": "1.1.1"
   },
   "devDependencies": {
