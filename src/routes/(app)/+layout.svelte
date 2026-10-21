@@ -12,10 +12,11 @@
   let { children, data }: LayoutProps = $props();
   const indicator = $derived(indicatorFor(data.health));
 
-  // Only built screens are listed. TODO(#30): add Posiciones (/posiciones); TODO(#31): add
-  // Historial (/historial). Conexión is also reachable from the top bar.
+  // Only built screens are listed. TODO(#30): add Posiciones (/posiciones). Conexión is also
+  // reachable from the top bar.
   const nav = $derived([
     { href: resolve("/(app)/operar"), label: "Operar" },
+    { href: resolve("/(app)/historial"), label: "Historial" },
     { href: resolve("/(app)/conexion"), label: "Conexión" },
     ...(data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []),
   ]);
