@@ -7,6 +7,6 @@ Private, invitation-only terminal at `thereelcapital.com` for trading US equitie
 - Product decisions: [`ONBOARDING.md`](ONBOARDING.md) (Spanish, source of truth)
 - Engineering docs: [`docs/`](docs/README.md)
 - Designs: [`desings/`](desings/)
-- Working agreements for Claude Code: [`CLAUDE.md`](CLAUDE.md)
+- Contributor rules: [`CLAUDE.md`](CLAUDE.md)
 
 Stack: SvelteKit, TypeScript, Effect, Better Auth, Cloudflare Workers, D1, Durable Objects.
