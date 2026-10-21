@@ -58,7 +58,7 @@ Every PR shows how it was verified, in the template's sections:
 | --- | --- | --- |
 | CodeRabbit (first choice) | automatic when the PR leaves draft; follow-ups with a `@coderabbitai review` comment | rate-limited to about one review per hour; configured in `.coderabbit.yaml` |
 | GitHub Copilot | `gh pr edit <n> --add-reviewer @copilot` | reads `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md` |
-| Greptile | comment `@greptileai review` | requires the Greptile app on the repository |
+| Greptile | comment `@greptileai review` | reviews only on request (`greptile.json`); requires the Greptile app on the repository |
 
 - Use **one reviewer at a time per PR**. When CodeRabbit is rate-limited or busy, request Copilot or Greptile instead, so several PRs are reviewed in parallel by different reviewers. Never request two reviewers for the same commit.
 - The rules below apply to whichever reviewer is used.

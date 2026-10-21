@@ -1,0 +1,43 @@
+{
+  "skipReview": "AUTOMATIC",
+  "triggerOnDrafts": false,
+  "ignorePatterns": "bun.lock\n**/worker-configuration.d.ts\nstatic/fonts/**\ndesigns/**\nreferences/**",
+  "instructions": "Review against the project's rules in CLAUDE.md and CONTRIBUTING.md and the spec in docs/. Treat any reference to the live TradeStation API host, leaked secrets, request-derived identity, retried or unpersisted broker orders, or browser-supplied quantities as blocking. Prefer the least code that is obviously correct; flag hand-kept data that changes over time and hand-rolled code where a well-chosen library fits. Don't comment on formatting (Prettier and ESLint enforce it).",
+  "customContext": {
+    "files": [
+      {
+        "path": "CLAUDE.md",
+        "description": "Absolute rules and never-break invariants"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "description": "Workflow, commit rules and code guidelines"
+      },
+      {
+        "path": "docs/domain-rules.md",
+        "description": "Trading rules",
+        "scope": ["src/lib/domain/**", "engine/**"]
+      },
+      {
+        "path": "docs/order-lifecycle.md",
+        "description": "Order states, idempotency and reconciliation",
+        "scope": ["engine/**"]
+      },
+      {
+        "path": "docs/auth-and-security.md",
+        "description": "Auth, sessions and secrets",
+        "scope": [
+          "src/lib/server/**",
+          "src/routes/**",
+          "src/hooks.server.ts",
+          "engine/**"
+        ]
+      },
+      {
+        "path": "docs/design-system.md",
+        "description": "UI tokens and components",
+        "scope": ["src/lib/ui/**", "src/routes/**/*.svelte"]
+      }
+    ]
+  }
+}
