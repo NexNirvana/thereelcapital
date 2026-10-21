@@ -10,6 +10,8 @@ import {
   revokeAllSessions,
   revokeLink,
   revokeSession,
+  settingsErrors,
+  updateClientSettings,
 } from "./admin-client-access.ts";
 import { guardErrors, type GuardLocals } from "./guards.ts";
 import { sqliteD1 } from "./sqlite-d1.test.ts";
@@ -35,6 +37,13 @@ function setup() {
   user("admin-1", "admin");
   user("c1");
   user("c2");
+  for (const id of ["c1", "c2"]) {
+    db.sqlite.run(
+      `INSERT INTO client_settings (user_id, size_usd, stop_pct, trailing_unlock_pct, updated_at)
+       VALUES (?, 20000, 30, 70, ?)`,
+      [id, now - day],
+    );
+  }
   const session = (id: string, userId: string, invitationId: string | null = null) =>
     db.sqlite.run(
       `INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId","invitationId")
@@ -81,6 +90,8 @@ const mutations: Record<string, Mutation> = {
   reactivate: (s, e, id = "c1") => reactivateClient(e, s.ctx, id, now),
   revokeSession: (s, e, id = "c1") => revokeSession(e, s.ctx, id, { sessionId: "s1" }, now),
   revokeAll: (s, e, id = "c1") => revokeAllSessions(e, s.ctx, id, now),
+  updateSettings: (s, e, id = "c1") =>
+    updateClientSettings(e, s.ctx, id, { sizeUsd: "25000", stopPct: "30", unlockPct: "70" }, now),
   recover: (s, e, id = "c1") => recoverClient(e, s.ctx, id, { verified: "on" }, now),
 };
 
@@ -379,5 +390,156 @@ describe("controlled recovery", () => {
     expect(n(s.db, "recovery_codes")).toBe(2);
     expect(n(s.db, "audit_log")).toBe(0);
     expect(n(s.db, "invitations")).toBe(0);
+  });
+});
+
+describe("updateClientSettings", () => {
+  const save = (
+    s: ReturnType<typeof setup>,
+    values: Partial<Record<"sizeUsd" | "stopPct" | "unlockPct", string>>,
+    id = "c1",
+  ) =>
+    updateClientSettings(
+      admin(),
+      s.ctx,
+      id,
+      { sizeUsd: "20000", stopPct: "30", unlockPct: "70", ...values },
+      now,
+    );
+  const settingsOf = (s: ReturnType<typeof setup>, id: string) =>
+    s.db.sqlite
+      .query(
+        `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS unlockPct,
+           updated_at AS updatedAt FROM client_settings WHERE user_id = ?`,
+      )
+      .get(id);
+
+  test("raises SIZE and changes the percentages with one audit row of before and after", async () => {
+    const s = setup();
+    expect(await save(s, { sizeUsd: "30000", stopPct: "25", unlockPct: "60" })).toEqual({
+      ok: true,
+    });
+    expect(settingsOf(s, "c1")).toEqual({
+      sizeUsd: 30000,
+      stopPct: 25,
+      unlockPct: 60,
+      updatedAt: now,
+    });
+    const [row, ...rest] = audits(s.db, "client_settings.update");
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ actor_id: "admin-1", target_user_id: "c1" });
+    expect(JSON.parse(row?.before_json ?? "")).toEqual({
+      sizeUsd: 20000,
+      stopPct: 30,
+      trailingUnlockPct: 70,
+    });
+    expect(JSON.parse(row?.after_json ?? "")).toEqual({
+      sizeUsd: 30000,
+      stopPct: 25,
+      trailingUnlockPct: 60,
+    });
+  });
+
+  test("never touches another client's settings", async () => {
+    const s = setup();
+    const other = settingsOf(s, "c2");
+    await save(s, { sizeUsd: "30000", stopPct: "10", unlockPct: "90" });
+    expect(settingsOf(s, "c2")).toEqual(other);
+  });
+
+  test("rejects a lower SIZE and keeps the stored values", async () => {
+    const s = setup();
+    const stored = settingsOf(s, "c1");
+    expect(await save(s, { sizeUsd: "19999", stopPct: "40" })).toEqual({
+      ok: false,
+      error: settingsErrors.sizeDecrease,
+    });
+    expect(settingsOf(s, "c1")).toEqual(stored);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("accepts the same SIZE when a percentage changes and rejects a save that changes nothing", async () => {
+    const s = setup();
+    expect(await save(s, { stopPct: "35" })).toEqual({ ok: true });
+    expect(await save(s, { stopPct: "35" })).toEqual({
+      ok: false,
+      error: settingsErrors.unchanged,
+    });
+    expect(n(s.db, "audit_log")).toBe(1);
+  });
+
+  test.each([
+    ["stopPct", "9", settingsErrors.stopOutOfBounds],
+    ["stopPct", "51", settingsErrors.stopOutOfBounds],
+    ["stopPct", "30.5", settingsErrors.stopOutOfBounds],
+    ["stopPct", "", settingsErrors.stopOutOfBounds],
+    ["unlockPct", "29", settingsErrors.unlockOutOfBounds],
+    ["unlockPct", "91", settingsErrors.unlockOutOfBounds],
+    ["unlockPct", "1e1", settingsErrors.unlockOutOfBounds],
+    ["sizeUsd", "0", settingsErrors.sizeInvalid],
+    ["sizeUsd", "-5", settingsErrors.sizeInvalid],
+    ["sizeUsd", "25000.50", settingsErrors.sizeInvalid],
+    ["sizeUsd", "abc", settingsErrors.sizeInvalid],
+  ] as const)("rejects %s = %j with its Spanish message", async (field, value, error) => {
+    const s = setup();
+    const stored = settingsOf(s, "c1");
+    expect(await save(s, { [field]: value })).toEqual({ ok: false, error });
+    expect(error.message).toMatch(/[a-zñ]/);
+    expect(settingsOf(s, "c1")).toEqual(stored);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("accepts both ends of the bounds", async () => {
+    const s = setup();
+    expect(await save(s, { stopPct: "10", unlockPct: "30" })).toEqual({ ok: true });
+    expect(await save(s, { stopPct: "50", unlockPct: "90" })).toEqual({ ok: true });
+  });
+
+  test("rejects unknown fields as invalid input", async () => {
+    const s = setup();
+    await expect(
+      updateClientSettings(
+        admin(),
+        s.ctx,
+        "c1",
+        { sizeUsd: "20000", stopPct: "30", unlockPct: "70", clientId: "c2" },
+        now,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("fails instead of overwriting when the stored values changed after the check", async () => {
+    const s = setup();
+    const racing = {
+      ...s.ctx,
+      db: new Proxy(s.db, {
+        get(target, key, receiver) {
+          if (key !== "batch") return Reflect.get(target, key, receiver);
+          return (statements: Parameters<typeof s.db.batch>[0]) => {
+            s.db.sqlite.run(`UPDATE client_settings SET size_usd = 50000 WHERE user_id = 'c1'`);
+            return target.batch(statements);
+          };
+        },
+      }),
+    };
+    expect(
+      await updateClientSettings(
+        admin(),
+        racing,
+        "c1",
+        { sizeUsd: "25000", stopPct: "30", unlockPct: "70" },
+        now,
+      ),
+    ).toEqual({ ok: false, error: settingsErrors.changedMeanwhile });
+    expect(settingsOf(s, "c1")).toMatchObject({ sizeUsd: 50000 });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("shows the settings and the fixed limits in the detail", async () => {
+    const s = setup();
+    expect(await getClientDetail(s.db, "c1", now)).toMatchObject({
+      settings: { sizeUsd: 20000, stopPct: 30, trailingUnlockPct: 70 },
+      limits: { openPositions: 2, dailyEntries: 3 },
+    });
   });
 });
