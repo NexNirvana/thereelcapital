@@ -1,0 +1,34 @@
+#!/bin/sh
+# Enforces the commit message rules in CONTRIBUTING.md.
+# Usage: commit-msg <message-file>   (also run by CI on PR titles)
+set -eu
+
+fail() {
+  printf 'commit-msg: %s\n' "$1" >&2
+  printf 'See CONTRIBUTING.md#commit-messages\n' >&2
+  exit 1
+}
+
+# Drop the diff appended by `git commit -v`, then comment lines.
+msg=$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$1" | grep -v '^#' || true)
+subject=$(printf '%s\n' "$msg" | sed -n '1p')
+
+[ -n "$subject" ] || fail "empty commit message"
+
+case "$subject" in
+  "Merge "* | "Revert \""* | "fixup! "* | "squash! "* | "amend! "*) ;;
+  *)
+    printf '%s\n' "$subject" |
+      grep -Eq '^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: [a-z0-9`].*[^. ]$' ||
+      fail "subject must be '<type>(<scope>): <subject>' with a lowercase start and no trailing period"
+    [ "$(printf '%s' "$subject" | wc -m)" -le 72 ] || fail "first line is longer than 72 characters"
+    [ -z "$(printf '%s\n' "$msg" | sed -n '2p')" ] || fail "leave a blank line after the subject"
+    ;;
+esac
+
+# No AI attribution. The file paths CLAUDE.md and .claude/ are allowed.
+if printf '%s\n' "$msg" |
+  sed -e 's#CLAUDE\.md##g' -e 's#\.claude/##g' |
+  grep -Eiq 'co-authored-by|generated (with|by)|claude|anthropic|openai|chatgpt|copilot'; then
+  fail "remove AI attribution (Co-Authored-By, 'Generated with', tool names)"
+fi

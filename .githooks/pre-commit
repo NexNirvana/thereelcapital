@@ -1,0 +1,50 @@
+#!/bin/sh
+# Blocks commits that break CONTRIBUTING.md: wrong identity, secrets,
+# conflict markers, oversized files.
+set -eu
+
+name="OnishellT"
+email="46875497+OnishellT@users.noreply.github.com"
+max_bytes=5242880
+status=0
+
+err() {
+  printf 'pre-commit: %s\n' "$1" >&2
+  status=1
+}
+
+for ident in "$(git var GIT_AUTHOR_IDENT)" "$(git var GIT_COMMITTER_IDENT)"; do
+  case "$ident" in
+    "$name <$email> "*) ;;
+    *) err "author and committer must be $name <$email> (see CONTRIBUTING.md#setup)" ;;
+  esac
+done
+
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$(basename "$f")" in
+    .dev.vars.example | .env.example) ;;
+    .dev.vars | .dev.vars.* | .env | .env.* | *.pem | *.key | *.p12)
+      err "$f looks like a secrets file; keep it out of Git" ;;
+  esac
+  size=$(git cat-file -s ":$f")
+  [ "$size" -le "$max_bytes" ] || err "$f is larger than 5 MB"
+done <<EOF
+$files
+EOF
+
+added=$(git diff --cached -U0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' || true)
+
+if printf '%s\n' "$added" | grep -Eq '^\+(<<<<<<<|>>>>>>>)( |$)'; then
+  err "merge conflict markers in staged changes"
+fi
+
+if printf '%s\n' "$added" | grep -Eq -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+  -e 'gh[pousr]_[A-Za-z0-9]{36}' -e 'github_pat_[A-Za-z0-9_]{40,}' \
+  -e 'AKIA[0-9A-Z]{16}' -e 'sk_(live|test)_[A-Za-z0-9]{16,}' -e 'xox[abprs]-[A-Za-z0-9-]{10,}'; then
+  err "staged changes contain what looks like a secret or private key"
+fi
+
+exit "$status"
