@@ -4,7 +4,7 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 
 ## Product (user decides)
 
-1–5. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget, email provider. See [decisions.md](decisions.md) (D19–D22, D25).
+1–5. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget; and no email (activation links shared by the admin). See [decisions.md](decisions.md) (D19–D22, D25).
 
 ## TradeStation (SIM spike)
 

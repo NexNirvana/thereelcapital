@@ -37,7 +37,7 @@ One DO per **client** rather than per (client, mode): one connection serves both
 
 ```
 client_settings    user_id PK, size_usd, stop_pct, trailing_unlock_pct, updated_at
-invitations        id, user_id, token_hash, expires_at, used_at, created_by
+invitations        id, user_id, token_hash, expires_at, used_at, created_by   -- activation links, shared by the admin
 recovery_codes     id, user_id, code_hash, used_at
 broker_connection  user_id PK, client_id, client_secret_enc, refresh_token_enc, key_id,
                    refresh_expires_at NULL (= unknown or non-expiring), status, last_ok_at
@@ -79,7 +79,7 @@ src/
   lib/
     domain/            # pure rules + calendar (shared by web and engine)
     schema/            # Effect Schema definitions shared by both Workers
-    server/            # web-only server code: auth, guards, audit, email, engine client (SvelteKit never bundles /server/ into the browser)
+    server/            # web-only server code: auth, guards, audit, engine client (SvelteKit never bundles /server/ into the browser)
     ui/                # Svelte components, tokens.css, fonts
   routes/              # (public) acceso/invitación/recuperación · (app) operar/posiciones/historial/conexion · admin
   hooks.server.ts
@@ -118,7 +118,7 @@ Versions are pinned through `packageManager: "bun@<version>"` in `package.json`,
 - `compatibility_flags: ["nodejs_compat"]` on both Workers (Better Auth needs `AsyncLocalStorage`).
 - web `wrangler.jsonc`: `main: ".svelte-kit/cloudflare/_worker.js"`, `assets` binding, D1 `DB`, DO binding `ENGINE` → `ClientCoordinator` with `script_name: "reel-engine"`, route `thereelcapital.com` with `custom_domain: true`.
 - engine `wrangler.jsonc`: name `reel-engine`, D1 `DB` (same database), DO class declared as SQLite storage, `workers_dev: false`, no routes.
-- Secrets (`wrangler secret put`, never in Git): `BETTER_AUTH_SECRET` (web), `CREDENTIALS_KEY` (engine; web needs it only if it encrypts on save, so prefer encrypting inside the engine), `RESEND_API_KEY` (web). Local values in git-ignored `.dev.vars`.
+- Secrets (`wrangler secret put`, never in Git): `BETTER_AUTH_SECRET` (web), `CREDENTIALS_KEY` (engine; web needs it only if it encrypts on save, so prefer encrypting inside the engine), no email key: the app sends no email. Local values in git-ignored `.dev.vars`.
 - Local dev: `wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc` after a build; `vite dev` for UI work with the engine running in its own `wrangler dev`.
 - CI/CD (GitHub Actions, `oven-sh/setup-bun@v2` + `actions/setup-node`, `bun ci`): on PRs, typecheck, lint, unit, engine and e2e tests. On `main`: `d1 migrations apply --remote` → deploy engine → build and deploy web (`cloudflare/wrangler-action@v4` with `packageManager: bun`).
 - One production environment for the SIM pilot. Add a staging environment only when REAL is being prepared.
@@ -132,7 +132,6 @@ The pilot budget is US$0/month (D22): everything runs on free plans.
 | Workers (Free) | 100,000 requests/day; 10 ms CPU per request | a few clients; SSR, auth and RPC calls |
 | Durable Objects (SQLite, Free) | 100,000 requests/day; 100,000 rows written/day; 5 GB | one object per client; the sync loop runs only while something is open |
 | D1 (Free) | 5M rows read and 100,000 written per day; 5 GB | identity, settings, audit |
-| Resend (Free) | 3,000 emails/month, 100/day | invitations and codes |
 | Blacksmith, CodeRabbit, Greptile | free tiers | CI and reviews |
 
 Move to Workers Paid (US$5/month) when any of these happen: daily Durable Object requests or rows written pass 70% of the free limit on a normal trading day; requests fail with CPU-limit errors; or the sync loop needs a shorter interval than the free limits allow. Check usage in the Cloudflare dashboard weekly during the pilot.

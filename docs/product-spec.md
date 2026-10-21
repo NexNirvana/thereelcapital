@@ -43,7 +43,7 @@ Futures, shorting, SELL TO OPEN, BUY TO CLOSE, spreads; any client-chosen order 
 
 ## Journey
 
-1. **Access**: invitation → email code → passkey → recovery codes → own TradeStation key → OAuth → choose an account.
+1. **Access**: activation link from the admin (shared in person, single use, 72 h) → passkey → recovery codes → own TradeStation key → OAuth → choose an account. The app sends no email.
 2. **Prepare**: Acciones (ticker) or Opciones (underlying → expiry → strike × CALL/PUT). Read-only ask with freshness, SIZE and computed quantity.
 3. **Review and send**: account, mode, instrument, action, SIZE, quantity, MARKET. The server re-checks everything. If the quantity changed, the client re-confirms; the server never silently sends a different quantity.
 4. **Manage**: up to 2 positions; the scale-out bar, ALL OUT and trailing act on the selected one; pending orders show their state and can be cancelled; state is recovered on re-entry.
@@ -55,4 +55,4 @@ SIM is the default and only enabled mode. Mode, account and connection are alway
 
 ## Data retention
 
-Orders, fills, operational events and admin audit are kept for 6 years (D22); nothing needs deleting before then. Sessions, email codes and invitations expire on their own. The pilot runs on free tiers; see [architecture.md](architecture.md#costs-and-free-tier-limits).
+Orders, fills, operational events and admin audit are kept for 6 years (D22); nothing needs deleting before then. Sessions and activation links expire on their own. The pilot runs on free tiers; see [architecture.md](architecture.md#costs-and-free-tier-limits).

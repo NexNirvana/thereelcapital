@@ -36,14 +36,14 @@ Por decisión del usuario, entregar el panel de administración completo para el
 
 ### Autenticación y recuperación
 
-Decisión confirmada del usuario: correo verificado, passkey con huella/Face ID/PIN y códigos de recuperación de un solo uso. Exigir autenticación multifactor tanto a clientes como al administrador. La incorporación sigue limitada a perfiles creados por el administrador.
+Decisión confirmada del usuario: passkey con huella/Face ID/PIN y códigos de recuperación de un solo uso. *Actualizado el 21 de octubre de 2026:* sin envío de correos; la incorporación usa un enlace de activación de un solo uso que comparte el administrador (ver Decisiones posteriores). Exigir autenticación multifactor tanto a clientes como al administrador. La incorporación sigue limitada a perfiles creados por el administrador.
 
-**Solución de autenticación confirmada: Better Auth**, integrado con SvelteKit sobre Cloudflare Workers y persistencia en D1. Usar sus componentes de passkeys, verificación de correo, sesiones y administración, e integrar la recuperación con códigos de respaldo en el flujo acordado. La aplicación debe imponer el acceso solo por invitación y comprobar la autenticación fuerte en servidor antes de permitir operar; instalar los plugins por sí solo no acredita esas reglas.
+**Solución de autenticación confirmada: Better Auth**, integrado con SvelteKit sobre Cloudflare Workers y persistencia en D1. Usar sus componentes de passkeys, sesiones y administración; la recuperación usa códigos propios de la aplicación (ver `docs/auth-and-security.md`). La aplicación debe imponer el acceso solo por invitación y comprobar la autenticación fuerte en servidor antes de permitir operar; instalar los plugins por sí solo no acredita esas reglas.
 
-Better Auth es una biblioteca de código abierto con licencia MIT que alojamos y mantenemos en nuestra infraestructura. Su elección no incluye un servicio de envío de correos: **el proveedor de correo para invitaciones y códigos sigue pendiente**. La licencia gratuita tampoco elimina los posibles costes de Workers, D1 y correo. El panel administrativo completo de REEL CAPITAL y sus controles operativos forman parte de la aplicación.
+Better Auth es una biblioteca de código abierto con licencia MIT que alojamos y mantenemos en nuestra infraestructura. No se envían correos (decisión del 21 de octubre de 2026): la incorporación usa enlaces de activación que comparte el administrador. La licencia gratuita tampoco elimina los posibles costes de Workers, D1 y correo. El panel administrativo completo de REEL CAPITAL y sus controles operativos forman parte de la aplicación.
 
-- Verificar el correo asociado a la invitación mediante un código de un solo uso, con vencimiento, límite de intentos y protección contra reenvíos abusivos. Verificar un correo no debe habilitar operaciones por sí solo.
-- Usar **passkey con verificación de usuario obligatoria** (huella, Face ID o PIN del autenticador), vinculada al perfil y al dominio de la aplicación. Un código enviado al correo por sí solo no satisface el requisito de MFA ni permite operar.
+- Incorporar al cliente mediante un enlace de activación de un solo uso, generado al crear el perfil, mostrado una sola vez al administrador y compartido personalmente; caduca a las 72 horas, se guarda como hash y tiene límite de intentos. El enlace solo permite registrar la passkey; por sí solo no habilita operaciones.
+- Usar **passkey con verificación de usuario obligatoria** (huella, Face ID o PIN del autenticador), vinculada al perfil y al dominio de la aplicación. Un enlace de activación por sí solo no satisface el requisito de MFA ni permite operar.
 - Exigir y comprobar en servidor la verificación de usuario (`userVerification: required`), challenge, origen y RP ID. Utilizar una implementación mantenida de WebAuthn; no crear un esquema criptográfico propio.
 - Entregar códigos de recuperación de alta entropía, de un solo uso, mostrados una vez y almacenados como hashes. El flujo de recuperación debe comprobar el control de la cuenta, revocar sesiones anteriores y exigir configurar de nuevo la autenticación fuerte antes de operar. Un restablecimiento por correo no puede quitar MFA automáticamente.
 - Exigir autenticación reciente para modificar factores, credenciales API, roles o configuración administrativa de riesgo. Aplicar límites a intentos, sesiones revocables y registros de cambios sin secretos.
@@ -193,7 +193,7 @@ Según la [comunicación de aprobación aportada por el usuario](references/TRAD
 | Lógica y validación | TypeScript + Effect | Validar entradas con Schema, manejar errores y coordinar operaciones con el bróker. |
 | Interfaz y rutas de aplicación | SvelteKit | Configurar API propia, seleccionar SIM/real, operar acciones, consultar cadenas de opciones y preparar órdenes de mercado. |
 | Backend | Effect en rutas de servidor de SvelteKit sobre Cloudflare Workers | Gestionar OAuth y sesiones, autorizar solicitudes y ejecutar la lógica de negocio. |
-| Autenticación de la aplicación | Better Auth sobre Workers con D1 | Passkeys, verificación de correo, sesiones, roles y recuperación; integrar el acceso por invitación y mantenerlo separado del OAuth de TradeStation. |
+| Autenticación de la aplicación | Better Auth sobre Workers con D1 | Passkeys, enlaces de activación, sesiones, roles y recuperación; integrar el acceso por invitación y mantenerlo separado del OAuth de TradeStation. |
 | Datos de clientes | Cloudflare D1 | Usuarios, sesiones, SIZE, stop loss y umbral de habilitación de trailing por cliente con auditoría de cambios y conexiones autorizadas; secretos API y tokens individuales almacenados cifrados. |
 | Coordinación de órdenes | Durable Objects con SQLite | Un objeto por cliente y modo: órdenes por cuenta, idempotencia, capacidad/reservas diarias, posiciones, base y botones de scale-out, stops, trailing y recuperación. |
 | Secretos de aplicación | Workers Secrets | Claves de cifrado y secretos propios de REEL CAPITAL; las credenciales API individuales se guardan cifradas en la persistencia. |
@@ -263,7 +263,7 @@ El alcance principal del onboarding queda definido. Dominio de la aplicación: `
 
 Comprobar con las credenciales disponibles los endpoints de autenticación v3, callbacks OAuth, cuentas SIM, permisos de datos de acciones y opciones y política efectiva de caducidad de refresh tokens. Antes del piloto, verificar renovación, aviso previo cuando corresponda, caducidad/revocación, reautenticación manual y conciliación posterior, incluido su efecto sobre stops y trailing. La aprobación y disponibilidad de credenciales están confirmadas por el usuario; la conectividad operativa y la política de caducidad de esta conexión todavía no están verificadas.
 
-Para implementar, configurar invitaciones y verificación de correo, passkeys con verificación de usuario, recuperación, callback OAuth y vigencia de órdenes compatible con MARKET durante sesión regular. Antes del piloto, fijar presupuesto operativo y retención de datos. Estas decisiones técnicas no cambian el alcance principal acordado ni requieren reabrir las preguntas ya respondidas.
+Para implementar, configurar enlaces de activación, passkeys con verificación de usuario, recuperación, callback OAuth y vigencia de órdenes compatible con MARKET durante sesión regular. Antes del piloto, fijar presupuesto operativo y retención de datos. Estas decisiones técnicas no cambian el alcance principal acordado ni requieren reabrir las preguntas ya respondidas.
 
 ## Decisiones posteriores (20 de octubre de 2026)
 
@@ -273,12 +273,12 @@ Respuestas del usuario a las preguntas abiertas de `docs/open-questions.md`. Las
 - **Porcentaje de trailing (decidido el 21 de octubre de 2026):** el cliente elige entre 1%, 5%, 8%, 10%, 15% y 20%, con 10% inicial.
 - **Límites del stop y del umbral de trailing (decidido el 21 de octubre de 2026):** el servidor los aplica. Stop entre 10% y 50% (30% por defecto). Umbral vendido para habilitar el trailing entre 30% y 90% (70% por defecto): 30% coincide con la primera salida parcial y 90% todavía deja el último 10% para el trailing.
 - **Aumentar una posición existente (decidido el 21 de octubre de 2026):** no se admite en el piloto. El servidor rechaza una compra sobre un instrumento que ya tiene una posición abierta en ese modo; el cliente puede volver a entrar después de cerrarla por completo, como una posición nueva. La regla de conteo (cada compra intencional adicional consume una entrada en su primer fill) queda definida por si se habilita más adelante.
-- **Retención y presupuesto (decidido el 21 de octubre de 2026):** órdenes, ejecuciones, eventos operativos y auditoría se conservan 6 años, siguiendo la práctica de registros de los brókers en EE. UU.; no hace falta código de borrado antes de ese plazo. Los datos de sesión y los códigos temporales caducan según Better Auth. Presupuesto del piloto: US$0 al mes con los planes gratuitos de Cloudflare, Resend, Blacksmith y los revisores; Workers Paid (US$5 al mes) solo cuando se alcancen los umbrales de `docs/architecture.md#costs-and-free-tier-limits`.
+- **Retención y presupuesto (decidido el 21 de octubre de 2026):** órdenes, ejecuciones, eventos operativos y auditoría se conservan 6 años, siguiendo la práctica de registros de los brókers en EE. UU.; no hace falta código de borrado antes de ese plazo. Los datos de sesión y los códigos temporales caducan según Better Auth. Presupuesto del piloto: US$0 al mes con los planes gratuitos de Cloudflare, Blacksmith y los revisores; Workers Paid (US$5 al mes) solo cuando se alcancen los umbrales de `docs/architecture.md#costs-and-free-tier-limits`.
 - **Revisión técnica de la arquitectura propuesta:**
   - Un Durable Object **por cliente**, en lugar de uno por cliente y modo. Cada registro, contador e identificador sigue separado por modo, y ese objeto es el único que se comunica con TradeStation para el cliente.
   - El Durable Object reside en un segundo Worker del mismo repositorio, porque el adaptador de SvelteKit no permite exportarlo.
   - Detalle en `docs/decisions.md` (T1–T13).
-- **Tipografía, panel de administración y Better Auth:** confirmados; ver [Dirección visual confirmada](#dirección-visual-confirmada), [Panel de administración completo](#panel-de-administración-completo) y [Autenticación y recuperación](#autenticación-y-recuperación). **Proveedor de correo (decidido el 21 de octubre de 2026): Resend**, plan gratuito (3.000 correos al mes, 100 al día, dominio propio `thereelcapital.com`), mediante su API HTTP desde el Worker web.
+- **Tipografía, panel de administración y Better Auth:** confirmados; ver [Dirección visual confirmada](#dirección-visual-confirmada), [Panel de administración completo](#panel-de-administración-completo) y [Autenticación y recuperación](#autenticación-y-recuperación). **Correo (decisión del propietario, 21 de octubre de 2026): la aplicación no envía correos.** Ningún servicio de Cloudflare permite enviarlos gratis a destinatarios arbitrarios. El administrador crea al cliente y la aplicación genera un enlace de activación de un solo uso que caduca a las 72 horas y se muestra una sola vez; el administrador lo comparte personalmente. Con ese enlace el cliente registra su passkey y recibe sus códigos de recuperación. Sustituye la verificación del correo por código: el correo queda solo como identificador. No existen contraseñas.
 
 ## Fuentes técnicas
 
@@ -286,7 +286,6 @@ Respuestas del usuario a las preguntas abiertas de `docs/open-questions.md`. Las
 - [Better Auth: ejemplo SvelteKit](https://better-auth.com/docs/examples/svelte-kit).
 - [Better Auth: soporte de Cloudflare D1](https://better-auth.com/blog/1-5).
 - [Better Auth: passkeys](https://better-auth.com/docs/plugins/passkey).
-- [Better Auth: Email OTP](https://better-auth.com/docs/plugins/email-otp).
 - [Better Auth: 2FA y códigos de respaldo](https://better-auth.com/docs/plugins/2fa).
 - [Better Auth: administración](https://better-auth.com/docs/plugins/admin).
 - [NIST: autenticadores y autenticación multifactor](https://pages.nist.gov/800-63-4/sp800-63b/authenticators/).
