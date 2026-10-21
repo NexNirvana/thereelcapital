@@ -2,3 +2,7 @@
 exact = true
 # Supply-chain guard: ignore versions published less than 7 days ago (seconds).
 minimumReleaseAge = 604800
+
+[test]
+# Unit tests only: keeps `bun test` away from Vitest (engine/test) and Playwright (tests/e2e) files.
+root = "src/lib"
