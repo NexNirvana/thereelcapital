@@ -24,6 +24,10 @@ bun run build          # vite build (web Worker into .svelte-kit/cloudflare)
 bun run check          # svelte-kit sync + svelte-check (strict TypeScript)
 bun run lint           # prettier --check + eslint
 bun run format         # prettier --write
+bun run test          # unit, engine and e2e in sequence
+bun run test:unit     # bun test (src/lib/**, bun:test)
+bun run test:engine   # Vitest + @cloudflare/vitest-plugin inside workerd (engine/test)
+bun run test:e2e      # Playwright: builds and starts both Workers, opens the smoke page (needs: bunx playwright install chromium)
 bun run types          # regenerate worker-configuration.d.ts for both Workers after editing a wrangler.jsonc
 ```
 
