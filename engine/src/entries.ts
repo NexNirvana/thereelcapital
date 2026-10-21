@@ -80,8 +80,13 @@ export type SendEntryResult =
       readonly replay: boolean;
     };
 
-/** An entry that has not filled holds a slot until it is rejected or canceled (architecture.md#data-model). */
-const SLOT_HOLDING_STATES = "('ARMED', 'SENT', 'ACKNOWLEDGED', 'CANCEL_PENDING', 'UNKNOWN')";
+/**
+ * An entry holds a slot from the moment it is reserved until it has a position (reconciliation
+ * creates the position when the entry is terminal) or is rejected or canceled with no fill.
+ * PARTIAL is included: it has filled but has no position yet (architecture.md#data-model).
+ */
+const SLOT_HOLDING_STATES =
+  "('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')";
 /** Symbols that already have, or are about to have, a position. */
 const PENDING_ENTRY_STATES =
   "('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')";
@@ -199,7 +204,8 @@ function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
   const reservedOpens = ctx.sql
     .exec<{ n: number }>(
       `SELECT COUNT(*) AS n FROM intents
-         WHERE mode = 'SIM' AND kind = 'entry' AND filled_qty = 0 AND state IN ${SLOT_HOLDING_STATES}`,
+         WHERE mode = 'SIM' AND kind = 'entry' AND position_id IS NULL
+           AND (state IN ${SLOT_HOLDING_STATES} OR filled_qty > 0)`,
     )
     .one().n;
   return { ...counters, open, reservedOpens };

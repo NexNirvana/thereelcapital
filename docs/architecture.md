@@ -50,10 +50,10 @@ audit_log          id, at, actor_id, action, target_user_id, before_json, after_
 entry_counters     mode, session_date, consumed, reserved               PK(mode, session_date)
 intents            id, mode, kind (entry|exit|stop|trailing|cancel), account_id, position_id,
                    symbol, asset_type, trade_action, qty, size_applied, quote_json, state,
-                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at
+                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at, source (app|external)
 positions          id, mode, account_id, symbol, underlying, expiry, strike, right, point_value,
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
-                   trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on
+                   trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on, source (app|external)
 scaleout_steps     position_id, mode, idx (0–6), state (available|pending|done|done_zero), intent_id
 oauth_attempts     state PK, mode, client_id, client_secret_enc, key_id, expires_at   -- one in flight, single use
 broker_accounts    mode, account_id, account_type (Cash|Margin)           PK(mode, account_id)
@@ -68,7 +68,7 @@ The schema is built by append-only, versioned migrations (`schema_migrations`) t
 
 **Invariants the store enforces** (migration 3): `CHECK (sold_qty <= original_qty)` on `positions`, and a unique partial index `positions_one_open_per_symbol` on `(mode, symbol) WHERE status != 'CLOSED'`, so a second open position on a symbol cannot exist whatever the code does ([domain-rules.md §5](domain-rules.md#5-order-guards)). The guard still rejects first, with a clear reason; the index is the backstop for a race or a bug.
 
-**Reserved opens are derived, not stored.** `open` is the count of `positions` with `status != 'CLOSED'` in the mode. `reservedOpens` is the count of `intents` in that mode with `kind = 'entry'`, `filled_qty = 0` and a state other than `REJECTED` or `CANCELED`, that is `ARMED`, `SENT`, `ACKNOWLEDGED`, `CANCEL_PENDING` (a MARKET order may still fill first) or `UNKNOWN`: an entry that has not filled has no position yet, and one that has filled is counted in `open`. Only a zero-fill `REJECTED` or `CANCELED` entry frees the slot. Both counts and the reservation insert run in one `transactionSync`. The daily `entry_counters.reserved` is a stored counter by design (it must survive a state change), unlike slots.
+**Reserved opens are derived, not stored.** `open` is the count of `positions` with `status != 'CLOSED'` in the mode. `reservedOpens` is the count of `intents` in that mode with `kind = 'entry'` and no position yet (`position_id IS NULL`) that are still working (`ARMED`, `SENT`, `ACKNOWLEDGED`, `PARTIAL`, `CANCEL_PENDING` (a MARKET order may still fill first) or `UNKNOWN`), plus a terminal entry that filled but whose position is not created yet. Reconciliation creates the position in the same transaction that makes the entry terminal, so an entry is counted exactly once: in `reservedOpens` until then, in `open` after. Only a zero-fill `REJECTED` or `CANCELED` entry frees the slot. Both counts and the reservation insert run in one `transactionSync`. The daily `entry_counters.reserved` is a stored counter by design (it must survive a state change), unlike slots.
 
 Fills are not a table: TradeStation reports executed quantity and price per order leg, and the intent stores `filled_qty` and `avg_fill_price` from the broker.
 

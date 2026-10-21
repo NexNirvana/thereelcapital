@@ -57,6 +57,13 @@ Entries stay blocked and open positions show `unverified` protection from a fail
 
 Reconnecting never resets counters, reservations or scale-out steps.
 
+**Applying broker state** (`engine/src/reconcile.ts`). The sync loop reads orders and positions first, then `reconcile` applies them in ONE synchronous transaction, so counters, the sell ledger and positions never see a half-applied pass. It only records what the broker says; it never places or retries an order.
+
+- An intent's status and `filled_qty` come from its broker order. `filled_qty` never decreases, and an intent never moves backwards (a PARTIAL stays PARTIAL on a stale `ACKNOWLEDGED`, a CANCEL_PENDING stays pending while the order is open). An unmapped broker status keeps the current state and is logged.
+- **First fill** of one of our entries: `consumed + 1`, `reserved − 1`, on the market day the reservation was taken. **Terminal with zero fills** (REJECTED or CANCELED): `reserved − 1`, and the slot frees because it is derived from the state.
+- **Terminal entry with fills** (FILLED, or CANCELED/REJECTED after a partial fill): the position is created in the same transaction with `original_qty` = the filled quantity, `avg_entry_price` from the broker's average fill, the client's `stop_pct` and `trailing_unlock_pct`, protection `none`, and the seven scale-out steps `available`. Until then the entry holds the slot (including PARTIAL). A cancel that raced a fill therefore ends FILLED with its position.
+- Exit fills add to `sold_qty`. A position is CLOSED only when the broker reports zero remaining. A smaller holding than ours is a sale made elsewhere and raises `sold_qty`; a larger one is logged and never sold. Both wait while an exit of ours is still unresolved.
+
 ## Degraded states
 
 | Condition | New entries | Exits and cancels | Protection shown |

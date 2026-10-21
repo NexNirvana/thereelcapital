@@ -345,8 +345,9 @@ describe("sendEntry", () => {
         ),
       );
       // Both positions fill and close: the slots are free again, and 2 of 3 entries are consumed.
+      // A filled entry has its position (closed here), which is what stops it holding a slot.
       state.storage.sql.exec(
-        "UPDATE intents SET state = 'FILLED', filled_qty = qty WHERE state = 'ACKNOWLEDGED'",
+        "UPDATE intents SET state = 'FILLED', filled_qty = qty, position_id = 'closed-' || id WHERE state = 'ACKNOWLEDGED'",
       );
       state.storage.sql.exec("UPDATE entry_counters SET consumed = reserved, reserved = 0");
       const second = await Promise.all(
