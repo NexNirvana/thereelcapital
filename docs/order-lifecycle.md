@@ -1,0 +1,57 @@
+# Order lifecycle
+
+How the `ClientCoordinator` DO turns a user action into a broker order and keeps its state truthful. The formulas are in [domain-rules.md](domain-rules.md). The TradeStation fields are in [tradestation-integration.md](tradestation-integration.md).
+
+## Intents
+
+Every action that can reach the broker (entry, scale-out, ALL OUT, stop exit, trailing exit, cancel) is first persisted as an **intent** with its own id. The id doubles as the TradeStation `OrderConfirmID`.
+
+```
+ARMED ─► SENT ─► ACKNOWLEDGED ─► PARTIAL ─► FILLED
+           │           ├────────► CANCEL_PENDING ─► CANCELED
+           │           └────────► REJECTED
+           └─► UNKNOWN   (no or ambiguous response: reconcile before anything else)
+```
+
+- **ARMED**: the server validated session, role, mode, account, market hours, limits, a fresh quote and the quantity. Entry and slot reservations are taken here.
+- **SENT**: request dispatched.
+- **ACKNOWLEDGED**: the broker returned an `OrderID`. **Not a fill.**
+- **PARTIAL / FILLED**: from the broker's leg `ExecQuantity` and `FilledPrice`. Quantities and prices come only from there.
+- **CANCEL_PENDING → CANCELED**: only a broker status makes it CANCELED; a MARKET order may fill first.
+- **REJECTED**: reservations are released only if `filled_qty = 0`.
+- **UNKNOWN**: timeout, dropped connection or restart between send and acknowledgement. Hold all reservations and block conflicting actions until reconciliation resolves it.
+
+Preparing the form (choosing an instrument, seeing the computed quantity) creates no intent. The UI shows each state distinctly and never says "executed" without a fill.
+
+## Rules
+
+1. **Persist the intent before calling the broker.** A retried request for the same intent reuses the same id and `OrderConfirmID`, so it cannot create a second order. A new user action gets a new id.
+2. **Never blind-retry** placing or cancelling. Effect `retry` is allowed only on reads and token refresh. A timeout on place makes the intent UNKNOWN.
+3. **No `await` between reading and writing shared state.** The DO interleaves requests at every `await`. Reserve inside `ctx.storage.transactionSync(...)`, then await the broker, then apply the result in another synchronous transaction.
+4. **One sell ledger per position**, used by scale-outs, ALL OUT, stop and trailing:
+   ```
+   committed  = Σ qty of exit intents in SENT | ACKNOWLEDGED | PARTIAL(unfilled part) | UNKNOWN
+   available  = (original_qty − sold_qty) − committed
+   ```
+   An exit never asks for more than `available`. If protection fires while an exit is pending, it sells only `available`.
+5. A position is CLOSED and frees its slot only when the broker reports zero remaining.
+
+## Reconciliation
+
+When: a client opens the app, reconnects TradeStation, the DO starts, any intent is UNKNOWN, and on every sync-loop tick while something is open.
+
+How: read the broker's orders and positions for the client's accounts in that mode → match orders to intents by `OrderID` / `OrderConfirmID` → apply status and fills → adopt positions and orders made outside REEL CAPITAL (another terminal, or existing activity at first connect) as external, so they count against `available` → recompute ledgers, counters and slots → only then accept new entries and resolve UNKNOWN intents.
+
+Reconnecting never resets counters, reservations or scale-out steps.
+
+## Degraded states
+
+| Condition | New entries | Exits and cancels | Protection shown |
+| --- | --- | --- | --- |
+| token expired or revoked | blocked | blocked (they can't reach the broker); offer «Reconectar» | `unverified` |
+| quotes stale or missing | blocked | allowed | `unverified` if server-monitored |
+| broker errors or rate-limited | blocked | allowed, never auto-retried | `unverified` until the next good sync |
+| outside regular session | blocked | blocked (orders only in session) | unchanged |
+| UNKNOWN intent on the position | blocked | blocked for that position | `unverified` |
+
+The UI always shows the reason. **ESTADO NO VERIFICADO** is shown whenever state can't be confirmed with the broker.

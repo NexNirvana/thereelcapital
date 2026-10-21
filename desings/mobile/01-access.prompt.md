@@ -1,0 +1,12 @@
+# 01-access
+
+Generador: herramienta integrada image_gen.
+
+This is a precise MOBILE UI color-correction and screen-extraction task for REEL CAPITAL, not a new design.
+Image 1 is the EDIT TARGET: the most recent simplified MOBILE board with three cream-colored phone screens. Image 2 is the AUTHORITATIVE COLOR REFERENCE: the latest approved DESKTOP terminal.
+Produce ONE isolated mobile app screen from Image 1 as specified below. Preserve the original mobile layout, spacing, content, exact values, condensed headings, regular supporting typography and simplified design. The only design change is the color palette, to match Image 2 closely.
+COLOR MATCH IS THE MAIN REQUIREMENT: use exactly the desktop's near-black matte canvas (about #101010), subtle charcoal surfaces (about #161616), neutral gray dividers, off-white main text and main action fill (about #F3F3F0), medium-gray secondary text, and black primary button text and arrow. SIM badge must be black with thin gray/white outline and white letters. Progress bars use off-white and gray. Completed controls use muted charcoal and gray. No orange, yellow, cream canvas, beige, blue, green, accent color, gold, glow, texture, gradients or colored shadows anywhere. Do not create a light theme.
+OUTPUT: a high-resolution tall portrait mobile UI screenshot, approximately 1024x2048, 1:2 aspect ratio. Show the single full app screen edge-to-edge, no phone hardware frame, no multi-screen board, no desktop content, no device mockup or perspective, no exterior presentation captions. Keep a simple mobile status bar at top and safe-area padding, with generous breathing room. It is the same mobile interface from Image 1, now using the desktop colors from Image 2. Keep hierarchy calm and all text readable. Do not introduce new UI modules, decorative motifs, features, charts or P&L.
+
+Extract ONLY the LEFT mobile access screen. Exact important content: top small wordmark "REEL CAPITAL". Main large stacked headline "TU CUENTA. / TU OPERATIVA." Supporting copy "Terminal privado de acciones y opciones." A small outline lock and "Solo por invitación". Generous blank area. Main full-width off-white rectangular button "Entrar con passkey" with a small black right arrow. Secondary gray text "Código de recuperación". Tiny bottom domain "thereelcapital.com". This is private passkey access, so no public signup, no social sign-in and no password input.
+

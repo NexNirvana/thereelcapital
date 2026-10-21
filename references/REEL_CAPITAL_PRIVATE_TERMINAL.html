@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REEL CAPITAL · Private Execution Terminal</title>
+<style>
+:root{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#10151d;color:#edf2f8}
+*{box-sizing:border-box}
+body{margin:0;padding:18px}
+main{max-width:860px;margin:0 auto}
+.head{display:flex;justify-content:space-between;align-items:center;gap:15px;margin:10px 0 22px}
+.brand{font-size:26px;font-weight:850;letter-spacing:2px}
+.sub,.muted{color:#a6b4c7;font-size:13px}
+.badge{font-size:12px;background:#183a36;color:#9af0c8;padding:8px 11px;border-radius:30px}
+.card{background:#1b2330;border:1px solid #344154;border-radius:20px;padding:19px;margin:0 0 14px}
+.label{font-weight:700;font-size:12px;color:#a9bbd1;letter-spacing:1px;margin:0 0 12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.positions{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.position{background:#111923;border:2px solid #39475a;border-radius:15px;color:#f1f6ff;text-align:left;padding:17px;width:100%;cursor:pointer;font:inherit;min-height:142px}
+.position.selected{border-color:#559cf7;background:#172a42}
+.position.empty{opacity:.68}
+.sym{font-size:18px;font-weight:780}
+.info{font-size:12px;color:#b3c1d1;margin:7px 0 12px}
+.nums{font-size:23px;font-weight:750}
+.progress{height:7px;border-radius:9px;background:#344153;overflow:hidden;margin-top:12px}
+.fill{height:100%;background:#5b9bf1}
+.bar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.btn{border:1px solid #5a6c84;background:#2b3a4f;border-radius:12px;color:white;padding:13px 8px;min-height:50px;cursor:pointer;font-size:15px;font-weight:750}
+.btn:disabled{opacity:.34;cursor:not-allowed}
+.btn.done{background:#214e43;color:#afe4d1}
+.buy{background:#166d54;border-color:#3abc90}
+.out{border-color:#c34d5b;color:#ffc8ce;background:#45242e}
+.active{background:#1b5aa1;border-color:#67aaff}
+.buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{margin-bottom:11px;min-width:0;overflow-wrap:anywhere}
+.field label{font-size:12px;color:#b2c0d1;display:block;margin-bottom:5px}
+input,select{background:#101721;border:1px solid #536075;color:white;border-radius:9px;padding:11px;font:inherit;width:100%}
+.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 12px;align-items:start}
+.fields>.field{min-width:0}
+.fields input,.fields select{min-width:0;max-width:100%;display:block}
+.fields .fixed{font-size:clamp(17px,2.1vw,23px);white-space:normal;line-height:1.35}
+.fixed{font-size:23px;font-weight:800}
+.highlight{padding:13px;border:1px solid #42536c;background:#131f30;border-radius:12px}
+.status{font-size:12px;color:#9abfea}
+.log{max-height:160px;overflow-y:auto;font-size:12px;color:#b9c5d3}
+.log div{padding:7px 0;border-bottom:1px solid #334054}
+.caution{background:#322e20;color:#f5d893;border-radius:12px;padding:12px;font-size:12px;line-height:1.5}
+.bottom{font-size:12px;color:#99a7b7;line-height:1.6}
+.hidden{display:none!important}
+@media(min-width:681px) and (max-width:900px){
+.fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:680px){
+body{padding:12px}
+.card{padding:14px}
+.positions,.twocol{grid-template-columns:1fr}
+.bar{grid-template-columns:repeat(4,minmax(0,1fr))}
+.fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+.brand{font-size:23px}
+}
+@media(max-width:390px){
+.fields{grid-template-columns:1fr}
+.bar{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+</style>
+</head>
+<body>
+<main>
+
+<header class="head">
+<div>
+<div class="brand">REEL CAPITAL</div>
+<div class="sub">PRIVATE EXECUTION TERMINAL · NO CHARTS · NO P&L</div>
+</div>
+<div class="badge">SIN CONEXIÓN</div>
+</header>
+
+<section class="card">
+<div class="label">PREPARAR OPERACIÓN · BUY TO OPEN MARKET</div>
+<div class="fields">
+<div class="field"><label>Ticker</label><input id="ticker" value="PLTR" maxlength="8"></div>
+<div class="field"><label>Strike</label><input id="strike" type="number" min=".01" step=".5" value="195"></div>
+<div class="field"><label>CALL / PUT</label><select id="optionType"><option>CALL</option><option>PUT</option></select></div>
+<div class="field"><label>Vencimiento</label><input type="date" id="expiry" value="2026-10-20"></div>
+<div class="field"><label>Prima de referencia</label><input id="referencePremium" type="number" min="0.01" step=".01" value="1.60"></div>
+<div class="field"><label>SIZE BASE BLOQUEADO</label><div class="fixed">$20,000 🔒</div></div>
+</div>
+<div class="label" style="margin-top:6px">SIZE DOWN · PRÓXIMA ENTRADA</div>
+<div class="buttons" id="sizeControls">
+<button class="btn active" data-down="0">NORMAL</button>
+<button class="btn" data-down="25">−25%</button>
+<button class="btn" data-down="50">−50%</button>
+</div>
+<div class="row" style="margin:13px 0">
+<span class="muted">SIZE efectivo (próxima entrada)</span>
+<strong id="effectiveSize">$20,000</strong>
+</div>
+<button id="buyButton" class="btn buy" style="width:100%">BUY MARKET</button>
+<p class="muted">La prima se recibirá automáticamente desde TradeStation cuando esté conectado.</p>
+</section>
+
+<section class="card">
+<div class="row">
+<div class="label">OPEN POSITIONS · SELECCIONA UNA</div>
+<div class="muted" id="capacity">0 / 2 OPEN</div>
+</div>
+<div class="positions" id="positionCards">
+<button class="position empty" disabled>Posición 1 · Disponible</button>
+<button class="position empty" disabled>Posición 2 · Disponible</button>
+</div>
+<div class="muted" style="margin-top:12px">
+Cada posición conserva por separado sus contratos, scale-outs y trailing. La barra de abajo es única y opera exclusivamente la tarjeta seleccionada.
+</div>
+</section>
+
+<section class="card">
+<div class="row">
+<div>
+<div class="label">BARRA ÚNICA DE SCALE-OUTS · MARKET</div>
+<div style="font-size:21px;font-weight:800" id="activeName">Selecciona una posición abierta</div>
+<div class="muted" id="activeDetails">Porcentajes sobre la posición original, con redondeo acumulativo.</div>
+</div>
+<span class="badge" id="selectedIndicator">SIN SELECCIÓN</span>
+</div>
+<div class="bar" id="exitBar" style="margin-top:20px">
+<button class="btn" disabled>30%</button>
+<button class="btn" disabled>20%</button>
+<button class="btn" disabled>10%</button>
+<button class="btn" disabled>10%</button>
+<button class="btn" disabled>10%</button>
+<button class="btn" disabled>10%</button>
+<button class="btn" disabled>10%</button>
+</div>
+<button class="btn out" id="allOut" style="width:100%;margin-top:12px" disabled>ALL OUT · MARKET — CERRAR POSICIÓN SELECCIONADA</button>
+<div class="row" style="margin-top:15px">
+<div class="muted" id="scaleHint">Selecciona PLTR o SPY arriba; los botones actuarán solo sobre esa posición.</div>
+</div>
+</section>
+
+<section class="twocol">
+<div class="card">
+<div class="label">TRAILING · POSICIÓN SELECCIONADA</div>
+<div class="row" style="align-items:end">
+<div class="field" style="flex:1">
+<label>Trailing % · ajustable al activar</label>
+<select id="trailingPercent">
+<option>1</option>
+<option>5</option>
+<option selected>8</option>
+<option>10</option>
+<option>15</option>
+<option>20</option>
+</select>
+</div>
+<button class="btn" id="activateTrailing" disabled>ACTIVATE TRAILING</button>
+</div>
+<div class="muted" id="trailingStatus">Inactivo · esperando conexión de cotizaciones.</div>
+</div>
+<div class="card">
+<div class="label">CONTROLES DE RIESGO</div>
+<div class="row"><span>Stop fijo por prima</span><strong>−30%</strong></div>
+<div class="row" style="margin-top:11px"><span>Stops diarios</span><strong id="stopsCounter">0 / 2</strong></div>
+<div class="row" style="margin-top:11px"><span>Estado</span><strong class="status" id="systemState">READY</strong></div>
+<button class="btn" id="testStop" style="width:100%;margin-top:12px" disabled>TEST STOP · POSICIÓN SELECCIONADA</button>
+</div>
+</section>
+
+<section class="card">
+<div class="row">
+<div class="label">REGISTRO DE EVENTOS · SIN P&L</div>
+<button class="btn" id="resetDemo" style="min-height:35px;padding:6px 12px">REINICIAR SESIÓN</button>
+</div>
+<div class="log" id="events"></div>
+</section>
+<div class="caution">SIN CONEXIÓN AL BROKER. Este archivo HTML no envía órdenes a TradeStation ni mantiene stops activos. Los estados mostrados son locales; no representan ejecuciones confirmadas.</div>
+<p class="bottom">
+REEL CAPITAL · Una barra compartida, posiciones independientes. Actualmente máximo 2 posiciones, configurado en una constante interna ampliable para futuras versiones. Nunca se vende sobre la cantidad restante como porcentaje: todos los botones se calculan sobre la posición original.
+</p>
+</main>
+
+<script>
+(()=>{'use strict';
+
+const MAX_POSITIONS=2;
+const EXIT_STEPS=[30,20,10,10,10,10,10];
+
+const $=id=>document.getElementById(id);
+let positions=Array(MAX_POSITIONS).fill(null),
+    selected=-1,
+    down=0,
+    stopCount=0,
+    history=[];
+
+const num=v=>Number(v);
+const money=n=>'$'+n.toLocaleString('en-US',{maximumFractionDigits:0});
+
+function record(s){
+history.unshift(new Date().toLocaleTimeString()+' · '+s);
+history=history.slice(0,40)
+}
+
+function current(){
+return selected>=0?positions[selected]:null
+}
+
+function escapeText(s){
+return String(s).replace(/[&<>"']/g,c=>({
+'&':'&amp;',
+'<':'&lt;',
+'>':'&gt;',
+'"':'&quot;',
+"'":'&#39;'
+}[c]))
+}
+
+function render(){
+const open=positions.filter(Boolean).length;
+$('capacity').textContent=open+' / '+MAX_POSITIONS+' OPEN';
+$('stopsCounter').textContent=stopCount+' / 2';
+$('systemState').textContent=stopCount>=2?'ENTRY LOCKED':'READY';
+$('effectiveSize').textContent=money(20000*(1-down/100));
+
+document.querySelectorAll('[data-down]').forEach(b=>
+b.classList.toggle('active',Number(b.dataset.down)===down)
+);
+
+$('positionCards').innerHTML=positions.map((p,i)=>{
+let active=selected===i;
+
+if(!p)return `<button type="button" class="position empty ${active?'selected':''}" data-position="${i}">
+<div class="sym">POSICIÓN ${i+1} · DISPONIBLE</div>
+<div class="info">Sin contratos abiertos</div>
+<div class="nums">—</div>
+</button>`;
+
+const name=`${escapeText(p.ticker)} ${p.strike}${p.type==='CALL'?'C':'P'} · ${escapeText(p.expiry)}`;
+
+return `<button type="button" class="position ${active?'selected':''}" data-position="${i}">
+<div class="row"><div class="sym">${name}</div><strong>${active?'◉ SELECTED':'○'}</strong></div>
+<div class="info">SIZE ${money(p.size)} · STOP −30% ${p.trailingActive?'· TRAILING '+p.trailing+'%':''}</div>
+<div class="row">
+<div><div class="muted">INITIAL</div><div class="nums">${p.original}</div></div>
+<div style="text-align:right"><div class="muted">REMAINING</div><div class="nums">${p.remaining}</div></div>
+</div>
+<div class="progress"><div class="fill" style="width:${(100*p.remaining/p.original).toFixed(2)}%"></div></div>
+</button>`
+}).join('');
+
+document.querySelectorAll('[data-position]').forEach(b=>
+b.addEventListener('click',()=>{
+selected=Number(b.dataset.position);
+render()
+})
+);
+
+const p=current();
+
+$('activeName').textContent=p?
+`${p.ticker} ${p.strike}${p.type==='CALL'?'C':'P'} · ${p.remaining} contratos`:
+'Selecciona una posición abierta';
+
+$('activeDetails').textContent=p?
+`Originales: ${p.original} · Vendidos: ${p.original-p.remaining} · Acumulado solicitado: ${p.target}%`:
+'Porcentajes sobre la posición original, con redondeo acumulativo.';
+
+$('selectedIndicator').textContent=p?'POSICIÓN '+(selected+1):'SIN SELECCIÓN';
+
+$('exitBar').innerHTML=EXIT_STEPS.map((pct,i)=>
+`<button class="btn ${p&&p.used[i]?'done':''}" data-exit="${i}" ${!p||p.used[i]?'disabled':''}>${pct}%${p&&p.used[i]?' ✓':''}</button>`
+).join('');
+
+document.querySelectorAll('[data-exit]').forEach(b=>
+b.addEventListener('click',()=>sellStep(Number(b.dataset.exit)))
+);
+
+$('allOut').disabled=!p;
+$('activateTrailing').disabled=!p;
+$('testStop').disabled=!p;
+$('trailingPercent').value=p?String(p.trailing):'8';
+
+$('trailingStatus').textContent=p&&p.trailingActive?
+`TRAILING ${p.trailing}% seleccionado · sin protección activa en el broker.`:
+'Inactivo · esperando conexión de cotizaciones.';
+
+$('scaleHint').textContent=p?
+'Los botones SOLO afectan a '+p.ticker+' · posición '+(selected+1):
+'Selecciona una tarjeta arriba; la barra actúa únicamente en esa posición.';
+
+$('events').innerHTML=history.map(s=>
+'<div>'+escapeText(s)+'</div>'
+).join('')||'<div>Sin eventos.</div>'
+}
+
+function buy(){
+if(stopCount>=2){
+alert('Bloqueo diario: dos stops.');
+return
+}
+
+let slot=positions.findIndex(p=>!p);
+
+if(slot<0){
+alert('Máximo de '+MAX_POSITIONS+' posiciones simultáneas.');
+return
+}
+
+const ticker=$('ticker').value.trim().toUpperCase(),
+strike=num($('strike').value),
+premium=num($('referencePremium').value),
+expiry=$('expiry').value,
+type=$('optionType').value;
+
+if(!/^[A-Z.]{1,8}$/.test(ticker)||!(strike>0)||!(premium>0)||!expiry){
+alert('Completa contrato y prima de referencia válidos.');
+return
+}
+
+let size=20000*(1-down/100),
+qty=Math.floor(size/(premium*100));
+
+if(qty<1){
+alert('SIZE insuficiente para un contrato.');
+return
+}
+
+positions[slot]={
+ticker,strike,type,expiry,size,
+original:qty,
+remaining:qty,
+target:0,
+used:EXIT_STEPS.map(()=>false),
+trailing:8,
+trailingActive:false
+};
+
+selected=slot;
+
+record(`POSICIÓN ${slot+1}: BUY MARKET · REGISTRO LOCAL ${qty} ${ticker} ${strike}${type==='CALL'?'C':'P'} · SIZE ${money(size)}`);
+down=0;
+render()
+}
+
+function sellStep(i){
+const p=current();
+if(!p||p.used[i])return;
+
+p.used[i]=true;
+p.target=Math.min(100,p.target+EXIT_STEPS[i]);
+
+let goal=Math.round(p.original*p.target/100);
+let sold=p.original-p.remaining;
+let quantity=Math.max(0,Math.min(p.remaining,goal-sold));
+
+p.remaining-=quantity;
+
+record(`POSICIÓN ${selected+1}: SELL MARKET · REGISTRO LOCAL ${quantity} contratos · Botón ${EXIT_STEPS[i]}% · ${p.target}% acumulado`);
+
+if(p.remaining===0){
+record(`POSICIÓN ${selected+1}: cerrada.`);
+positions[selected]=null
+}
+render()
+}
+
+function close(reason){
+const p=current();
+if(!p)return;
+
+record(`POSICIÓN ${selected+1}: ${reason} · SELL MARKET · REGISTRO LOCAL ${p.remaining} contratos`);
+positions[selected]=null;
+
+if(reason==='STOP −30%'){
+stopCount++
+}
+render()
+}
+
+$('buyButton').addEventListener('click',buy);
+
+document.querySelectorAll('[data-down]').forEach(b=>
+b.addEventListener('click',()=>{
+down=Number(b.dataset.down);
+render()
+})
+);
+
+$('allOut').addEventListener('click',()=>close('ALL OUT'));
+
+$('testStop').addEventListener('click',()=>close('STOP −30%'));
+
+$('activateTrailing').addEventListener('click',()=>{
+const p=current();
+if(!p)return;
+
+p.trailing=Number($('trailingPercent').value);
+p.trailingActive=true;
+
+record(`POSICIÓN ${selected+1}: ACTIVATE TRAILING ${p.trailing}% · sin conexión de cotizaciones`);
+render()
+});
+
+$('resetDemo').addEventListener('click',()=>{
+positions=Array(MAX_POSITIONS).fill(null);
+selected=-1;
+down=0;
+stopCount=0;
+history=[];
+record('Sesión local reiniciada.');
+render()
+});
+
+record('Terminal preparado · broker desconectado.');
+render();
+
+})();
+</script>
+</body>
+</html>

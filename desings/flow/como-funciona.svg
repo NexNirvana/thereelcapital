@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1390" viewBox="0 0 1200 1390" role="img" aria-labelledby="title desc">
+  <title id="title">REEL CAPITAL — flujo de la app</title>
+  <desc id="desc">El administrador invita y configura. El cliente accede, prepara y confirma una compra. TradeStation devuelve el estado y las ejecuciones. El cliente gestiona ventas, stop y trailing y consulta el historial. Valores iniciales: SIZE de 20.000 dólares, dos posiciones y tres entradas por día y modo. Esquema previsto para SIM.</desc>
+  <defs>
+    <style>
+      text { fill: white; font-family: 'Inter', 'DejaVu Sans', sans-serif; }
+      .title { font-family: 'Inter Display', 'Inter', sans-serif; font-weight: 900; letter-spacing: -1px; }
+      .label { font-family: 'Inconsolata', 'DejaVu Sans Mono', monospace; font-size: 22px; }
+      .body { font-size: 25px; }
+      .note { font-size: 21px; fill: #bdbdbd; }
+      .black { fill: #0a0a0a; }
+      .box { stroke: #777; stroke-width: 1.5; fill: none; }
+      .arrow { stroke: white; stroke-width: 2; fill: none; marker-end: url(#head); }
+    </style>
+    <marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1 L8 5 L1 9" fill="none" stroke="white" stroke-width="1.5"/></marker>
+  </defs>
+  <rect width="1200" height="1390" fill="#0a0a0a"/>
+  <text x="56" y="79" font-size="48" class="title">REEL CAPITAL</text>
+  <text x="56" y="115" class="label">FLUJO DE LA APP</text>
+  <rect x="1030" y="43" width="114" height="48" fill="white"/>
+  <text x="1087" y="76" text-anchor="middle" class="label black">SIM</text>
+
+  <rect x="56" y="158" width="1088" height="86" class="box"/>
+  <text x="80" y="193" class="label">ADMINISTRADOR</text>
+  <text x="80" y="225" class="body">Invita · Aumenta SIZE · Configura stop y acceso al trailing</text>
+  <path d="M600 244 V278" class="arrow"/>
+
+  <rect x="56" y="294" width="1088" height="102" class="box"/>
+  <rect x="56" y="294" width="94" height="102" fill="white"/>
+  <text x="103" y="358" text-anchor="middle" font-size="37" class="title black">01</text>
+  <text x="180" y="336" font-size="34" class="title">ACCESO</text>
+  <text x="180" y="373" class="body">Correo + passkey · API propia de TradeStation</text>
+  <path d="M600 396 V430" class="arrow"/>
+
+  <rect x="56" y="446" width="1088" height="148" fill="white"/>
+  <path d="M150 446 V594" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="103" y="533" text-anchor="middle" font-size="37" class="title black">02</text>
+  <text x="180" y="489" font-size="34" class="title black">COMPRA</text>
+  <text x="180" y="528" class="body black">Eliges acción u opción → la app calcula → confirmas</text>
+  <text x="180" y="565" font-size="22" class="black">Cantidad según SIZE y cotización · Orden MARKET</text>
+  <path d="M600 594 V628" class="arrow"/>
+
+  <rect x="56" y="644" width="1088" height="102" class="box"/>
+  <rect x="56" y="644" width="94" height="102" fill="white"/>
+  <text x="103" y="708" text-anchor="middle" font-size="37" class="title black">03</text>
+  <text x="180" y="686" font-size="34" class="title">TRADESTATION</text>
+  <text x="180" y="723" class="body">Devuelve el estado y las ejecuciones de la orden</text>
+  <path d="M600 746 V780" class="arrow"/>
+
+  <rect x="56" y="796" width="1088" height="246" class="box"/>
+  <rect x="56" y="796" width="94" height="246" fill="white"/>
+  <text x="103" y="852" text-anchor="middle" font-size="37" class="title black">04</text>
+  <text x="180" y="840" font-size="34" class="title">POSICIÓN</text>
+  <path d="M664 868 V1018" stroke="#777"/>
+  <text x="180" y="889" class="label">VENTAS</text>
+  <text x="180" y="928" class="body">30% · 20% · cinco pasos de 10%</text>
+  <text x="180" y="960" class="note">Sobre la cantidad original</text>
+  <rect x="180" y="980" width="434" height="40" fill="white"/>
+  <text x="397" y="1008" text-anchor="middle" font-size="23" font-weight="750" class="black">ALL OUT → cerrar el resto</text>
+  <text x="696" y="889" class="label">PROTECCIÓN INICIAL</text>
+  <text x="696" y="928" class="body">Stop: 30%</text>
+  <text x="696" y="967" class="body">Tras vender 70% confirmado:</text>
+  <text x="696" y="1005" class="body" font-weight="750">activar trailing de 10%*</text>
+  <path d="M600 1042 V1076" class="arrow"/>
+
+  <rect x="56" y="1092" width="1088" height="102" class="box"/>
+  <rect x="56" y="1092" width="94" height="102" fill="white"/>
+  <text x="103" y="1156" text-anchor="middle" font-size="37" class="title black">05</text>
+  <text x="180" y="1134" font-size="34" class="title">HISTORIAL</text>
+  <text x="180" y="1171" class="body">Órdenes · Ejecuciones · Cancelaciones</text>
+
+  <path d="M56 1238 H1144" stroke="#777"/>
+  <text x="56" y="1281" font-size="28" font-weight="750">US$20,000 iniciales</text>
+  <text x="464" y="1281" font-size="28" font-weight="750">2 posiciones máx.</text>
+  <text x="846" y="1281" font-size="28" font-weight="750">3 entradas / día</text>
+  <text x="56" y="1317" class="note">Límites por cliente y modo · Solo sesión regular · Real después de SIM</text>
+  <text x="56" y="1355" font-size="18" fill="#bdbdbd">*El cliente ajusta el %. El administrador fija el umbral vendido. Esquema previsto.</text>
+</svg>
