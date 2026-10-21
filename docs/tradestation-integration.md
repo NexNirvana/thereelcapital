@@ -14,6 +14,18 @@ All TradeStation calls are made by the client's `ClientCoordinator` DO ([archite
 - Callback URLs must be registered on each client's key and use `https://` (localhost ports 80/3000/3001/8080/31022 are allowed by default). Production callback: `https://thereelcapital.com/conexion/callback`. The onboarding screen must tell the client which URL to register.
 - `state` binds the callback to the logged-in REEL CAPITAL session. The callback only links the authorization to that existing profile.
 
+### Connect flow (implemented)
+
+1. `/conexion` (fresh session) posts `client_id` and secret. The web Worker passes them straight to the client's DO (`beginConnection`) and never stores or echoes them. The DO encrypts the secret (AES-GCM, `CREDENTIALS_KEY`, [auth-and-security.md#secrets](auth-and-security.md#secrets)), keeps it in `oauth_attempts` with a random 256-bit `state` (hex), single use, expiring after 10 minutes, and returns the authorize URL. A new attempt replaces the previous one.
+2. TradeStation redirects the browser to `/conexion/callback?code=…&state=…`. The state is only valid in the DO of the session user, so a foreign, missing, expired or reused state is rejected (`STATE_INVALID`) before anything is sent to TradeStation. The state is consumed before the token request, so a replay finds nothing even if the exchange fails.
+3. The DO exchanges the code at `/oauth/token` (form-encoded `grant_type=authorization_code`, `client_id`, `client_secret`, `code`, `redirect_uri`), lists the accounts with the access token against the SIM base, and only then writes `broker_connection` (D1: encrypted secret, encrypted refresh token, `key_id`, `status = CONNECTED`, `refresh_expires_at = NULL` for unknown). The access token is not kept; the refresher is #18. If the account listing fails, the grant is revoked and nothing new is stored; revoking kills every grant of that API key, so a stored connection with the same `client_id` is deleted (with its cached accounts) and one with another key is kept. When the key differs from the stored one, the previous key's grant is revoked (best effort) before the row is replaced.
+4. Accounts shown: `AccountType` Cash or Margin with `Status` Active (matched case-insensitively), cached in the DO (`broker_accounts`) as of connect time.
+5. Disconnect (fresh session) calls `/oauth/revoke`, then deletes the stored credentials whether or not the revoke succeeded, and tells the client if it did not. Revoking removes **every** refresh token of that API key.
+
+Failures carry stable codes (`STATE_INVALID`, `TOKEN_EXCHANGE_FAILED`, `BROKER_UNAVAILABLE`, `INVALID_BROKER_RESPONSE`) mapped to Spanish copy; response bodies from the auth endpoints are never logged because they can echo submitted values. Nothing here is retried.
+
+**Unverified with a real key** (to be exercised in the SIM spike, #21): the flow has been tested only against a mocked TradeStation. Still **(verify)**: the exact `Status` strings of `GET /brokerage/accounts` (the docs we could read do not list them), the revoke body field (`token` in the official example, `refresh_token` in its parameter table, so both are sent), the error body of `/oauth/token`, and whether a SIM-enabled key lists only SIM accounts on the SIM base.
+
 ## Token lifetime
 
 - Access token: 20 min (`expires_in: 1200`). The DO refreshes it before expiry and keeps it in memory only.

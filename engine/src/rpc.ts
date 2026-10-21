@@ -42,8 +42,37 @@ export type ActivateTrailingArgs = typeof ActivateTrailingArgs.Type;
 export const ModeOnlyArgs = Schema.Struct({ mode: Mode });
 export type ModeOnlyArgs = typeof ModeOnlyArgs.Type;
 
+const token = (max: number) => Schema.String.check(Schema.isPattern(new RegExp(`^\\S{1,${max}}$`)));
+/** Where the web Worker is served; the engine derives the callback URL from it. */
+const Origin = Schema.String.check(Schema.isPattern(/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/));
+
+/** The only place the client's secret travels after the form: straight into the engine. */
+export const BeginConnectionArgs = Schema.Struct({
+  mode: Mode,
+  clientId: token(128),
+  clientSecret: token(256),
+  origin: Origin,
+});
+export type BeginConnectionArgs = typeof BeginConnectionArgs.Type;
+
+export const CompleteConnectionArgs = Schema.Struct({
+  mode: Mode,
+  code: token(2048),
+  state: token(128),
+  origin: Origin,
+});
+export type CompleteConnectionArgs = typeof CompleteConnectionArgs.Type;
+
 /** Stable codes; the web Worker maps them to Spanish copy. Details go to the events table only. */
-export type EngineErrorCode = "INVALID_INPUT" | "MODE_NOT_SIM" | "NOT_IMPLEMENTED";
+export type EngineErrorCode =
+  | "INVALID_INPUT"
+  | "MODE_NOT_SIM"
+  | "NOT_IMPLEMENTED"
+  | "CREDENTIALS_UNAVAILABLE"
+  | "STATE_INVALID"
+  | "TOKEN_EXCHANGE_FAILED"
+  | "BROKER_UNAVAILABLE"
+  | "INVALID_BROKER_RESPONSE";
 
 export type EngineResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -53,6 +82,12 @@ const MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_INPUT: "Los datos enviados no son válidos.",
   MODE_NOT_SIM: "Solo el modo SIM está disponible.",
   NOT_IMPLEMENTED: "Esta operación todavía no está disponible.",
+  CREDENTIALS_UNAVAILABLE: "No pudimos guardar tus credenciales. Avisa al administrador.",
+  STATE_INVALID: "El enlace de autorización no es válido o venció. Vuelve a conectar.",
+  TOKEN_EXCHANGE_FAILED:
+    "TradeStation rechazó la autorización. Revisa tu API key, tu secreto y la URL de callback.",
+  BROKER_UNAVAILABLE: "No pudimos comunicarnos con TradeStation. Inténtalo de nuevo.",
+  INVALID_BROKER_RESPONSE: "TradeStation respondió algo inesperado. Inténtalo de nuevo.",
 };
 
 export function failure(code: EngineErrorCode): EngineResult<never> {

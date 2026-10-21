@@ -11,7 +11,14 @@ const calls = [
   ["cancel", { mode: "SIM", intentId: "i-1" }],
   ["activateTrailing", { mode: "SIM", positionId: "p-1", trailingPct: 10 }],
 ] as const;
-const reads = ["state", "history", "connection"] as const;
+const reads = [
+  "state",
+  "history",
+  "connection",
+  "beginConnection",
+  "completeConnection",
+  "disconnect",
+] as const;
 const allMethods = [...calls.map(([method]) => method), ...reads] as const;
 
 function stubFor(name: string) {

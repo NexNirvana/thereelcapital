@@ -1,9 +1,20 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+  beginConnection,
+  completeConnection,
+  disconnect,
+  readConnection,
+  type ConnectionContext,
+  type ConnectionView,
+} from "./connection.ts";
+import { createCipher, CredentialsKeyError } from "./crypto.ts";
 import { writeEvent } from "./events.ts";
 import { migrate } from "./schema.ts";
 import {
   ActivateTrailingArgs,
+  BeginConnectionArgs,
   CancelArgs,
+  CompleteConnectionArgs,
   decodeArgs,
   ExitArgs,
   failure,
@@ -93,10 +104,34 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     );
   }
 
-  /** The broker connection arrives with the TradeStation OAuth issue; until then it is never connected. */
-  connection(input: unknown): EngineResult<{ mode: Mode; status: "NOT_CONNECTED" }> {
-    return this.enter("connection", ModeOnlyArgs, input, ({ mode }) =>
-      success({ mode, status: "NOT_CONNECTED" as const }),
+  /** Status of the client's TradeStation connection and the accounts it can trade. */
+  connection(input: unknown): Promise<EngineResult<ConnectionView>> {
+    return this.enterWithConnection("connection", ModeOnlyArgs, input, async (ctx) =>
+      success(await readConnection(ctx)),
+    );
+  }
+
+  /** Stores the client's key and secret (encrypted) and returns where to send the browser. */
+  beginConnection(input: unknown): Promise<EngineResult<{ authorizeUrl: string }>> {
+    return this.enterWithConnection("beginConnection", BeginConnectionArgs, input, (ctx, args) =>
+      beginConnection(ctx, args),
+    );
+  }
+
+  /** The OAuth callback: checks the state, exchanges the code, links the accounts. */
+  completeConnection(input: unknown): Promise<EngineResult<ConnectionView>> {
+    return this.enterWithConnection(
+      "completeConnection",
+      CompleteConnectionArgs,
+      input,
+      (ctx, args) => completeConnection(ctx, args),
+    );
+  }
+
+  /** Revokes the grant at TradeStation and deletes the stored credentials. */
+  disconnect(input: unknown): Promise<EngineResult<{ revoked: boolean }>> {
+    return this.enterWithConnection("disconnect", ModeOnlyArgs, input, async (ctx) =>
+      success(await disconnect(ctx)),
     );
   }
 
@@ -124,6 +159,42 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       return failure(decoded.code);
     }
     return run(decoded.args);
+  }
+
+  private async enterWithConnection<
+    S extends Schema.Top & {
+      readonly DecodingServices: never;
+      readonly Type: { readonly mode: Mode };
+    },
+    T,
+  >(
+    method: string,
+    schema: S,
+    input: unknown,
+    run: (ctx: ConnectionContext, args: S["Type"]) => Promise<EngineResult<T>>,
+  ): Promise<EngineResult<T>> {
+    const decoded = this.enter(method, schema, input, (args) => success(args));
+    if (!decoded.ok) return decoded;
+    // The Durable Object is named after the session user (engineFor); that name is the client id.
+    const userId = this.ctx.id.name;
+    if (userId === undefined) return failure("INVALID_INPUT");
+    try {
+      return await run(
+        {
+          sql: this.ctx.storage.sql,
+          storage: this.ctx.storage,
+          db: this.env.DB,
+          userId,
+          now: Date.now(),
+          cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+        },
+        decoded.value,
+      );
+    } catch (error) {
+      if (!(error instanceof CredentialsKeyError)) throw error;
+      this.log("error", "SIM", "rpc.credentials_unavailable", method);
+      return failure("CREDENTIALS_UNAVAILABLE");
+    }
   }
 
   private notImplemented(method: string): EngineResult<never> {
