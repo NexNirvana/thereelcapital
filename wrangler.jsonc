@@ -13,6 +13,7 @@
     {
       "binding": "DB",
       "database_name": "reel",
+      "migrations_dir": "migrations",
       // PLACEHOLDER: local-only. Replace with the real id when the D1 database is created.
       "database_id": "00000000-0000-0000-0000-000000000000",
     },
