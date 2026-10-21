@@ -36,6 +36,8 @@ export const load: PageServerLoad = async (event) => {
       view.status === "CONNECTED"
         ? {
             status: view.status,
+            health: view.health,
+            entriesBlocked: view.entriesBlocked,
             accounts: view.accounts,
             // null is "unknown or non-expiring" until a refresh shows the key's policy (#18).
             expiresAt: view.refreshExpiresAt === null ? null : expiry.format(view.refreshExpiresAt),
