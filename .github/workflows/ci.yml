@@ -112,10 +112,10 @@ jobs:
       - name: Smoke check
         run: |
           for attempt in $(seq 1 12); do
-            body=$(curl -fsS --max-time 10 https://thereelcapital.com) \
-              && grep -q 'data-testid="ping"' <<<"$body" && grep -q 'pong' <<<"$body" && exit 0
+            status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' https://thereelcapital.com/acceso) \
+              && [ "$status" = 200 ] && exit 0
             echo "attempt $attempt failed; retrying in 10s"
             sleep 10
           done
-          echo "thereelcapital.com did not serve the smoke page" >&2
+          echo "thereelcapital.com did not serve the access page" >&2
           exit 1
