@@ -18,10 +18,13 @@
     border-bottom: 1px solid var(--rule);
   }
   dt {
+    flex: none;
     color: var(--text);
   }
   dd {
+    min-width: 0;
     margin: 0;
+    overflow-wrap: anywhere;
     font-weight: 500;
     text-align: right;
   }

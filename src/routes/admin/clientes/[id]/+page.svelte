@@ -321,6 +321,8 @@
 
 <style>
   h1 {
+    /* An email is read as typed; the global uppercase makes it hard to scan. */
+    text-transform: none;
     font-size: clamp(22px, 4vw, 32px);
     overflow-wrap: anywhere;
   }
