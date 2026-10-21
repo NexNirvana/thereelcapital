@@ -30,17 +30,23 @@
   );
   const contract = $derived(data.contract);
 
-  // TODO(#26): `Revisar orden` leads to /operar/revisar once the review step exists.
-  const reviewBuilt = false;
+  // The review step prepares its own preview; this only says which entry to review.
+  const reviewHref = $derived(
+    data.accountId === null
+      ? null
+      : `${resolve("/(app)/operar/revisar")}?${new URLSearchParams({
+          tipo: data.tipo,
+          cuenta: data.accountId,
+          simbolo: data.symbol,
+        })}`,
+  );
   const reason = $derived(
     blocked ??
       (preview === null
         ? data.tipo === "acciones"
           ? "Escribe un símbolo y consulta para ver tu orden."
           : "Elige un contrato para ver tu orden."
-        : reviewBuilt
-          ? null
-          : "La revisión de la orden todavía no está disponible."),
+        : null),
   );
 </script>
 
@@ -161,7 +167,11 @@
     <p class="note">Orden de mercado en simulación.</p>
 
     <div class="review">
-      <Button variant="primary" disabled aria-describedby="review-reason">Revisar orden</Button>
+      {#if preview && reviewHref}
+        <Button variant="primary" href={reviewHref}>Revisar orden</Button>
+      {:else}
+        <Button variant="primary" disabled aria-describedby="review-reason">Revisar orden</Button>
+      {/if}
       <p id="review-reason" class="reason" aria-live="polite">{reason}</p>
       {#if preview}<p class="confirm">Confirma los detalles antes de enviar.</p>{/if}
     </div>
