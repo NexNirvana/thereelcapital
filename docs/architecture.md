@@ -139,7 +139,7 @@ The pilot budget is US$0/month (D22): everything runs on free plans.
 | Workers (Free) | 100,000 requests/day; 10 ms CPU per request | a few clients; SSR, auth and RPC calls |
 | Durable Objects (SQLite, Free) | 100,000 requests/day; 100,000 rows written/day; 5 GB | one object per client; the sync loop runs only while something is open |
 | D1 (Free) | 5M rows read and 100,000 written per day; 5 GB | identity, settings, audit |
-| Blacksmith, CodeRabbit, Greptile | free tiers | CI and reviews |
+| Blacksmith, CodeRabbit | free tiers | CI and first review |
 
 Move to Workers Paid (US$5/month) when any of these happen: daily Durable Object requests or rows written pass 70% of the free limit on a normal trading day; requests fail with CPU-limit errors; or the sync loop needs a shorter interval than the free limits allow. Check usage in the Cloudflare dashboard weekly during the pilot.
 

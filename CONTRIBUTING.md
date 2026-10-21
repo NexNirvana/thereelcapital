@@ -71,27 +71,28 @@ Every PR shows how it was verified, in the template's sections:
 
 ### Review gate
 
-**No PR is merged until one AI reviewer has reviewed its final commit**, and every actionable comment is addressed.
+**No PR is merged until the local reviewer has reviewed its final commit with confidence 4 or 5 and no actionable findings (critical, major or minor)**, after every CodeRabbit comment is addressed.
 
 **Exception: documentation-only PRs.** A PR that changes only Markdown files (`*.md`) needs no AI review: mark it ready and enable auto-merge once the self-review is done, and it merges when CI is green. A PR that also touches code, configuration, workflows or hooks follows the full gate.
 
 | Reviewer | How to request | Notes |
 | --- | --- | --- |
-| CodeRabbit (first choice) | automatic, once, when the PR leaves draft | one review per PR: incremental reviews are off, so `@coderabbitai review` again does nothing; about 10 reviews per hour on the current plan; skips Markdown files (`path_filters`); configured in `.coderabbit.yaml` |
-| GitHub Copilot | `gh pr edit <n> --add-reviewer @copilot` | reads `.github/copilot-instructions.md` and `.github/instructions/*.instructions.md` |
-| Greptile | comment `@greptileai review` | reviews only on request (`greptile.json`); requires the Greptile app on the repository |
+| CodeRabbit | automatic, once, when the PR leaves draft | one review per PR: incremental reviews are off, so `@coderabbitai review` again does nothing; about 10 reviews per hour on the current plan; skips Markdown files (`path_filters`); configured in `.coderabbit.yaml` |
+| Local reviewer | `bun run review <pr>` | the merge gate. Runs on the owner's machine with their own model usage (`scripts/review-pr.ts`); posts one review with inline comments, a summary and a confidence score from 1 to 5 |
 
-- Use **one reviewer at a time per PR**. When CodeRabbit is rate-limited or busy, request Copilot or Greptile instead, so several PRs are reviewed in parallel by different reviewers. Never request two reviewers for the same commit.
-- The rules below apply to whichever reviewer is used.
+GitHub Copilot and Greptile are no longer available.
 
-- **Self-review before leaving draft.** Read the whole diff (`git diff origin/main`) against `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `greptile.json`, looking specifically for unhandled failure paths, quoting and injection, secrets reachable from the wrong scope, missing negative tests, and similar code that should change the same way. The goal is a first bot review that finds nothing.
-- Open PRs as drafts and mark them ready only when commits are organized, checks pass, the self-review is done and verification is filled in. CodeRabbit then reviews automatically, once; pushes don't re-trigger it (`.coderabbit.yaml`). For Copilot or Greptile, request the review when marking the PR ready.
-- Wait for the review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review. If CodeRabbit's limit is reached, switch that PR to Copilot or Greptile rather than waiting.
-- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Handle each review round in **one fix pass**: collect every finding, fix it together with every similar spot in the diff (a finding is usually a class of bug, not one line), push all fixes together, then request one follow-up review of those commits from Greptile (`@greptileai review`), since CodeRabbit reviews each PR only once. Resolve the threads.
+The local reviewer builds its context from this file, `CLAUDE.md`, `.github/copilot-instructions.md`, the path-scoped `.github/instructions/*.instructions.md`, the `greptile.json` instructions and docs, the project skills that match the changed paths, the PR body, the linked issue, the diff and every earlier review thread. It reads the PR head in a disposable worktree and can look at any file. Confidence: 5 safe to merge, 4 only nits, 3 issues to fix, 2 serious problems, 1 must not merge. Its review carries a hidden marker with the commit, confidence and number of actionable findings (critical, major, minor), which `scripts/pr-status.sh` shows. It needs `pi` signed in to the `opencode-go` provider; the script builds its own read-only profile (`~/.pi/reviewer`, from `scripts/review/pi-settings.json`) and the model can be changed with `REVIEW_MODEL`. The rules, specs, prompt and tool profile are all read from the PR's base branch (the checkout's own copies only when the base has none yet); run it from an up-to-date `main` checkout. The tooling is not hardened against its own PR author: only the owner's agents push here. The reviewer runs in a throwaway worktree with a minimal environment and an empty home, and nothing containing a local secret value is posted. `--dry-run` prints the review without posting it. Documentation-only PRs and ignored files are skipped.
+
+- **Self-review before leaving draft.** Read the whole diff (`git diff origin/main`) against `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `greptile.json` (the local reviewer's instructions), looking specifically for unhandled failure paths, quoting and injection, secrets reachable from the wrong scope, missing negative tests, and similar code that should change the same way. The goal is a first bot review that finds nothing.
+- Open PRs as drafts and mark them ready only when commits are organized, checks pass, the self-review is done and verification is filled in. CodeRabbit then reviews automatically, once; pushes don't re-trigger it (`.coderabbit.yaml`).
+- Wait for CodeRabbit's review to finish. A "processing", "skipped" or "review limit reached" comment is not a review; if its limit is reached, go straight to the local reviewer. Address CodeRabbit's comments first, push, then run `bun run review <pr>` on the final commit.
+- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Handle each review round in **one fix pass**: collect every finding, fix it together with every similar spot in the diff (a finding is usually a class of bug, not one line), push all fixes together, then run `bun run review <pr>` again: it sees the earlier threads, checks the fixes, replies to them and resolves the ones it confirms. Resolve any thread it leaves open once handled.
+- **Rounds are capped.** The first local review covers the whole diff; follow-up rounds judge only what changed since the last reviewed commit (plus a critical problem anywhere), recompute confidence from the findings, and skip a head that already has a review. After three local rounds without convergence, stop and ask the coordinator: `bun run review` refuses a fourth round unless `--force`, and `scripts/pr-status.sh` flags the PR as non-converging.
 - Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
 - Green CI is required as well.
-- Once a review of the final commit has no actionable comments and every thread is resolved, enable auto-merge with `gh pr merge <n> --auto --rebase`; GitHub merges when the required checks pass.
-- `scripts/pr-status.sh <pr> [--wait]` prints state, required checks, reviews, unresolved threads and the latest bot summary in one block; `--wait` first blocks until required checks finish.
+- Once the local review of the final commit meets the bar above and every thread is resolved, enable auto-merge with `gh pr merge <n> --auto --rebase`; GitHub merges when the required checks pass.
+- `scripts/pr-status.sh <pr> [--wait]` prints state, required checks, reviews, the local review's confidence and whether it covers the head, unresolved threads and the latest bot summary in one block; `--wait` first blocks until required checks finish.
 
 ### Organizing commits
 

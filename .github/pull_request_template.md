@@ -19,4 +19,4 @@ Desktop and mobile browser screenshots next to the design, or why there is nothi
 ## Review
 
 - [ ] Self-reviewed the whole diff against the review instructions before leaving draft
-- [ ] One reviewer (CodeRabbit, Copilot or Greptile) has reviewed the final commit, and every actionable comment is fixed or answered (not needed for a documentation-only PR)
+- [ ] CodeRabbit's comments are fixed or answered, and `bun run review <pr>` on the final commit shows confidence 4 or 5 with no actionable findings (not needed for a documentation-only PR)
