@@ -25,11 +25,12 @@ bun run check          # svelte-kit sync + svelte-check (strict TypeScript)
 bun run lint           # prettier --check + eslint
 bun run format         # prettier --write
 bun run test          # unit, engine and e2e in sequence
-bun run test:unit     # bun test (src/lib/**, bun:test)
+bun run test:unit     # bun test (src/lib/** and scripts/**, bun:test)
 bun run test:engine   # Vitest + @cloudflare/vitest-plugin inside workerd (engine/test)
 bun run test:e2e      # Playwright: builds and starts both Workers, opens the smoke page (needs: bunx playwright install chromium)
 bun run admin:create <email> [--remote]  # first admin + activation link (docs/auth-and-security.md)
 bun run types          # regenerate worker-configuration.d.ts for both Workers after editing a wrangler.jsonc
+bun run review <pr>    # local PR reviewer: posts one review with a confidence score (--dry-run to preview); see CONTRIBUTING.md#review-gate
 ```
 
 Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`); never deploy by hand. Local secrets go in the git-ignored `.dev.vars` (names in `.dev.vars.example`).
@@ -54,7 +55,7 @@ Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`);
 9. Undecided values (`docs/open-questions.md`) stay in one config module. Don't invent values or features (YAGNI).
 10. Elegant code: use a well-chosen library for solved problems, and never hand-keep data that changes over time (dates, hours, tables) in `src/`. See CONTRIBUTING.md#design.
 11. Every PR carries verification evidence; UI changes carry desktop and mobile browser screenshots (CONTRIBUTING.md#verification-and-screenshots).
-12. **Never merge a PR before one AI reviewer (CodeRabbit, Copilot or Greptile, one at a time) has reviewed its final commit** and every actionable comment is fixed or answered (CONTRIBUTING.md#review-gate). If CodeRabbit is rate-limited, request Copilot or Greptile; never skip the review. Only documentation-only PRs (Markdown files only) are exempt: they merge on green CI.
+12. **Never merge a PR before the local reviewer (`bun run review <pr>`) has reviewed its final commit with confidence 4 or 5 and no actionable findings (critical, major, minor)**, after every CodeRabbit comment is fixed or answered (CONTRIBUTING.md#review-gate). CodeRabbit reviews once, automatically, when the PR leaves draft; Copilot and Greptile are unavailable. After three local rounds without convergence, stop and ask the coordinator (the tool refuses a fourth round without `--force`). Only documentation-only PRs (Markdown files only) are exempt: they merge on green CI.
 
 ## Contributing rules
 
@@ -71,7 +72,7 @@ Everything in CONTRIBUTING.md applies to you, in particular:
 
 Long sessions cost most through tool output kept in context.
 
-- Delegate polling, review-fix and restack loops to Sonnet subagents that report in at most 10 lines. Research subagents use Sonnet too.
+- Delegate polling, review-fix and restack loops to Sonnet subagents that report in at most 10 lines. Research subagents use Sonnet too. `bun run review <pr>` costs no session context: run it in a subagent or in the background and read only its confidence and findings.
 - Screenshots and design comparisons happen in a subagent that reports in text; don't read images in the main session.
 - Read big docs with `grep -n` and `sed -n`, not whole. Cap command output (`| head -c 4000`).
 - Use Write or Edit for file changes, not nested heredocs.

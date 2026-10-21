@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit reviews a PR once, when it leaves draft (about 10 reviews per
 # hour on the current plan). Pushes don't re-trigger a review; follow-up
-# reviews go to Greptile. Markdown is excluded: documentation-only PRs need
+# reviews are done by the local reviewer (`bun run review <pr>`). Markdown is excluded: documentation-only PRs need
 # no AI review (CONTRIBUTING.md#review-gate).
 language: en-US
 reviews:
