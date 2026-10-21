@@ -100,6 +100,7 @@ describe("local simulation: orders", () => {
         accountId: ACCOUNT,
         symbol: "MSFT",
         assetType: "equity",
+        side: "long",
         quantity: 10,
         avgPriceMicros: 101_000_000,
       },

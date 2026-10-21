@@ -410,6 +410,7 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
         const details: SymbolDetails = {
           symbol,
           assetType: s.assetType,
+          option: s.option === undefined ? null : { ...s.option },
           pointValue: s.pointValue ?? (s.assetType === "option" ? 100 : 1),
           quantityIncrement: s.quantityIncrement ?? 1,
           minimumTradeQuantity: s.minimumTradeQuantity ?? 1,
@@ -587,6 +588,7 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
               accountId: p.accountId,
               symbol: p.symbol,
               assetType: p.assetType,
+              side: "long",
               quantity: p.quantity,
               avgPriceMicros: p.avgPriceMicros,
             });

@@ -22,21 +22,37 @@ export interface BrokerAccount {
   readonly label: string;
 }
 
+/** What an option symbol stands for. `strike` is in micro-dollars, like every price. */
+export interface OptionContract {
+  readonly underlying: string;
+  /** ISO date. */
+  readonly expiration: string;
+  readonly strike: number;
+  readonly right: "call" | "put";
+}
+
 export interface SymbolDetails {
   readonly symbol: string;
   readonly assetType: AssetType;
+  /** Null for equities. Lets a positions table show underlying, expiry, strike and right. */
+  readonly option: OptionContract | null;
   /** Price multiplier (100 for standard options, to be verified against SIM). */
   readonly pointValue: number;
   readonly quantityIncrement: number;
   readonly minimumTradeQuantity: number;
 }
 
+/**
+ * A missing or one-sided quote is `null`, never 0: callers must treat a null bid or ask as "no
+ * price" (entries need a fresh ask), so an absent side can never pass as a real price.
+ */
 export interface Quote {
   readonly symbol: string;
-  readonly bid: number;
-  readonly ask: number;
-  readonly last: number;
-  readonly tradeTime: number;
+  readonly bid: number | null;
+  readonly ask: number | null;
+  readonly last: number | null;
+  /** Null when the broker sent no trade time. */
+  readonly tradeTime: number | null;
   /** Our own receive time: the broker has no bid/ask timestamp, so freshness is judged from this. */
   readonly receivedAt: number;
   readonly isDelayed: boolean;
@@ -100,6 +116,8 @@ export interface BrokerPosition {
   readonly accountId: string;
   readonly symbol: string;
   readonly assetType: AssetType;
+  /** Unsigned size. Shorts are reported (never hidden) so the engine can refuse to trade around them. */
+  readonly side: "long" | "short";
   readonly quantity: number;
   readonly avgPriceMicros: number;
 }
@@ -110,7 +128,7 @@ export interface BrokerAdapterShape {
   readonly source: BrokerSource;
   readonly accounts: () => Op<ReadonlyArray<BrokerAccount>>;
   readonly symbolDetails: (symbol: string) => Op<SymbolDetails>;
-  /** Symbols the broker has no quote for are absent from the result. */
+  /** Symbols the broker answered with an error are absent from the result. */
   readonly quotes: (symbols: ReadonlyArray<string>) => Op<ReadonlyArray<Quote>>;
   /** ISO dates, ascending. */
   readonly optionExpirations: (underlying: string) => Op<ReadonlyArray<string>>;
