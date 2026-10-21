@@ -76,11 +76,15 @@ describe("Better Auth configuration", () => {
     expect(impersonate.status).toBe(404);
     expect(setPassword.status).toBe(404);
 
-    // Control: the cookie is a real admin session, so an enabled admin endpoint accepts it.
+    // Control: the cookie is a real admin session, and the allowlist still closes the admin API.
+    const current = await auth.handler(
+      new Request(`${baseURL}/api/auth/get-session`, { headers: { cookie } }),
+    );
+    expect(((await current.json()) as { user: { role: string } }).user.role).toBe("admin");
     const list = await auth.handler(
       new Request(`${baseURL}/api/auth/admin/list-users`, { headers: { cookie } }),
     );
-    expect(list.status).toBe(200);
+    expect(list.status).toBe(404);
   });
 
   it("creates users through the admin API without a password", async () => {

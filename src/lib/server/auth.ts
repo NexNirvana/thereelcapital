@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { bannedUserMessage, requireUserVerified } from "./passkey-policy.ts";
 import { activationPlugin } from "./activation-plugin.ts";
 import { claimActivationOnRegistration } from "./activation.ts";
+import { endpointPolicyPlugin } from "./endpoint-policy.ts";
 import { recoveryPlugin } from "./recovery-plugin.ts";
 
 export interface AuthEnv {
@@ -32,7 +33,7 @@ export function createAuth(
     database: env.DB,
     // No sign-up, no password, no email: the admin creates users and hands over an activation link.
     emailAndPassword: { enabled: false },
-    // The password and impersonation endpoints must never be reachable.
+    // Defense in depth for the two worst admin endpoints; the allowlist plugin below closes the rest.
     disabledPaths: ["/admin/impersonate-user", "/admin/set-user-password"],
     // A session created from a recovery code (or activation link) that may only register a
     // passkey; src/lib/server/enrollment.ts is its single enforcement point.
@@ -47,6 +48,7 @@ export function createAuth(
     rateLimit: { enabled: true, storage: "database" },
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [
+      endpointPolicyPlugin(),
       admin({ adminRoles: ["admin"], bannedUserMessage }),
       passkey({
         rpID: hostname,
