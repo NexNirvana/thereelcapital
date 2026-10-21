@@ -39,7 +39,7 @@ Failures carry stable codes (`STATE_INVALID`, `TOKEN_EXCHANGE_FAILED`, `BROKER_U
 
 ## Environments
 
-**SIM only. No real money, ever.** The only base URL in code is `https://sim-api.tradestation.com/v3`. LIVE is not a configured environment: there is no live URL constant, setting or code path, and the pre-commit hook rejects the live host outside `docs/`. Adding LIVE would require an explicit decision by the owner and is out of scope.
+**SIM only. No real money, ever.** The only base URL in code is `https://sim-api.tradestation.com/v3`. LIVE is not a configured environment: there is no live URL constant, setting or code path, and the pre-commit hook and the `guards` CI job reject any added line naming the live host outside `docs/` (with or without a scheme, port or version path). The allowlist in `.githooks/no-live-host` is explicit: the OAuth `audience` value (a required identifier of the token request, not a request target) in `engine/src/tradestation/endpoints.ts` and the tests, and documentation links in Markdown. It is tested by `scripts/no-live-host.test.ts`. Adding LIVE would require an explicit decision by the owner and is out of scope.
 
 The DO rejects any mode other than SIM before making a call. Whether one token serves both and how SIM accounts are identified is **(verify)**. SIM fills are instantaneous with fake money, so SIM proves integration, not execution quality.
 
