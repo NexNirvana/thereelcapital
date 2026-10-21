@@ -4,10 +4,8 @@
 import { DatabaseSync } from "node:sqlite";
 import { createAuth } from "#lib/server/auth.ts";
 
-export const auth = createAuth(
-  {
-    DB: new DatabaseSync(":memory:"),
-    BETTER_AUTH_SECRET: "schema-generation-only",
-  },
-  { baseURL: "http://localhost" },
-);
+export const auth = createAuth({
+  DB: new DatabaseSync(":memory:"),
+  BETTER_AUTH_SECRET: "schema-generation-only",
+  APP_ORIGIN: "http://localhost",
+});

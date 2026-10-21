@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { createAuth } from "#lib/server/auth.ts";
 
 const baseURL = "https://thereelcapital.com";
-const auth = createAuth(
-  { DB: env.DB, BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID() },
-  { baseURL },
-);
+const auth = createAuth({
+  DB: env.DB,
+  BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID(),
+  APP_ORIGIN: baseURL,
+});
 
 function post(path: string, body: unknown, headers: Record<string, string> = {}) {
   return auth.handler(

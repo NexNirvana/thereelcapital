@@ -7,10 +7,7 @@ import { createAuth } from "#lib/server/auth.ts";
 
 export const handle: Handle = async ({ event, resolve }) => {
   // sveltekitCookies goes last so cookies set by Better Auth reach SvelteKit responses.
-  const auth = createAuth(env, {
-    baseURL: event.url.origin,
-    trailingPlugins: [sveltekitCookies(getRequestEvent)],
-  });
+  const auth = createAuth(env, { trailingPlugins: [sveltekitCookies(getRequestEvent)] });
 
   // The user and role come only from the verified session; routes never read ids from the client.
   const session = await auth.api.getSession({ headers: event.request.headers });
