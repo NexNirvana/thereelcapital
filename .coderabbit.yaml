@@ -1,10 +1,13 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# Reviews are rate-limited, so CodeRabbit reviews a PR once, when it leaves
-# draft, on any base branch (stacked PRs included). Pushes don't re-trigger a
-# review: CodeRabbit reviews each PR once. Follow-up reviews go to Greptile.
+# CodeRabbit reviews a PR once, when it leaves draft (about 10 reviews per
+# hour on the current plan). Pushes don't re-trigger a review; follow-up
+# reviews go to Greptile. Markdown is excluded: documentation-only PRs need
+# no AI review (CONTRIBUTING.md#review-gate).
 language: en-US
 reviews:
   profile: chill
+  path_filters:
+    - "!**/*.md"
   # Don't post "Review skipped" status comments on every push.
   review_status: false
   auto_review:
