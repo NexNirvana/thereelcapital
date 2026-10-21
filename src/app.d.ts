@@ -5,6 +5,11 @@ type AuthSession = Auth["$Infer"]["Session"];
 
 declare global {
   namespace App {
+    // `code` is the stable identifier clients and tests rely on; message is Spanish.
+    interface Error {
+      message: string;
+      code?: string;
+    }
     interface Locals {
       session: AuthSession["session"] | null;
       user: AuthSession["user"] | null;
