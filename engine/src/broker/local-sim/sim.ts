@@ -141,6 +141,8 @@ export interface LocalSim {
   readonly setQuote: (symbol: string, update: Partial<QuoteState>) => void;
   /** Queue a scripted failure; it fires `times` times (default once). */
   readonly inject: (fault: Fault, times?: number) => void;
+  /** Drop every queued failure that has not fired yet. */
+  readonly clearFaults: () => void;
 }
 
 const isEntry = (action: OrderRequest["tradeAction"]) => action === "BUY" || action === "BUYTOOPEN";
@@ -611,6 +613,9 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
     },
     inject: (fault, times = 1) => {
       faults.push({ fault, remaining: times });
+    },
+    clearFaults: () => {
+      faults.length = 0;
     },
   };
 }
