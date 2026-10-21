@@ -20,20 +20,26 @@ for ident in "$(git var GIT_AUTHOR_IDENT)" "$(git var GIT_COMMITTER_IDENT)"; do
   esac
 done
 
-files=$(git diff --cached --name-only --diff-filter=ACMR)
-
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  case "$(basename "$f")" in
-    .dev.vars.example | .env.example) ;;
-    .dev.vars | .dev.vars.* | .env | .env.* | *.pem | *.key | *.p12)
-      err "$f looks like a secrets file; keep it out of Git" ;;
-  esac
-  size=$(git cat-file -s ":$f")
-  [ "$size" -le "$max_bytes" ] || err "$f is larger than 5 MB"
-done <<EOF
-$files
-EOF
+# NUL-separated so names with spaces, tabs, newlines or non-ASCII bytes are checked.
+git diff --cached --name-only -z --diff-filter=ACMR | xargs -0 -r sh -c '
+  max_bytes=$1
+  shift
+  rc=0
+  for f; do
+    case "$(basename "$f")" in
+      .dev.vars.example | .env.example) ;;
+      .dev.vars | .dev.vars.* | .env | .env.* | *.pem | *.key | *.p12)
+        printf "pre-commit: %s looks like a secrets file; keep it out of Git\n" "$f" >&2
+        rc=1 ;;
+    esac
+    size=$(git cat-file -s ":$f")
+    if [ "$size" -gt "$max_bytes" ]; then
+      printf "pre-commit: %s is larger than 5 MB\n" "$f" >&2
+      rc=1
+    fi
+  done
+  exit "$rc"
+' sh "$max_bytes" || status=1
 
 added=$(git diff --cached -U0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' || true)
 
@@ -52,6 +58,30 @@ live=$(git diff --cached -U0 --diff-filter=ACMR -- . ':(exclude)docs/**' ':(excl
   grep '^+' | grep -v '^+++' | sed 's/sim-api\.tradestation\.com//g' | grep -E 'api\.tradestation\.com/v[0-9]' || true)
 if [ -n "$live" ]; then
   err "staged changes reference the live TradeStation API host; only sim-api.tradestation.com is allowed"
+fi
+
+# Formatter and linter on the staged contents (not the working tree), once dependencies are installed.
+if [ -d node_modules ]; then
+  git diff --cached --name-only -z --diff-filter=ACMR -- . ':(exclude)*worker-configuration.d.ts' |
+    xargs -0 -r sh -c '
+      rc=0
+      for f; do
+        git show ":$f" | node_modules/.bin/prettier --check --ignore-unknown --stdin-filepath "$f" >/dev/null 2>&1 || {
+          printf "pre-commit: Prettier check failed for %s\n" "$f" >&2
+          rc=1
+        }
+      done
+      exit "$rc"
+    ' sh || err "Prettier check failed; run 'bun run format' and stage the result"
+  git diff --cached --name-only -z --diff-filter=ACMR -- '*.js' '*.ts' '*.svelte' \
+    ':(exclude)*worker-configuration.d.ts' |
+    xargs -0 -r sh -c '
+      rc=0
+      for f; do
+        git show ":$f" | node_modules/.bin/eslint --stdin --stdin-filename "$f" || rc=1
+      done
+      exit "$rc"
+    ' sh || err "ESLint failed; run 'bun run lint' and stage the result"
 fi
 
 exit "$status"
