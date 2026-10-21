@@ -1,0 +1,383 @@
+import { describe, expect, test } from "bun:test";
+import { findOpenInvitation } from "./activation.ts";
+import {
+  accessErrors,
+  deactivateClient,
+  generateLink,
+  getClientDetail,
+  reactivateClient,
+  recoverClient,
+  revokeAllSessions,
+  revokeLink,
+  revokeSession,
+} from "./admin-client-access.ts";
+import { guardErrors, type GuardLocals } from "./guards.ts";
+import { sqliteD1 } from "./sqlite-d1.test.ts";
+
+const secret = crypto.randomUUID();
+const now = Date.parse("2026-10-21T15:00:00Z");
+const day = 86_400_000;
+
+const eventOf = (user: GuardLocals["user"], createdAt = new Date(now - 60_000)) => ({
+  locals: { session: user ? { createdAt } : null, user } satisfies GuardLocals,
+});
+const admin = (createdAt?: Date) =>
+  eventOf({ id: "admin-1", role: "admin", banned: false }, createdAt);
+
+function setup() {
+  const db = sqliteD1();
+  const user = (id: string, role = "user", banned: number | null = null) =>
+    db.sqlite.run(
+      `INSERT INTO "user" ("id","name","email","emailVerified","role","banned","createdAt","updatedAt")
+       VALUES (?,?,?,0,?,?,?,?)`,
+      [id, id, `${id}@example.com`, role, banned, now, now],
+    );
+  user("admin-1", "admin");
+  user("c1");
+  user("c2");
+  const session = (id: string, userId: string, invitationId: string | null = null) =>
+    db.sqlite.run(
+      `INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId","invitationId")
+       VALUES (?,?,?,?,?,?,?)`,
+      [id, now + day, `tok-${id}`, now - 1000, now, userId, invitationId],
+    );
+  const passkey = (userId: string) =>
+    db.sqlite.run(
+      `INSERT INTO "passkey" ("id","publicKey","userId","credentialID","counter","deviceType","backedUp")
+       VALUES (?,'k',?,?,0,'singleDevice',0)`,
+      [`pk-${userId}`, userId, `cred-${userId}`],
+    );
+  const codes = (userId: string) => {
+    for (const n of [1, 2]) {
+      db.sqlite.run(`INSERT INTO recovery_codes (id, user_id, code_hash) VALUES (?,?,?)`, [
+        `rc-${userId}-${n}`,
+        userId,
+        `hash-${userId}-${n}`,
+      ]);
+    }
+  };
+  return { db, ctx: { db, secret }, user, session, passkey, codes };
+}
+
+const n = (db: ReturnType<typeof sqliteD1>, sql: string) =>
+  db.sqlite.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM ${sql}`).get()?.n;
+const audits = (db: ReturnType<typeof sqliteD1>, action: string) =>
+  db.sqlite
+    .query<
+      { actor_id: string; target_user_id: string; before_json: string; after_json: string },
+      [string]
+    >(`SELECT * FROM audit_log WHERE action = ?`)
+    .all(action);
+
+type Mutation = (
+  s: ReturnType<typeof setup>,
+  event: ReturnType<typeof admin>,
+  id?: string,
+) => Promise<unknown>;
+const mutations: Record<string, Mutation> = {
+  generateLink: (s, e, id = "c1") => generateLink(e, s.ctx, id, now),
+  revokeLink: (s, e, id = "c1") => revokeLink(e, s.ctx, id, now),
+  deactivate: (s, e, id = "c1") => deactivateClient(e, s.ctx, id, now),
+  reactivate: (s, e, id = "c1") => reactivateClient(e, s.ctx, id, now),
+  revokeSession: (s, e, id = "c1") => revokeSession(e, s.ctx, id, { sessionId: "s1" }, now),
+  revokeAll: (s, e, id = "c1") => revokeAllSessions(e, s.ctx, id, now),
+  recover: (s, e, id = "c1") => recoverClient(e, s.ctx, id, { verified: "on" }, now),
+};
+
+describe.each(Object.entries(mutations))("%s", (_name, run) => {
+  test("answers 401 without a session and 403 to a client or a banned admin", async () => {
+    const s = setup();
+    await expect(run(s, eventOf(null))).rejects.toMatchObject({ status: 401 });
+    await expect(run(s, eventOf({ id: "c2", role: "user" }))).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(
+      run(s, eventOf({ id: "admin-1", role: "admin", banned: true })),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("asks a stale admin session to confirm with a passkey and changes nothing", async () => {
+    const s = setup();
+    s.session("s1", "c1");
+    s.passkey("c1");
+    s.codes("c1");
+    const before = JSON.stringify(s.db.sqlite.query(`SELECT * FROM "user"`).all());
+    const result = await run(s, admin(new Date(now - 11 * 60_000)));
+    expect(result).toEqual({ ok: false, error: guardErrors.reauthRequired });
+    expect(n(s.db, "audit_log")).toBe(0);
+    expect(n(s.db, `"session"`)).toBe(1);
+    expect(n(s.db, `"passkey"`)).toBe(1);
+    expect(n(s.db, "recovery_codes")).toBe(2);
+    expect(JSON.stringify(s.db.sqlite.query(`SELECT * FROM "user"`).all())).toBe(before);
+  });
+
+  test("treats an unknown id and an admin id as not found, and a malformed id as invalid", async () => {
+    const s = setup();
+    await expect(run(s, admin(), "nobody")).rejects.toMatchObject({ status: 404 });
+    await expect(run(s, admin(), "admin-1")).rejects.toMatchObject({ status: 404 });
+    await expect(run(s, admin(), "x' OR 1=1 --")).rejects.toMatchObject({ status: 400 });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+});
+
+describe("getClientDetail", () => {
+  test("shows profile, access, link state and unexpired sessions, without secrets", async () => {
+    const s = setup();
+    s.session("s1", "c1");
+    s.db.sqlite.run(`UPDATE "session" SET "expiresAt" = ? WHERE "id" = 's1'`, [
+      new Date(now + day).toISOString(),
+    ]);
+    s.db.sqlite.run(
+      `INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId") VALUES ('old',?,?,?,?,'c1')`,
+      [now - 1, "tok-old", now - day, now - day],
+    );
+    await generateLink(admin(), s.ctx, "c1", now);
+    const detail = await getClientDetail(s.db, "c1", now);
+    expect(detail).toMatchObject({
+      id: "c1",
+      email: "c1@example.com",
+      role: "user",
+      access: "invited",
+      link: { state: "open", expiresAt: now + 72 * 3_600_000 },
+    });
+    expect(detail.sessions.map((session) => session.id)).toEqual(["s1"]);
+    expect(JSON.stringify(detail)).not.toMatch(/tok-|token|hash/i);
+    expect((await getClientDetail(s.db, "c1", now + 73 * 3_600_000)).link.state).toBe("expired");
+  });
+});
+
+describe("activation link", () => {
+  test("a new link replaces the old one and ends the enrollment sessions made from it", async () => {
+    const s = setup();
+    const first = await generateLink(admin(), s.ctx, "c1", now);
+    if (!first.ok) throw new Error("expected a link");
+    const open = await findOpenInvitation(s.db, first.issued.token, secret, now);
+    expect(open?.userId).toBe("c1");
+    s.session("enroll", "c1", open?.invitationId);
+    s.session("other", "c1");
+
+    const second = await generateLink(admin(), s.ctx, "c1", now + 1000);
+    if (!second.ok) throw new Error("expected a link");
+    expect(await findOpenInvitation(s.db, first.issued.token, secret, now + 1000)).toBeNull();
+    expect((await findOpenInvitation(s.db, second.issued.token, secret, now + 1000))?.userId).toBe(
+      "c1",
+    );
+    expect(n(s.db, `"session" WHERE id = 'enroll'`)).toBe(0);
+    expect(n(s.db, `"session" WHERE id = 'other'`)).toBe(1);
+    const rows = audits(s.db, "activation_link.regenerate");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.actor_id).toBe("admin-1");
+    expect(JSON.stringify(s.db.sqlite.query("SELECT * FROM audit_log").all())).not.toContain(
+      first.issued.token,
+    );
+  });
+
+  test("is refused for a deactivated client and for one that already has a passkey", async () => {
+    const s = setup();
+    s.user("off", "user", 1);
+    expect(await generateLink(admin(), s.ctx, "off", now)).toEqual({
+      ok: false,
+      error: accessErrors.clientDisabled,
+    });
+    s.passkey("c1");
+    expect(await generateLink(admin(), s.ctx, "c1", now)).toEqual({
+      ok: false,
+      error: accessErrors.alreadyEnrolled,
+    });
+    expect(n(s.db, "invitations")).toBe(0);
+  });
+
+  test("revoking closes the link and its enrollment sessions, once", async () => {
+    const s = setup();
+    const issued = await generateLink(admin(), s.ctx, "c1", now);
+    if (!issued.ok) throw new Error("expected a link");
+    const open = await findOpenInvitation(s.db, issued.issued.token, secret, now);
+    s.session("enroll", "c1", open?.invitationId);
+
+    expect(await revokeLink(admin(), s.ctx, "c1", now)).toEqual({ ok: true });
+    expect(await findOpenInvitation(s.db, issued.issued.token, secret, now)).toBeNull();
+    expect(n(s.db, `"session"`)).toBe(0);
+    expect((await getClientDetail(s.db, "c1", now)).link.state).toBe("revoked");
+    expect(audits(s.db, "activation_link.revoke")).toHaveLength(1);
+    expect(await revokeLink(admin(), s.ctx, "c1", now)).toEqual({
+      ok: false,
+      error: accessErrors.noOpenLink,
+    });
+    expect(audits(s.db, "activation_link.revoke")).toHaveLength(1);
+  });
+});
+
+describe("deactivate and reactivate", () => {
+  test("deactivating bans, ends every session, audits, and leaves everything else alone", async () => {
+    const s = setup();
+    s.session("s1", "c1");
+    s.session("s2", "c1");
+    s.session("s3", "c2");
+    s.passkey("c1");
+    s.db.sqlite.run(
+      `INSERT INTO broker_connection (user_id, client_id, client_secret_enc, refresh_token_enc, key_id, status)
+       VALUES ('c1','c','s','r','k','ok')`,
+    );
+    const connection = JSON.stringify(s.db.sqlite.query("SELECT * FROM broker_connection").all());
+
+    expect(await deactivateClient(admin(), s.ctx, "c1", now)).toEqual({
+      ok: true,
+      sessionsEnded: 2,
+    });
+    expect(s.db.sqlite.query(`SELECT "banned" FROM "user" WHERE id = 'c1'`).get()).toEqual({
+      banned: 1,
+    });
+    expect(n(s.db, `"session" WHERE "userId" = 'c1'`)).toBe(0);
+    expect(n(s.db, `"session" WHERE "userId" = 'c2'`)).toBe(1);
+    expect(n(s.db, `"passkey"`)).toBe(1);
+    // The orders live in the client's Durable Object, which this code cannot reach; the D1 rows
+    // that describe the broker link are untouched too.
+    expect(JSON.stringify(s.db.sqlite.query("SELECT * FROM broker_connection").all())).toBe(
+      connection,
+    );
+    const [row] = audits(s.db, "client.deactivate");
+    expect(row).toMatchObject({ actor_id: "admin-1", target_user_id: "c1" });
+    expect(JSON.parse(row?.after_json ?? "{}")).toEqual({ access: "disabled", sessionsEnded: 2 });
+    expect((await getClientDetail(s.db, "c1", now)).access).toBe("disabled");
+
+    expect(await deactivateClient(admin(), s.ctx, "c1", now)).toEqual({
+      ok: false,
+      error: accessErrors.alreadyDisabled,
+    });
+    expect(audits(s.db, "client.deactivate")).toHaveLength(1);
+  });
+
+  test("reactivating clears the ban, audits, and refuses a client that is not deactivated", async () => {
+    const s = setup();
+    expect(await reactivateClient(admin(), s.ctx, "c1", now)).toEqual({
+      ok: false,
+      error: accessErrors.notDisabled,
+    });
+    await deactivateClient(admin(), s.ctx, "c1", now);
+    expect(await reactivateClient(admin(), s.ctx, "c1", now)).toEqual({ ok: true });
+    expect(s.db.sqlite.query(`SELECT "banned" FROM "user" WHERE id = 'c1'`).get()).toEqual({
+      banned: 0,
+    });
+    expect(audits(s.db, "client.reactivate")).toHaveLength(1);
+    expect(n(s.db, "audit_log")).toBe(2);
+  });
+});
+
+describe("sessions", () => {
+  test("revokes one session of the target only", async () => {
+    const s = setup();
+    s.session("s1", "c1");
+    s.session("s2", "c1");
+    s.session("theirs", "c2");
+    expect(await revokeSession(admin(), s.ctx, "c1", { sessionId: "s1" }, now)).toEqual({
+      ok: true,
+    });
+    expect(n(s.db, `"session"`)).toBe(2);
+    // Another client's session id through this client's page does nothing, and is not audited.
+    expect(await revokeSession(admin(), s.ctx, "c1", { sessionId: "theirs" }, now)).toEqual({
+      ok: false,
+      error: accessErrors.sessionGone,
+    });
+    expect(n(s.db, `"session" WHERE id = 'theirs'`)).toBe(1);
+    expect(audits(s.db, "session.revoke")).toHaveLength(1);
+  });
+
+  test("rejects unknown fields and a missing session id", async () => {
+    const s = setup();
+    await expect(
+      revokeSession(admin(), s.ctx, "c1", { sessionId: "s1", userId: "c2" }, now),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(revokeSession(admin(), s.ctx, "c1", {}, now)).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  test("revokes all sessions and audits the count", async () => {
+    const s = setup();
+    expect(await revokeAllSessions(admin(), s.ctx, "c1", now)).toEqual({
+      ok: false,
+      error: accessErrors.noSessions,
+    });
+    s.session("s1", "c1");
+    s.session("s2", "c1");
+    s.session("theirs", "c2");
+    expect(await revokeAllSessions(admin(), s.ctx, "c1", now)).toEqual({
+      ok: true,
+      sessionsEnded: 2,
+    });
+    expect(n(s.db, `"session"`)).toBe(1);
+    expect(JSON.parse(audits(s.db, "session.revoke_all")[0]?.before_json ?? "{}")).toEqual({
+      sessions: 2,
+    });
+  });
+});
+
+describe("controlled recovery", () => {
+  test("deletes passkeys, codes and sessions, closes the old link and returns a new one once", async () => {
+    const s = setup();
+    s.passkey("c1");
+    s.passkey("c2");
+    s.codes("c1");
+    s.codes("c2");
+    s.session("s1", "c1");
+    s.session("theirs", "c2");
+    s.db.sqlite.run(
+      `INSERT INTO invitations (id, user_id, token_hash, expires_at, created_by) VALUES ('old','c1','oldhash',?, 'admin-1')`,
+      [now + day],
+    );
+
+    const result = await recoverClient(admin(), s.ctx, "c1", { verified: "on" }, now);
+    if (!result.ok) throw new Error("expected recovery");
+    expect(await findOpenInvitation(s.db, result.issued.token, secret, now)).toMatchObject({
+      userId: "c1",
+    });
+    expect(n(s.db, `invitations WHERE id = 'old' AND revoked_at IS NOT NULL`)).toBe(1);
+    expect(n(s.db, `"passkey" WHERE "userId" = 'c1'`)).toBe(0);
+    expect(n(s.db, "recovery_codes WHERE user_id = 'c1'")).toBe(0);
+    expect(n(s.db, `"session" WHERE "userId" = 'c1'`)).toBe(0);
+    // Nothing of another client changes.
+    expect(n(s.db, `"passkey" WHERE "userId" = 'c2'`)).toBe(1);
+    expect(n(s.db, "recovery_codes WHERE user_id = 'c2'")).toBe(2);
+    expect(n(s.db, `"session" WHERE "userId" = 'c2'`)).toBe(1);
+
+    const [row] = audits(s.db, "client.recover");
+    expect(row).toMatchObject({ actor_id: "admin-1", target_user_id: "c1" });
+    expect(JSON.parse(row?.before_json ?? "{}")).toEqual({
+      passkeys: 1,
+      unusedCodes: 2,
+      sessions: 1,
+    });
+    expect(JSON.stringify(s.db.sqlite.query("SELECT * FROM audit_log").all())).not.toContain(
+      result.issued.token,
+    );
+    const detail = await getClientDetail(s.db, "c1", now);
+    expect(detail).toMatchObject({
+      access: "invited",
+      passkeys: 0,
+      unusedCodes: 0,
+      link: { state: "open" },
+    });
+  });
+
+  test("needs the identity confirmation and refuses a deactivated client, changing nothing", async () => {
+    const s = setup();
+    s.passkey("c1");
+    s.codes("c1");
+    s.user("off", "user", 1);
+    for (const form of [{}, { verified: "off" }, { verified: "on", extra: "1" }]) {
+      expect(await recoverClient(admin(), s.ctx, "c1", form, now)).toEqual({
+        ok: false,
+        error: accessErrors.unconfirmed,
+      });
+    }
+    expect(await recoverClient(admin(), s.ctx, "off", { verified: "on" }, now)).toEqual({
+      ok: false,
+      error: accessErrors.clientDisabled,
+    });
+    expect(n(s.db, `"passkey"`)).toBe(1);
+    expect(n(s.db, "recovery_codes")).toBe(2);
+    expect(n(s.db, "audit_log")).toBe(0);
+    expect(n(s.db, "invitations")).toBe(0);
+  });
+});

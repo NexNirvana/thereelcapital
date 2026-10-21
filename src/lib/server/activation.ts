@@ -247,7 +247,7 @@ export async function createClient<S extends ActivationStatement>(
   return { userId, token: link.token, expiresAt: link.expiresAt };
 }
 
-function insertInvitation<S extends ActivationStatement>(
+export function insertInvitation<S extends ActivationStatement>(
   db: ActivationDb<S>,
   userId: string,
   link: { tokenHash: string; expiresAt: number },
