@@ -1,0 +1,9 @@
+{
+  "Errors": [
+    {
+      "Error": "FAILED",
+      "Message": "Order failed. Reason: Type = LMT has invalid Price greater than absolute maximum",
+      "OrderID": "1234567"
+    }
+  ]
+}
