@@ -58,8 +58,7 @@
         {#if failure}<Notice title="No pudimos entrar" role="alert">{failure}</Notice>{/if}
       </div>
 
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the route lands in #14 -->
-      <a class="recovery" href="/recuperacion">
+      <a class="recovery" href={resolve("/recuperacion")}>
         <span class="desktop-only">Usar código de recuperación</span>
         <span class="mobile-only">Código de recuperación</span>
       </a>
