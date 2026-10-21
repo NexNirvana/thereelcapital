@@ -6,6 +6,7 @@ import { parseEnv } from "node:util";
 import { Schema } from "effect";
 import { ACTIVATION_LINK_LIFETIME_HOURS } from "#lib/domain/config.ts";
 import { activationUrl, newInvitation } from "#lib/server/activation-link.ts";
+import { bootstrapAdminSql } from "#lib/server/bootstrap-admin.ts";
 
 const productionOrigin = "https://thereelcapital.com";
 const localOrigin = "http://localhost:8787";
@@ -53,13 +54,8 @@ const now = Date.now();
 const userId = crypto.randomUUID();
 const { token, tokenHash, expiresAt } = await newInvitation(secret, now);
 
-// One file means one D1 batch: either the admin and the link both exist, or neither does.
-const sql = `
-INSERT INTO "user" ("id", "name", "email", "emailVerified", "role", "createdAt", "updatedAt")
-VALUES ('${userId}', '${email}', '${email}', 0, 'admin', '${new Date(now).toISOString()}', '${new Date(now).toISOString()}');
-INSERT INTO invitations ("id", "user_id", "token_hash", "expires_at", "created_by")
-VALUES ('${crypto.randomUUID()}', '${userId}', '${tokenHash}', ${expiresAt}, '${userId}');
-`;
+// One file means one D1 batch: either the admin, the link and the audit row all exist, or none do.
+const sql = bootstrapAdminSql({ userId, email, tokenHash, expiresAt, now });
 
 const sqlFile = `${tmpdir()}/admin-create-${userId}.sql`;
 await Bun.write(sqlFile, sql);

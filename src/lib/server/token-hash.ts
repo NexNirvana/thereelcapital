@@ -2,7 +2,7 @@
 // HMAC-SHA-256 with a server key (docs/auth-and-security.md#flows). Bun scripts and Workers
 // both import this, so it uses WebCrypto and Buffer (nodejs_compat).
 
-export type TokenPurpose = "activation-link" | "recovery-code";
+export type TokenPurpose = "activation-link" | "recovery-code" | "audit-ip";
 
 /** 32 random bytes as base64url (43 characters). */
 export function newActivationToken(): string {

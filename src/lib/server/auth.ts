@@ -6,6 +6,7 @@ import { bannedUserMessage, requireUserVerified } from "./passkey-policy.ts";
 import { activationPlugin } from "./activation-plugin.ts";
 import { claimActivationOnRegistration } from "./activation.ts";
 import { endpointPolicyPlugin } from "./endpoint-policy.ts";
+import { sessionAuditPlugin } from "./auth-audit.ts";
 import { recoveryPlugin } from "./recovery-plugin.ts";
 
 export interface AuthEnv {
@@ -71,9 +72,10 @@ export function createAuth(
             requireUserVerified(verification.authenticationInfo.userVerified),
         },
       }),
-      // Recovery and activation write raw SQL, so it needs D1; the schema CLI (SQLite) only reads options.
+      // Recovery, activation and the audit trail write raw SQL, so they need D1; the schema CLI (SQLite) only reads options.
       ...("batch" in env.DB
         ? [
+            sessionAuditPlugin(env.DB),
             recoveryPlugin(env.DB, env.BETTER_AUTH_SECRET),
             activationPlugin(env.DB, env.BETTER_AUTH_SECRET),
           ]

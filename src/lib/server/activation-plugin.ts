@@ -8,7 +8,7 @@ import { Schema } from "effect";
 import { ACTIVATION_REDEEM_RATE_LIMIT } from "#lib/domain/config.ts";
 import { activationErrors, recoveryErrors } from "#lib/auth-messages.ts";
 import { findOpenInvitation, startActivationSession } from "./activation.ts";
-import { audit } from "./audit.ts";
+import { auditRejectedAttempt, auditStartedSession } from "./auth-audit.ts";
 
 // A token is 43 characters; the cap only bounds what gets hashed. No unknown fields.
 const RedeemBody = Schema.Struct({ token: Schema.String.check(Schema.isMaxLength(64)) });
@@ -39,17 +39,23 @@ export function activationPlugin(db: D1Database, secret: string) {
           if (body._tag === "Failure")
             throw APIError.from("BAD_REQUEST", recoveryErrors.invalidInput);
           const open = await findOpenInvitation(db, body.success.token, secret);
-          if (open === null) throw APIError.from("UNAUTHORIZED", activationErrors.invalidLink);
-          await audit(db, {
+          if (open === null) {
+            await auditRejectedAttempt(db, secret, ctx, "activation.redeem_failed", "invalid_link");
+            throw APIError.from("UNAUTHORIZED", activationErrors.invalidLink);
+          }
+          // False when the link closed since the lookup (the client finished, or it was revoked).
+          if (!(await startActivationSession(ctx, db, open))) {
+            await auditRejectedAttempt(db, secret, ctx, "activation.redeem_failed", "link_closed");
+            throw APIError.from("UNAUTHORIZED", activationErrors.invalidLink);
+          }
+          // After the session exists, so a row means a session started, never an attempt that failed.
+          await auditStartedSession(db, ctx, {
             actor: { user: { id: open.userId } },
             action: "activation.redeem",
             targetUserId: open.userId,
             before: null,
             after: null,
           });
-          // False when the link closed since the lookup (the client finished, or it was revoked).
-          if (!(await startActivationSession(ctx, db, open)))
-            throw APIError.from("UNAUTHORIZED", activationErrors.invalidLink);
           ctx.setHeader("cache-control", "no-store");
           return ctx.json({ enrollment: true });
         },
