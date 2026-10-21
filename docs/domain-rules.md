@@ -73,7 +73,7 @@ Expected results, steps pressed in order (encode as unit tests):
 ## 8. Trailing
 
 - Eligible iff `sold_qty / original_qty ≥ trailing_unlock_pct / 100` and `original_qty − sold_qty > 0`, using the `trailing_unlock_pct` stored on the position.
-- `trailing_pct` must be one of {1, 5, 8, 10, 15, 20} (default 10). The admin's `stop_pct` must be within 10–50 and `trailing_unlock_pct` within 30–90; all of these live in one config module ([product-spec.md](product-spec.md#parameters)).
+- `trailing_pct` must be one of {1, 5, 8, 10, 15, 20} (default 10). The admin's `stop_pct` must be within 10–50 and `trailing_unlock_pct` within 30–90; all of these live in one config module ([product-spec.md](product-spec.md#parameters)). The bounds are checked when a value is **written** (admin settings, activation). When a rule is **evaluated**, the value stored on the position is trusted even if the bounds changed since; only a value that cannot be a percentage (not a whole number from 1 to 99) is rejected as corrupt.
 - On manual activation: `peak = fresh bid`. On each fresh quote: `peak = max(peak, bid)`, `trailLevel = max(trailLevel, peak × (1 − trailing_pct / 100))`.
 - Effective exit level = `max(stopLevel, trailLevel)`. When the bid ≤ effective level, sell `available` at MARKET.
 

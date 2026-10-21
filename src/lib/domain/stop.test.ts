@@ -64,9 +64,15 @@ describe("docs/domain-rules.md §7 stop", () => {
     expect(stopLevel(333_333, 30)).toBe(233_333);
   });
 
-  test("throws on an out-of-bounds pct or invalid price", () => {
-    expect(() => stopLevel(usd("100"), 9)).toThrow(RangeError);
-    expect(() => stopLevel(usd("100"), 51)).toThrow(RangeError);
+  test("trusts a stored pct outside today's bounds", () => {
+    expect(stopLevel(usd("100"), 9)).toBe(usd("91"));
+    expect(stopLevel(usd("100"), 51)).toBe(usd("49"));
+  });
+
+  test("throws on a corrupt pct or invalid price", () => {
+    expect(() => stopLevel(usd("100"), 0)).toThrow(RangeError);
+    expect(() => stopLevel(usd("100"), 100)).toThrow(RangeError);
+    expect(() => stopLevel(usd("100"), 30.5)).toThrow(RangeError);
     expect(() => stopLevel(-1, 30)).toThrow(RangeError);
     expect(() => stopLevel(1.5, 30)).toThrow(RangeError);
   });
@@ -101,9 +107,14 @@ describe("docs/domain-rules.md §8 trailing eligibility", () => {
     expect(trailingEligible({ originalQty: 37, soldQty: 25, trailingUnlockPct: 70 })).toBe(false);
   });
 
-  test("throws on an out-of-bounds unlock pct", () => {
-    expect(() => trailingEligible({ ...base, trailingUnlockPct: 29 })).toThrow(RangeError);
-    expect(() => trailingEligible({ ...base, trailingUnlockPct: 91 })).toThrow(RangeError);
+  test("trusts a stored unlock pct outside today's bounds", () => {
+    expect(trailingEligible({ originalQty: 100, soldQty: 20, trailingUnlockPct: 20 })).toBe(true);
+    expect(trailingEligible({ originalQty: 100, soldQty: 94, trailingUnlockPct: 95 })).toBe(false);
+  });
+
+  test("throws on a corrupt unlock pct", () => {
+    expect(() => trailingEligible({ ...base, trailingUnlockPct: 0 })).toThrow(RangeError);
+    expect(() => trailingEligible({ ...base, trailingUnlockPct: 100 })).toThrow(RangeError);
   });
 });
 
@@ -140,8 +151,14 @@ describe("docs/domain-rules.md §8 trailing level", () => {
     expect(state).toEqual(copy);
   });
 
-  test("rejects a trailing pct outside the set", () => {
+  test("rejects a trailing pct outside the set when activating (write time)", () => {
     expect(() => activateTrailing(12, usd("50"))).toThrow(RangeError);
+  });
+
+  test("keeps trailing with a stored pct the set no longer offers, and rejects a corrupt one", () => {
+    expect(nextTrailing({ trailingPct: 12, peak: usd("100"), level: 0 }, usd("100")).level).toBe(
+      usd("88"),
+    );
     expect(() => nextTrailing({ trailingPct: 0, peak: 1, level: 0 }, 1)).toThrow(RangeError);
   });
 
@@ -175,8 +192,9 @@ describe("shouldExit", () => {
     expect(shouldExit(withTrail, usd("71"))).toBe(false);
   });
 
-  test("throws on an out-of-bounds stop pct or invalid bid", () => {
-    expect(() => shouldExit({ ...position, stopPct: 5 }, usd("80"))).toThrow(RangeError);
+  test("trusts a stored stop pct outside today's bounds; throws on a corrupt one or invalid bid", () => {
+    expect(shouldExit({ ...position, stopPct: 5 }, usd("95"))).toBe(true);
+    expect(() => shouldExit({ ...position, stopPct: 0 }, usd("80"))).toThrow(RangeError);
     expect(() => shouldExit(position, -1)).toThrow(RangeError);
   });
 });
