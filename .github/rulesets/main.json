@@ -22,6 +22,21 @@
         "required_review_thread_resolution": true,
         "allowed_merge_methods": ["rebase"]
       }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          { "context": "check" },
+          { "context": "lint" },
+          { "context": "unit" },
+          { "context": "engine" },
+          { "context": "e2e" },
+          { "context": "build" },
+          { "context": "guards" }
+        ]
+      }
     }
   ]
 }
