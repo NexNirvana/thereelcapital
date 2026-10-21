@@ -34,11 +34,11 @@ export function normalizeRecoveryCode(input: string): string {
   return input.replaceAll(/[\s-]/g, "").toUpperCase();
 }
 
-interface Statement {
+export interface RecoveryStatement {
   run(): Promise<{ meta: { changes: number } }>;
   first(): Promise<Record<string, unknown> | null>;
 }
-export interface RecoveryDb<S extends Statement> extends AuditDb<S> {
+export interface RecoveryDb<S extends RecoveryStatement> extends AuditDb<S> {
   batch(statements: S[]): Promise<unknown>;
 }
 
@@ -50,7 +50,7 @@ const hashOf = (code: string, secret: string) =>
  * is wrong, already used or belongs to a banned user. One statement decides, so two concurrent
  * redemptions of one code cannot both succeed.
  */
-export async function redeemRecoveryCode<S extends Statement>(
+export async function redeemRecoveryCode<S extends RecoveryStatement>(
   db: RecoveryDb<S>,
   code: string,
   secret: string,
@@ -89,7 +89,7 @@ export async function releaseRecoveryCode<S extends RecoveryStatement>(
  * Replaces every code of the user (used or not) with a fresh set and writes the audit row in the
  * same batch. Returns the plaintext codes, which the caller shows once and never stores or logs.
  */
-export async function replaceRecoveryCodes<S extends Statement>(
+export async function replaceRecoveryCodes<S extends RecoveryStatement>(
   db: RecoveryDb<S>,
   secret: string,
   { actor, userId, action }: { actor: { user: { id: string } }; userId: string; action: string },

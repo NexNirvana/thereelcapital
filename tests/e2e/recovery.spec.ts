@@ -274,3 +274,36 @@ test("finishing needs a new passkey, then returns a full session and ten fresh c
   expect((await redeem(page, codes[1] ?? "")).status()).toBe(401);
   expect((await redeem(page, fresh[0])).status()).toBe(200);
 });
+
+test("regenerating codes needs a fresh session and replaces the whole set", async ({
+  context,
+  page,
+}) => {
+  await page.goto("/acceso");
+  const userId = await seedSignedInUser(context);
+  const [old] = await seedCodes(userId);
+
+  const response = await page.request.post("/api/recovery-codes", { data: {} });
+  expect(response.status()).toBe(200);
+  expect(response.headers()["cache-control"]).toBe("no-store");
+  const { codes } = await response.json();
+  expect(codes).toHaveLength(10);
+  expect(count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id='${userId}'`)).toBe(10);
+  expect(
+    count(
+      `SELECT COUNT(*) AS n FROM audit_log WHERE action='recovery_codes.regenerate' AND actor_id='${userId}'`,
+    ),
+  ).toBe(1);
+  await context.clearCookies();
+  expect((await redeem(page, old ?? "")).status()).toBe(401);
+
+  // The same session once it is 11 minutes old is no longer fresh.
+  const stale = await seedSignedInUser(context);
+  d1(
+    `UPDATE "session" SET "createdAt" = '${new Date(Date.now() - 11 * 60_000).toISOString()}' WHERE "userId" = '${stale}'`,
+  );
+  const refused = await page.request.post("/api/recovery-codes", { data: {} });
+  expect(refused.status()).toBe(401);
+  expect((await refused.json()).code).toBe("REAUTH_REQUIRED");
+  expect(count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id='${stale}'`)).toBe(0);
+});
