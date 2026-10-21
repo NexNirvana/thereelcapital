@@ -16,3 +16,5 @@ Issue #21 (the SIM spike) records real SIM responses; those replace these files,
 | `orders.json` | spec example of `GET /brokerage/accounts/{accounts}/orders`, extended with schema-derived option, canceled, rejected, multi-leg, short and unmapped-status orders |
 | `positions.json` | spec example of `GET /brokerage/accounts/{accounts}/positions`, plus a schema-derived option and a short position |
 | `confirm.json`, `place.json`, `place-refused.json`, `cancel.json` | spec examples of `orderconfirm`, `POST orders` (the success example trimmed to one order, and its `Errors` example alone) and `DELETE orders/{id}` |
+
+The `sim/<step>/` folders, written by `bun run spike` (`scripts/sim-spike/`), hold real SIM responses with secrets, tokens and account numbers redacted; they replace the derived files above once the spike has run.

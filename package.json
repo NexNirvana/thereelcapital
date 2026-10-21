@@ -22,6 +22,7 @@
     "test:e2e": "playwright test",
     "review": "bun scripts/review-pr.ts",
     "admin:create": "bun scripts/admin-create.ts",
+    "spike": "bun scripts/sim-spike.ts",
     "prepare": "git config core.hooksPath .githooks && svelte-kit sync"
   },
   "dependencies": {
