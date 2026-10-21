@@ -21,9 +21,14 @@ Better Auth's defaults do **not** meet our requirements in three places. Each ne
 - `admin({ adminRoles: ["admin"] })` with impersonation and password endpoints disabled through `disabledPaths` (`/admin/impersonate-user`, `/admin/set-user-password`).
 - `rateLimit: { enabled: true, storage: "database" }` (in-memory limits are per isolate on Workers) and `advanced.ipAddress.ipAddressHeaders: ["cf-connecting-ip"]`.
 - `session.freshAge`: Better Auth measures it from session creation, and its `sensitiveSessionMiddleware` does **not** check freshness. For sensitive app actions we check `now − session.createdAt < 10 min` ourselves; re-auth = a new passkey sign-in.
-- Secret in `BETTER_AUTH_SECRET` (Workers Secret). Schema via `bunx auth@latest generate` → D1 migration.
+- Secret in `BETTER_AUTH_SECRET` (Workers Secret, declared under `secrets.required` in `wrangler.jsonc`). Schema via `bunx auth@latest generate --config scripts/auth-schema.ts` → D1 migration (`migrations/0002_better_auth.sql`).
+- Code: `src/lib/server/auth.ts` builds the instance; `src/hooks.server.ts` adds `sveltekitCookies` last, resolves the session into `locals.session` / `locals.user` and mounts `svelteKitHandler`. `baseURL`, `rpID` and the passkey `origin` come from the request origin, so the same code runs on the deployed domain and on `localhost`. The web Worker sets `workers_dev: false`: passkeys are bound to the domain, so no other hostname may serve the app.
+- Passkey user verification is requested (`userVerification: "required"`); the `afterVerification` checks that enforce it are a separate change (see Gaps above).
+- Tokens (activation links, later recovery codes) are hashed with `hashToken` in `src/lib/server/token-hash.ts`: HMAC-SHA-256 keyed with `BETTER_AUTH_SECRET`, domain-separated by purpose (`activation-link:`, `recovery-code:`). Rotating `BETTER_AUTH_SECRET` therefore invalidates every pending link and code.
 
 ## Flows
+
+**First admin:** `bun run admin:create <email>` (local D1, reads `BETTER_AUTH_SECRET` from the environment or `.dev.vars`) or `bun run admin:create <email> --remote` (production D1, `BETTER_AUTH_SECRET` must be exported in the shell) inserts the admin user and an activation link, in one D1 batch, and prints the link once. Opening the link is the activation flow below.
 
 **Onboarding:**
 1. The admin creates the user and `client_settings`. The app generates an activation link `https://thereelcapital.com/activar/<token>` (32 random bytes, base64url), stores only its HMAC, sets it to expire after 72 hours, and **shows it to the admin once**.

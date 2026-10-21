@@ -28,6 +28,7 @@ bun run test          # unit, engine and e2e in sequence
 bun run test:unit     # bun test (src/lib/**, bun:test)
 bun run test:engine   # Vitest + @cloudflare/vitest-plugin inside workerd (engine/test)
 bun run test:e2e      # Playwright: builds and starts both Workers, opens the smoke page (needs: bunx playwright install chromium)
+bun run admin:create <email> [--remote]  # first admin + activation link (docs/auth-and-security.md)
 bun run types          # regenerate worker-configuration.d.ts for both Workers after editing a wrangler.jsonc
 ```
 
