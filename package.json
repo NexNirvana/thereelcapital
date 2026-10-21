@@ -12,13 +12,16 @@
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "test:unit": "bun test",
+    "test:engine": "vitest run -c engine/vitest.config.ts",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "market-calendar": "1.1.1"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.1",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.0",
     "@sveltejs/adapter-cloudflare": "8.0.0",
     "@sveltejs/kit": "3.0.1",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
@@ -35,6 +38,7 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",
+    "vitest": "5.0.3",
     "wrangler": "4.150.0"
   }
 }

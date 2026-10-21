@@ -10,6 +10,7 @@
     {
       "binding": "DB",
       "database_name": "reel",
+      "migrations_dir": "../migrations",
       // PLACEHOLDER: local-only. Must be the same database as the web Worker.
       "database_id": "00000000-0000-0000-0000-000000000000",
     },
