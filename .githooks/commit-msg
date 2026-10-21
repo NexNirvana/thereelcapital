@@ -26,9 +26,10 @@ case "$subject" in
     ;;
 esac
 
-# No AI attribution. The file paths CLAUDE.md and .claude/ are allowed.
+# No AI attribution. The file paths CLAUDE.md and .claude/ are allowed, and
+# review tools configured in this repo (Copilot, CodeRabbit, Greptile) may be named.
 if printf '%s\n' "$msg" |
   sed -e 's#CLAUDE\.md##g' -e 's#\.claude/##g' |
-  grep -Eiq 'co-authored-by|generated (with|by)|claude|anthropic|openai|chatgpt|copilot'; then
+  grep -Eiq 'co-authored-by|(generated|written|authored|created) (with|by)|claude|anthropic|openai|chatgpt'; then
   fail "remove AI attribution (Co-Authored-By, 'Generated with', tool names)"
 fi
