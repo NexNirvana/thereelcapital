@@ -2,13 +2,53 @@
 # TradeStation SIM only: the live API host must never appear in code or config.
 # Usage: no-live-host <git diff revision args>   e.g. --cached, or <base> <head>
 # Run by the pre-commit hook and by CI. docs/ and this file are excluded.
+#
+# Any added line that names the live host (api.tradestation.com, with or without a scheme, port
+# or version path) is rejected, except the explicit allowlist below. sim-api. is the SIM host and
+# signin. is the auth host; neither contains the live name once sim-api. is removed.
 set -eu
+
+# Allowlist: "<path glob>|<exact literal>". The literal is removed from the line before the
+# check, so anything else on the line (a path such as /v3, a fetch of the bare host) is still
+# flagged. Each literal is the whole declaration, never just the quoted URL. Lowercase.
+#  - The OAuth `audience` value is a required identifier of the token request, not a request target.
+#  - Documentation links point at the docs site, never at an API route.
+ALLOW='engine/src/tradestation/endpoints.ts|const AUDIENCE = "https://api.tradestation.com";
+engine/test/*|audience: "https://api.tradestation.com",
+tests/e2e/*|audience: "https://api.tradestation.com",
+.claude/skills/tradestation-integration/SKILL.md|`audience=https://api.tradestation.com`
+*.md|https://api.tradestation.com/docs/'
 
 # --output-indicator-new marks added lines with ">" so diff headers (+++) can't be confused
 # with added lines that start with "++". An explicit port (:443) doesn't hide the host.
 live=$(git diff -U0 --diff-filter=ACMR --output-indicator-new='>' "$@" -- . ':(exclude)docs/**' ':(exclude).githooks/no-live-host' |
-  grep '^>' | sed 's/sim-api\.tradestation\.com//g' | grep -E 'api\.tradestation\.com(:[0-9]+)?/v[0-9]' || true)
+  ALLOW="$ALLOW" awk '
+    function strip(text, literal,    at) {
+      while ((at = index(text, literal)) > 0)
+        text = substr(text, 1, at - 1) substr(text, at + length(literal))
+      return text
+    }
+    BEGIN { rules = split(ENVIRON["ALLOW"], rule, "\n") }
+    /^\+\+\+ / { file = substr($0, 7); next }
+    /^>/ {
+      line = strip(tolower(substr($0, 2)), "sim-api.tradestation.com")
+      for (i = 1; i <= rules; i++) {
+        split(rule[i], part, "|")
+        if (file ~ ("^" part[1] "$") || file == part[1] || match_glob(file, part[1]))
+          line = strip(line, tolower(part[2]))
+      }
+      if (line ~ /api\.tradestation\.com/) print file ": " $0
+    }
+    function match_glob(name, glob,    re) {
+      re = glob
+      gsub(/\./, "\\.", re)
+      gsub(/\*/, ".*", re)
+      return name ~ ("^" re "$")
+    }
+  ' || true)
 if [ -n "$live" ]; then
   printf 'the live TradeStation API host is referenced; only sim-api.tradestation.com is allowed\n' >&2
+  # Names the files only: a flagged line may hold something that should not be echoed.
+  printf '%s\n' "$live" | cut -d: -f1 | sort -u >&2
   exit 1
 fi
