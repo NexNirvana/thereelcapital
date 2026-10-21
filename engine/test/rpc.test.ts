@@ -139,7 +139,7 @@ describe("ClientCoordinator RPC surface", () => {
     });
     expect(await stub.history({ mode: "SIM" })).toEqual({
       ok: true,
-      value: { mode: "SIM", intents: [] },
+      value: { mode: "SIM", intents: [], events: [], accounts: [], nextCursor: null },
     });
     expect(await stub.connection({ mode: "SIM" })).toEqual({
       ok: true,

@@ -37,6 +37,7 @@ import {
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
+import { readHistory, type HistoryPage } from "./history.ts";
 import { migrate } from "./schema.ts";
 import {
   ActivateTrailingArgs,
@@ -46,6 +47,7 @@ import {
   decodeArgs,
   ExitArgs,
   failure,
+  HistoryArgs,
   ModeOnlyArgs,
   OptionChainArgs,
   OptionContractArgs,
@@ -200,17 +202,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     });
   }
 
-  history(input: unknown): EngineResult<{ mode: Mode; intents: Row[] }> {
-    return this.enter("history", ModeOnlyArgs, input, ({ mode }) =>
-      success({
-        mode,
-        intents: this.ctx.storage.sql
-          .exec(
-            "SELECT id, kind, symbol, state, qty, filled_qty, created_at FROM intents WHERE mode = ? ORDER BY created_at DESC LIMIT 100",
-            mode,
-          )
-          .toArray(),
-      }),
+  /** Orders (newest first, one page) and events of this client. Read-only; no P&L. */
+  history(input: unknown): EngineResult<HistoryPage> {
+    return this.enter("history", HistoryArgs, input, (args) =>
+      success(readHistory(this.ctx.storage.sql, args)),
     );
   }
 
