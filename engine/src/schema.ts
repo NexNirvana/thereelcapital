@@ -5,7 +5,7 @@
  * Append-only: a migration already shipped is never edited, a new one is added. Applied in order
  * inside the constructor's `blockConcurrencyWhile`, so no request sees a half-built schema.
  */
-const MIGRATIONS: readonly (readonly string[])[] = [
+export const MIGRATIONS: readonly (readonly string[])[] = [
   [
     `CREATE TABLE entry_counters (
        mode TEXT NOT NULL CHECK (mode IN ('SIM', 'REAL')),
@@ -98,10 +98,64 @@ const MIGRATIONS: readonly (readonly string[])[] = [
        PRIMARY KEY (mode, account_id)
      ) STRICT`,
   ],
+  [
+    // SQLite cannot add a CHECK to an existing table, so `positions` is rebuilt. Foreign keys cannot
+    // be switched off inside a Durable Object, and dropping a parent that rows still reference
+    // fails, so its child `scaleout_steps` is set aside and rebuilt around it. Every id is kept.
+    `CREATE TABLE scaleout_steps_saved (
+       position_id TEXT NOT NULL, mode TEXT NOT NULL, idx INTEGER NOT NULL, state TEXT NOT NULL,
+       intent_id TEXT
+     ) STRICT`,
+    `INSERT INTO scaleout_steps_saved SELECT position_id, mode, idx, state, intent_id FROM scaleout_steps`,
+    `DROP TABLE scaleout_steps`,
+    `CREATE TABLE positions_rebuilt (
+       id TEXT PRIMARY KEY,
+       mode TEXT NOT NULL CHECK (mode IN ('SIM', 'REAL')),
+       account_id TEXT NOT NULL,
+       symbol TEXT NOT NULL,
+       underlying TEXT,
+       expiry TEXT,
+       strike INTEGER,
+       right TEXT,
+       point_value INTEGER NOT NULL DEFAULT 1,
+       original_qty INTEGER NOT NULL CHECK (original_qty > 0),
+       sold_qty INTEGER NOT NULL DEFAULT 0 CHECK (sold_qty >= 0),
+       avg_entry_price INTEGER NOT NULL,
+       stop_pct INTEGER NOT NULL,
+       trailing_unlock_pct INTEGER NOT NULL,
+       trailing_pct INTEGER,
+       trailing_peak INTEGER,
+       trailing_level INTEGER,
+       protection_state TEXT NOT NULL,
+       status TEXT NOT NULL,
+       opened_on TEXT NOT NULL,
+       CHECK (sold_qty <= original_qty)
+     ) STRICT`,
+    `INSERT INTO positions_rebuilt (id, mode, account_id, symbol, underlying, expiry, strike, right, point_value, original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on) SELECT id, mode, account_id, symbol, underlying, expiry, strike, right, point_value, original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on FROM positions`,
+    `DROP TABLE positions`,
+    `ALTER TABLE positions_rebuilt RENAME TO positions`,
+    `CREATE INDEX positions_by_mode_status ON positions (mode, status)`,
+    `CREATE TABLE scaleout_steps (
+       position_id TEXT NOT NULL REFERENCES positions (id),
+       mode TEXT NOT NULL CHECK (mode IN ('SIM', 'REAL')),
+       idx INTEGER NOT NULL CHECK (idx BETWEEN 0 AND 6),
+       state TEXT NOT NULL CHECK (state IN ('available', 'pending', 'done', 'done_zero')),
+       intent_id TEXT REFERENCES intents (id),
+       PRIMARY KEY (position_id, idx)
+     ) STRICT`,
+    `INSERT INTO scaleout_steps SELECT position_id, mode, idx, state, intent_id FROM scaleout_steps_saved`,
+    `DROP TABLE scaleout_steps_saved`,
+    // docs/domain-rules.md §5 and §9: no second open position on a symbol in a mode. Enforced by
+    // the store as well as by the guard, so a race or a bug cannot create one.
+    `CREATE UNIQUE INDEX positions_one_open_per_symbol ON positions (mode, symbol) WHERE status != 'CLOSED'`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */
-export function migrate(storage: DurableObjectStorage): void {
+export function migrate(
+  storage: DurableObjectStorage,
+  migrations: readonly (readonly string[])[] = MIGRATIONS,
+): void {
   storage.transactionSync(() => {
     storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY) STRICT",
@@ -109,7 +163,7 @@ export function migrate(storage: DurableObjectStorage): void {
     const applied = storage.sql
       .exec<{ latest: number }>("SELECT COALESCE(MAX(version), 0) AS latest FROM schema_migrations")
       .one().latest;
-    MIGRATIONS.slice(applied).forEach((statements, offset) => {
+    migrations.slice(applied).forEach((statements, offset) => {
       for (const statement of statements) storage.sql.exec(statement);
       storage.sql.exec("INSERT INTO schema_migrations (version) VALUES (?)", applied + offset + 1);
     });
