@@ -6,6 +6,9 @@ import {
   generateLink,
   getClientDetail,
   reactivateClient,
+  getAdminSummary,
+  listOtherAdmins,
+  recoverAdmin,
   recoverClient,
   revokeAllSessions,
   revokeLink,
@@ -387,6 +390,100 @@ describe("controlled recovery", () => {
     expect(n(s.db, "recovery_codes")).toBe(2);
     expect(n(s.db, "audit_log")).toBe(0);
     expect(n(s.db, "invitations")).toBe(0);
+  });
+});
+
+describe("admin recovery (another admin)", () => {
+  const recover = (s: ReturnType<typeof setup>, e: ReturnType<typeof admin>, id = "admin-2") =>
+    recoverAdmin(e, s.ctx, id, { verified: "on" }, now);
+
+  function withLockedOutAdmin() {
+    const s = setup();
+    s.user("admin-2", "admin");
+    s.passkey("admin-2");
+    s.codes("admin-2");
+    s.session("s-admin-2", "admin-2");
+    s.passkey("c1");
+    s.codes("c1");
+    return s;
+  }
+
+  test("deletes the other admin's credentials, issues a link once and audits with counts only", async () => {
+    const s = withLockedOutAdmin();
+    const result = await recover(s, admin());
+    if (!result.ok) throw new Error("expected recovery");
+    expect(await findOpenInvitation(s.db, result.issued.token, now)).toMatchObject({
+      userId: "admin-2",
+    });
+    expect(n(s.db, `"passkey" WHERE "userId" = 'admin-2'`)).toBe(0);
+    expect(n(s.db, "recovery_codes WHERE user_id = 'admin-2'")).toBe(0);
+    expect(n(s.db, `"session" WHERE "userId" = 'admin-2'`)).toBe(0);
+    // Clients and the actor are untouched.
+    expect(n(s.db, `"passkey" WHERE "userId" = 'c1'`)).toBe(1);
+    expect(n(s.db, "recovery_codes WHERE user_id = 'c1'")).toBe(2);
+    const [row] = audits(s.db, "admin.recover");
+    expect(row).toMatchObject({ actor_id: "admin-1", target_user_id: "admin-2" });
+    expect(JSON.parse(row?.before_json ?? "{}")).toEqual({
+      passkeys: 1,
+      unusedCodes: 2,
+      sessions: 1,
+    });
+    expect(audits(s.db, "client.recover")).toHaveLength(0);
+    expect(JSON.stringify(s.db.sqlite.query("SELECT * FROM audit_log").all())).not.toContain(
+      result.issued.token,
+    );
+  });
+
+  test("refuses one's own account, a client, a disabled admin and a missing confirmation", async () => {
+    const s = withLockedOutAdmin();
+    s.user("off", "admin", 1);
+    expect(await recover(s, admin(), "admin-1")).toEqual({
+      ok: false,
+      error: accessErrors.ownAccount,
+    });
+    await expect(recover(s, admin(), "c1")).rejects.toMatchObject({ status: 404 });
+    expect(await recover(s, admin(), "off")).toEqual({
+      ok: false,
+      error: accessErrors.adminDisabled,
+    });
+    expect(await recoverAdmin(admin(), s.ctx, "admin-2", {}, now)).toEqual({
+      ok: false,
+      error: accessErrors.unconfirmed,
+    });
+    expect(n(s.db, `"passkey" WHERE "userId" = 'admin-2'`)).toBe(1);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("needs a fresh admin session; clients, anonymous visitors and stale sessions change nothing", async () => {
+    const s = withLockedOutAdmin();
+    await expect(recover(s, eventOf(null))).rejects.toMatchObject({ status: 401 });
+    await expect(recover(s, eventOf({ id: "c1", role: "user" }))).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(await recover(s, admin(new Date(now - 11 * 60_000)))).toEqual({
+      ok: false,
+      error: guardErrors.reauthRequired,
+    });
+    expect(n(s.db, `"passkey" WHERE "userId" = 'admin-2'`)).toBe(1);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("client actions still treat an admin as not found, and the summary and list exclude clients and self", async () => {
+    const s = withLockedOutAdmin();
+    await expect(
+      recoverClient(admin(), s.ctx, "admin-2", { verified: "on" }, now),
+    ).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(await getAdminSummary(s.db, "admin-2")).toMatchObject({
+      id: "admin-2",
+      passkeys: 1,
+      unusedCodes: 2,
+    });
+    await expect(getAdminSummary(s.db, "c1")).rejects.toMatchObject({ status: 404 });
+    expect(await listOtherAdmins(s.db, "admin-1")).toEqual([
+      { id: "admin-2", email: "admin-2@example.com" },
+    ]);
   });
 });
 

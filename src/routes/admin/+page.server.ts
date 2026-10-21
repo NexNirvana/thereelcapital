@@ -1,15 +1,20 @@
 import { fail } from "@sveltejs/kit";
 import { env } from "cloudflare:workers";
 import { createUserWith } from "#lib/server/activation.ts";
+import { listOtherAdmins } from "#lib/server/admin-client-access.ts";
 import { createClientFromForm, listClients } from "#lib/server/admin-clients.ts";
 import { createAuth } from "#lib/server/auth.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async (event) => {
-  requireAdmin(event);
+  const { user } = requireAdmin(event);
   event.setHeaders({ "cache-control": "no-store" });
-  return { clients: await listClients(env.DB) };
+  const [clients, admins] = await Promise.all([
+    listClients(env.DB),
+    listOtherAdmins(env.DB, user.id),
+  ]);
+  return { clients, admins };
 };
 
 export const actions: Actions = {

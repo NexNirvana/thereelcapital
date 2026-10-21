@@ -130,6 +130,19 @@
   {/if}
 </section>
 
+{#if data.admins.length > 0}
+  <section aria-labelledby="admin-list">
+    <h2 id="admin-list">Otros administradores</h2>
+    <ul class="admins">
+      {#each data.admins as admin (admin.id)}
+        <li>
+          <a href={resolve("/admin/administradores/[id]", { id: admin.id })}>{admin.email}</a>
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
+
 <style>
   h1 {
     font-size: clamp(28px, 4vw, 40px);
@@ -164,6 +177,18 @@
   }
   .scroll {
     overflow-x: auto;
+  }
+  .admins {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .admins a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+    color: var(--text);
+    overflow-wrap: anywhere;
   }
   table {
     width: 100%;
