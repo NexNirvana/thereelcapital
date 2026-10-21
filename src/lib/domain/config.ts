@@ -37,3 +37,18 @@ export const ACTIVATION_LINK_LIFETIME_MS = ACTIVATION_LINK_LIFETIME_HOURS * 60 *
  * tokens carry 256 bits of entropy, so this is defense in depth.
  */
 export const ACTIVATION_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
+
+/** Access tokens last 20 minutes; the engine refreshes this long before they run out. */
+export const ACCESS_TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+/** Absolute lifetime of a rotating refresh token (docs/tradestation-integration.md#token-lifetime). */
+export const ROTATING_REFRESH_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+/** Undecided (docs/open-questions.md): how long before a known refresh expiry the client is warned. */
+export const REFRESH_EXPIRY_WARNING_MS = 2 * 60 * 60 * 1000;
+
+/** Wait before the engine tries again after a refresh failed for a reason that may pass. */
+export const REFRESH_RETRY_DELAY_MS = 60 * 1000;
+
+/** Pause between the attempts of one refresh request when TradeStation cannot be reached. */
+export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
