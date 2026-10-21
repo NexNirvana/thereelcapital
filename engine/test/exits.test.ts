@@ -358,7 +358,9 @@ describe("uncertain outcomes", () => {
       expect(await cancelIntent(ctx, args)).toMatchObject({
         value: { status: "BLOCKED", reasons: ["OUTSIDE_REGULAR_SESSION"] },
       });
-      expect(exitIntents(ctx)[0]).toMatchObject({ state: "ACKNOWLEDGED" });
+      expect(exitIntents(ctx).find((intent) => intent.id === args.intentId)).toMatchObject({
+        state: "ACKNOWLEDGED",
+      });
     });
   });
 
