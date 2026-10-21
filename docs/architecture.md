@@ -79,7 +79,7 @@ src/
   lib/
     domain/            # pure rules + calendar (shared by web and engine)
     schema/            # Effect Schema definitions shared by both Workers
-    server/            # web-only server code: auth, guards, audit, email, engine client
+    server/            # web-only server code: auth, guards, audit, email, engine client (SvelteKit never bundles /server/ into the browser)
     ui/                # Svelte components, tokens.css, fonts
   routes/              # (public) acceso/invitación/recuperación · (app) operar/posiciones/historial/conexion · admin
   hooks.server.ts

@@ -157,6 +157,7 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 - `strict` on; no `any`, no non-null `!` and no `as` casts outside decoders. `// @ts-expect-error` only with a reason.
 - Name things for the domain: `availableQty`, `stopLevel`, `sessionDate`, not `data`, `info` or `helper`.
 - Small modules with one purpose and named exports. No barrel files that re-export everything.
+- Import app modules with the `#lib/*` subpath import (`package.json` `imports`); SvelteKit 3 removed `$lib`.
 - Money and quantities: integer cents and integer quantities (or the decimal type chosen in `src/lib/domain`); never compare floats for equality.
 - Dates: pass `now` in. Market logic uses America/New_York via the calendar module, never the runtime's local time.
 

@@ -24,6 +24,6 @@ Spec: `docs/auth-and-security.md`. Run this checklist on the diff.
 
 ## Secrets
 
-- [ ] No secret or token in Git, logs, errors, responses, URLs (except `client_id` in the OAuth redirect) or `$lib` code reachable from the client.
+- [ ] No secret or token in Git, logs, errors, responses, URLs (except `client_id` in the OAuth redirect) or code reachable from the client. Server-only code lives in `src/lib/server/` or `*.server.ts` files (SvelteKit refuses to bundle those into the browser), and secrets are read through `$app/env/private` or the engine's bindings.
 - [ ] TradeStation secret and refresh token: AES-GCM in the engine Worker, random nonce, `key_id`.
 - [ ] New secrets added to the docs' secrets list and set with `wrangler secret put`, never committed `.dev.vars`.
