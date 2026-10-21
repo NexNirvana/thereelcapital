@@ -219,6 +219,7 @@
       overflow-wrap: anywhere;
     }
     td {
+      flex-basis: 100%;
       color: var(--text-muted);
     }
     td::before {
