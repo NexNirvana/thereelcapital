@@ -8,7 +8,7 @@ git config user.name  "OnishellT"
 git config user.email "46875497+OnishellT@users.noreply.github.com"
 ```
 
-Once the project is scaffolded, `pnpm install` sets the hooks path automatically.
+Install [Bun](https://bun.com) at the version in `package.json` (`packageManager`), plus a Node LTS for the Node-based tools. Once the project is scaffolded, `bun install` also sets the hooks path.
 
 ## Workflow
 
@@ -150,11 +150,18 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 
 ### Tests
 
-- Every rule in `src/lib/domain/` has unit tests, including the worked examples in the docs.
+- Every rule in `src/lib/domain/` has unit tests (`bun test`), including the worked examples in the docs. Engine tests use Vitest with the Workers plugin; see `docs/test-plan.md`.
 - Engine changes touching reservations, ledgers or reconciliation include a concurrency test.
 - A bug fix starts with a failing test.
 - Tests name the behavior: `rejects a fourth entry on the same market day`.
 
 ### Dependencies
 
-- Add one only when it removes real complexity, and say why in the PR. Pin exact versions. Prefer platform APIs (WebCrypto, `fetch`, `Intl`).
+- Add one only when it removes real complexity, and say why in the PR. Use `bun add` (exact versions via `bunfig.toml`) and commit `bun.lock`. No other package manager or lockfile.
+- Prefer platform APIs (WebCrypto, `fetch`, `Intl`).
+
+### Bun
+
+- Bun runs installs, scripts, `bun test` and `scripts/*.ts`. Bun-native APIs (`Bun.$`, `Bun.file`, `Bun.write`, `Bun.CryptoHasher`, `bun:test`) belong only in `scripts/` and unit tests.
+- Worker code (`src/`, `engine/`) runs in workerd: never import `bun:*` or use `Bun.*` there, and never import from `scripts/`.
+- Don't run Node CLIs with `--bun`; let them run on Node.

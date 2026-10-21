@@ -31,7 +31,7 @@ One DO per **client** rather than per (client, mode): one connection serves both
 
 ## Data model
 
-**D1, Better Auth tables** (`user`, `session`, `account`, `verification`, `passkey`): generated with `npx auth@latest generate` and applied as D1 migrations. Don't hand-edit them. Add fields through Better Auth config.
+**D1, Better Auth tables** (`user`, `session`, `account`, `verification`, `passkey`): generated with `bunx auth@latest generate` and applied as D1 migrations. Don't hand-edit them. Add fields through Better Auth config.
 
 **D1, app tables:**
 
@@ -91,10 +91,27 @@ engine/
   wrangler.jsonc
 migrations/            # D1 SQL (Better Auth generated + app)
 static/fonts/          # IBM Plex Mono WOFF2 + OFL
+scripts/               # Bun scripts for dev and ops (seed, admin creation, fixture recording)
 tests/e2e/             # Playwright
+bunfig.toml
 wrangler.jsonc         # web Worker
 vite.config.ts
 ```
+
+## Tooling: Bun
+
+Bun is the package manager, script runner and unit test runner. Production code runs in workerd, which has no Bun APIs. Bun's role is therefore:
+
+| Use | How |
+| --- | --- |
+| Install | `bun install` (text `bun.lock`), `bun ci` in CI. `bunfig.toml`: `install.exact = true`, and a minimum release age as a supply-chain guard |
+| Scripts | `bun run <script>`. Node CLIs (Vite, Wrangler, svelte-check, ESLint, Prettier, Vitest, Playwright, the Better Auth CLI) are launched by Bun but run on **Node**. Never pass `--bun` to them: Wrangler and Playwright require Node |
+| Unit tests | `bun test` for `src/lib/domain/` and other pure modules |
+| Ops scripts | `scripts/*.ts` run on Bun's runtime and may use Bun-native APIs (`Bun.$`, `Bun.file`, `Bun.write`, `Bun.CryptoHasher`) |
+
+**Worker code never uses Bun.** Nothing under `src/` or `engine/` imports `bun:*` or uses `Bun.*`, and `scripts/` is never imported by Worker code. Shared logic uses web-standard APIs (WebCrypto, `fetch`, `Intl`), which work in workerd, Bun and Node.
+
+Versions are pinned through `packageManager: "bun@<version>"` in `package.json`, which `oven-sh/setup-bun` reads. A Node LTS is installed next to it in CI, because the Node CLIs need it.
 
 ## Configuration and deploy
 
@@ -103,5 +120,5 @@ vite.config.ts
 - engine `wrangler.jsonc`: name `reel-engine`, D1 `DB` (same database), DO class declared as SQLite storage, `workers_dev: false`, no routes.
 - Secrets (`wrangler secret put`, never in Git): `BETTER_AUTH_SECRET` (web), `CREDENTIALS_KEY` (engine; web needs it only if it encrypts on save, so prefer encrypting inside the engine), email-provider key (web). Local values in git-ignored `.dev.vars`.
 - Local dev: `wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc` after a build; `vite dev` for UI work with the engine running in its own `wrangler dev`.
-- CI/CD (GitHub Actions): on PRs, typecheck, lint, unit, engine and e2e tests. On `main`: `d1 migrations apply --remote` → deploy engine → build and deploy web (`cloudflare/wrangler-action`).
+- CI/CD (GitHub Actions, `oven-sh/setup-bun@v2` + `actions/setup-node`, `bun ci`): on PRs, typecheck, lint, unit, engine and e2e tests. On `main`: `d1 migrations apply --remote` → deploy engine → build and deploy web (`cloudflare/wrangler-action@v4` with `packageManager: bun`).
 - One production environment for the SIM pilot. Add a staging environment only when REAL is being prepared.

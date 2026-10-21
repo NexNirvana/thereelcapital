@@ -26,4 +26,4 @@ Read the relevant section first; these docs are the spec, so don't restate them 
 
 ## Tests required with any change
 
-Unit tests for every rule touched, and an engine test (`@cloudflare/vitest-plugin`) for any reservation, ledger or reconciliation change, including the concurrent case.
+Unit tests (`bun test`) for every rule touched, and an engine test (Vitest + `@cloudflare/vitest-plugin`) for any reservation, ledger or reconciliation change, including the concurrent case.
