@@ -1,0 +1,42 @@
+#!/bin/sh
+# Enforces the branch and commit rules in CONTRIBUTING.md#workflow:
+# no direct pushes to main, prefixed branch names, valid commit messages.
+set -eu
+
+hooks=$(dirname "$0")
+zero=0000000000000000000000000000000000000000
+status=0
+msgfile=$(mktemp)
+trap 'rm -f "$msgfile"' EXIT
+
+err() {
+  printf 'pre-push: %s\n' "$1" >&2
+  status=1
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # branch deletion
+
+  case "$remote_ref" in
+    refs/heads/main) err "push to main is not allowed; open a pull request" ;;
+    refs/heads/*)
+      branch=${remote_ref#refs/heads/}
+      printf '%s\n' "$branch" | grep -Eq '^(feature|fix|hotfix)/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$' ||
+        err "branch '$branch' must be feature/<issue>-<slug>, fix/<issue>-<slug> or hotfix/<issue>-<slug>"
+      ;;
+  esac
+
+  if [ "$remote_sha" = "$zero" ]; then
+    range="$local_sha --not --remotes"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # shellcheck disable=SC2086
+  for commit in $(git rev-list $range); do
+    git log -1 --format=%B "$commit" >"$msgfile"
+    "$hooks/commit-msg" "$msgfile" 2>/dev/null ||
+      err "commit $(git log -1 --format='%h %s' "$commit") breaks the message rules"
+  done
+done
+
+exit "$status"
