@@ -13,3 +13,4 @@ playwright-report/
 
 # SIM spike scratch (reports, never committed)
 .spike/
+blob-report/
