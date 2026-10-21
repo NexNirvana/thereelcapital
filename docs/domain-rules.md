@@ -35,7 +35,7 @@ equities: qty = floorToIncrement(SIZE / ask, increment)    // QuantityFormat.Inc
 
 ## 5. Order guards
 
-Reject unless all hold: mode is SIM; the account belongs to the client and is active Cash/Margin; the instrument is an equity or a single-leg option (no futures, no spreads); `OrderType` is Market; `TradeAction` is BUY/SELL (equity) or BUYTOOPEN/SELLTOCLOSE (option); a sell's qty ≤ `available`; the instrument is inside its regular session; no other open position on the same symbol (interim rule while additions are undefined, see §9).
+Reject unless all hold: mode is SIM; the account belongs to the client and is active Cash/Margin; the instrument is an equity or a single-leg option (no futures, no spreads); `OrderType` is Market; `TradeAction` is BUY/SELL (equity) or BUYTOOPEN/SELLTOCLOSE (option); a sell's qty ≤ `available`; the instrument is inside its regular session; no other open position on the same symbol (additions are not supported, see §9).
 
 ## 6. Scale-out steps
 
@@ -73,13 +73,13 @@ Expected results, steps pressed in order (encode as unit tests):
 ## 8. Trailing
 
 - Eligible iff `sold_qty / original_qty ≥ trailing_unlock_pct / 100` and `original_qty − sold_qty > 0`, using the `trailing_unlock_pct` stored on the position.
-- `trailing_pct` must be in the allowed set (a config constant, see [product-spec.md](product-spec.md#parameters)).
+- `trailing_pct` must be one of {1, 5, 8, 10, 15, 20} (default 10). The admin's `stop_pct` must be within 10–50 and `trailing_unlock_pct` within 30–90; all of these live in one config module ([product-spec.md](product-spec.md#parameters)).
 - On manual activation: `peak = fresh bid`. On each fresh quote: `peak = max(peak, bid)`, `trailLevel = max(trailLevel, peak × (1 − trailing_pct / 100))`.
 - Effective exit level = `max(stopLevel, trailLevel)`. When the bid ≤ effective level, sell `available` at MARKET.
 
 ## 9. Adding to a position
 
-Each additional intentional BUY consumes one entry on its first fill (decided). Its effect on `original_qty`, the steps, the average price and the protections is **not decided**, so the guard in §5 rejects it for now.
+Not supported in the pilot (D21): the guard in §5 rejects a BUY on an instrument that already has an open position in that mode. After a full close, a new BUY opens a new position and consumes an entry as usual. If additions are ever enabled, each additional intentional BUY consumes one entry on its first fill, and their effect on `original_qty`, the steps, the average price and the protections must be specified first.
 
 ## 10. Market calendar
 

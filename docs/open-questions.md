@@ -4,11 +4,7 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 
 ## Product (user decides)
 
-1. Trailing % allowed set: proposed {1, 5, 8, 10, 15, 20}.
-2. Min/max for the admin's stop % and trailing-unlock %.
-3. Adding to an open position: its effect on the original quantity, scale-out steps, average price and protections. Rejected until decided.
-4. Retention period for history and audit, and the operating budget.
-5. Email delivery provider (Resend, Postmark, Amazon SES or Cloudflare Email Service).
+1–5. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget, email provider. See [decisions.md](decisions.md) (D19–D22, D25).
 
 ## TradeStation (SIM spike)
 

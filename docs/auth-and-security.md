@@ -1,6 +1,6 @@
 # Authentication and security
 
-Library: **Better Auth** (`better-auth` + `@better-auth/passkey`, 1.7.x on 2026-10-20). Plugins: `admin`, `emailOTP`, `passkey`, `sveltekitCookies` (last). The email delivery provider is undecided. Better Auth calls our `sendVerificationOTP`, and the app sends invitations itself, both through one `sendEmail` function.
+Library: **Better Auth** (`better-auth` + `@better-auth/passkey`, 1.7.x on 2026-10-20). Plugins: `admin`, `emailOTP`, `passkey`, `sveltekitCookies` (last). Email goes through **Resend** (free plan: 3,000 emails/month, 100/day) with a plain `fetch` to its HTTP API; no SDK. Better Auth calls our `sendVerificationOTP`, and the app sends invitations itself, both through one `sendEmail` function. The sending domain `thereelcapital.com` is verified in Resend with the DNS records it gives (SPF/DKIM), added on Cloudflare.
 
 ## Gaps in Better Auth defaults
 

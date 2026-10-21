@@ -24,11 +24,10 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 | SIZE per entry | US$20,000 initial | admin, increase only, per client | new entries |
 | Open positions | max 2 per client · mode, across accounts | fixed | — |
 | New entries | max 3 per client · mode · market day, across accounts | fixed | — |
-| Initial stop | 30% below the average fill price | admin, per client, within bounds | new positions |
-| Trailing unlock | 70% of the original quantity sold (confirmed) | admin, per client, within bounds | new positions |
-| Trailing % | 10% default; allowed set *proposed* {1, 5, 8, 10, 15, 20} | client, at activation | selected position |
+| Initial stop | 30% below the average fill price; bounds 10–50% | admin, per client | new positions |
+| Trailing unlock | 70% of the original quantity sold (confirmed); bounds 30–90% | admin, per client | new positions |
+| Trailing % | one of {1, 5, 8, 10, 15, 20}; 10% default | client, at activation | selected position |
 | Scale-out steps | 30, 20, 10, 10, 10, 10, 10 (% of the original quantity) | fixed | per position |
-| Stop / unlock bounds | *undecided*; server-enforced config constants | — | — |
 
 ## In scope
 
@@ -40,7 +39,7 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 
 ## Out of scope
 
-Futures, shorting, SELL TO OPEN, BUY TO CLOSE, spreads; any client-chosen order type other than MARKET; charts and P&L in the terminal; public sign-up; a shared REEL CAPITAL API key; SIZE DOWN (−25%/−50%); editable premium; a "reset session" button; adding to an open position (until its effects are decided); REAL.
+Futures, shorting, SELL TO OPEN, BUY TO CLOSE, spreads; any client-chosen order type other than MARKET; charts and P&L in the terminal; public sign-up; a shared REEL CAPITAL API key; SIZE DOWN (−25%/−50%); editable premium; a "reset session" button; adding to an open position (not supported in the pilot; re-entry after a full close is a new position); REAL.
 
 ## Journey
 
@@ -56,4 +55,4 @@ SIM is the default and only enabled mode. Mode, account and connection are alway
 
 ## Data retention
 
-Orders, fills, operational events and admin audit persist across sessions. The retention period is undecided; until it is set, nothing is deleted automatically.
+Orders, fills, operational events and admin audit are kept for 6 years (D22); nothing needs deleting before then. Sessions, email codes and invitations expire on their own. The pilot runs on free tiers; see [architecture.md](architecture.md#costs-and-free-tier-limits).
