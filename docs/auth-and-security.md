@@ -51,6 +51,13 @@ Recovery codes and activation tokens are high-entropy random strings stored as H
 
 - Better Auth cookie session (Secure, HttpOnly, SameSite=Lax). SvelteKit's origin check plus Better Auth's `trustedOrigins` handle CSRF.
 - Every server route and action resolves the user from the session and checks the role. Client-supplied user ids are ignored.
+- Server helpers (`src/lib/server/`) make this uniform; routes and actions use them instead of reading `locals` directly:
+  - `requireUser(event)` → 401 `AUTH_REQUIRED` without a session, 403 `FORBIDDEN` for a banned user. `requireAdmin(event)` → 403 `FORBIDDEN` unless `role` is `admin`.
+  - `requireFreshSession(event)` → 401 `REAUTH_REQUIRED` unless `now − session.createdAt` is under 10 minutes (and not in the future). Admin mutations call `requireAdmin` then `requireFreshSession`.
+  - `decode(schema, input)` → Effect `Schema` decode that rejects unknown fields; failure is 400 `INVALID_INPUT` and never echoes input.
+  - `audit(db, { actor, action, targetUserId, before, after })` inserts into `audit_log` with bound parameters and throws on a credential-named key at any depth or on a failed write. `auditStatement` returns the statement so a mutation and its audit row commit in one `DB.batch`; use it for every admin mutation.
+  - `engineFor(env.ENGINE, event)` → `ENGINE.getByName(session.user.id)`; there is no other way to address a client's Durable Object from web code.
+  - Errors carry a stable `code` (`App.Error`) and a Spanish message.
 - Disabling a client = `banUser` (it deletes sessions and blocks new ones). It does not touch broker orders.
 - Logout or browser close does not affect protections; they live in the DO or at the broker.
 - Pages load nothing from other origins except the Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`), injected at the edge in production only (D26 in [decisions.md](decisions.md)). A future Content-Security-Policy must allow that script and its reporting endpoint.
