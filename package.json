@@ -22,6 +22,8 @@
     "prepare": "git config core.hooksPath .githooks && svelte-kit sync"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.7",
+    "better-auth": "1.7.7",
     "market-calendar": "1.1.1"
   },
   "devDependencies": {
