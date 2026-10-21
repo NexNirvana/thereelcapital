@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-    # edited: re-run the guards when only the PR title changes.
-    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -84,52 +82,3 @@ jobs:
       # Prove both Workers bundle, without credentials.
       - run: bunx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/engine-dist" -c engine/wrangler.jsonc
       - run: bunx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/web-dist" -c wrangler.jsonc
-
-  guards:
-    name: guards
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
-    env:
-      BASE: ${{ github.event.pull_request.base.sha }}
-      HEAD: ${{ github.event.pull_request.head.sha }}
-      GITLEAKS_VERSION: 8.30.1
-      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: PR title
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
-          .githooks/commit-msg "$RUNNER_TEMP/title"
-      - name: Commit messages
-        run: |
-          status=0
-          for commit in $(git rev-list "$BASE..$HEAD"); do
-            git log -1 --format=%B "$commit" > "$RUNNER_TEMP/msg"
-            subject=$(git log -1 --format=%s "$commit")
-            case "$subject" in
-              "fixup! "* | "squash! "* | "amend! "*)
-                echo "::error::$commit is a '$subject' commit; squash it before review"
-                status=1 ;;
-            esac
-            .githooks/commit-msg "$RUNNER_TEMP/msg" || { echo "::error::$commit breaks the message rules"; status=1; }
-          done
-          exit "$status"
-      - name: Branch name
-        env:
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: .githooks/check-branch-name "$BRANCH"
-      - name: No live TradeStation host
-        run: .githooks/no-live-host "$BASE" "$HEAD"
-      # gitleaks-action needs a license for organization repos; the MIT binary does not.
-      - name: Secret scan
-        run: |
-          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL "$url" -o "$RUNNER_TEMP/gitleaks.tar.gz"
-          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
-          "$RUNNER_TEMP/gitleaks" git --redact --verbose --log-opts="$BASE..$HEAD"

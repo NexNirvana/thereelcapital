@@ -45,7 +45,9 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 
 GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
 
-- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e`, `build` and `guards` passing (`.github/workflows/ci.yml`), no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin can bypass the pull request requirement only through a pull request, never force-push or deletion protection.
+- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e` and `build` (`.github/workflows/ci.yml`, which runs the pull request's own code) and `guards` (`.github/workflows/policy.yml`) passing, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin's bypass (`bypass_mode: pull_request`) applies only to merging through a pull request, and it covers every rule that gates that merge: when the admin explicitly chooses to bypass, the pull request requirement, unresolved review threads and the required status checks can all be skipped. It never covers force-push or deletion protection.
+
+`guards` runs on `pull_request_target`, so GitHub uses the base branch's copy of `policy.yml` and a pull request cannot weaken it. It checks out only the base commit, fetches the pull request's commits as data, and runs the base branch's `.githooks/` scripts over them. It never builds or executes pull request code and uses no secrets. A change to `policy.yml` or `.githooks/` takes effect for other pull requests once it is on `main`, and does not apply to its own pull request.
 - `pr-assets`: no force push, no deletion. Normal pushes are allowed.
 - `feature/*`, `fix/*` and `hotfix/*` are unrestricted, since they are force-pushed during review. Branch names are checked by the `pre-push` hook (a GitHub name-pattern rule would also block bot-created branches).
 
@@ -106,7 +108,7 @@ feat(domain): mark zero-quantity steps as done without an order
 
 ## Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), checked by the `commit-msg` and `pre-push` hooks and, for every commit of a PR, in CI.
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), checked by the `commit-msg` and `pre-push` hooks and, for every commit of a PR, in the `guards` job.
 
 ```
 <type>(<scope>): <subject>
@@ -152,7 +154,7 @@ docs: record the stop residency decision from the SIM spike
 
 - **pre-commit**: blocks the wrong git identity, secrets (`.dev.vars`, `.env`, private keys, provider tokens), merge-conflict markers and files over 5 MB. After scaffolding it also runs the formatter and linter on staged files.
 - **commit-msg**: enforces the format above and rejects AI attribution.
-- **check-branch-name** and **no-live-host**: helpers (not hooks) shared with CI, which re-runs them and `commit-msg` in its `guards` job.
+- **check-branch-name** and **no-live-host**: helpers (not hooks) shared with CI, which re-runs them and `commit-msg` in the `guards` job of `policy.yml`, using the base branch's copy of the scripts.
 - **pre-push**: rejects pushes to `main`, branch names outside the table above, and any pushed commit whose message breaks the rules.
 
 Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
