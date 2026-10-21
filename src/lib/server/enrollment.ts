@@ -1,5 +1,5 @@
 // The enrollment-only session (docs/auth-and-security.md#gaps-in-better-auth-defaults): created
-// from a recovery code (and, later, an activation link), it may register a passkey and nothing
+// from a recovery code or an activation link, it may register a passkey and nothing
 // else. hooks.server.ts runs `enrollmentGate` on every request, so a new route is closed to it by
 // default; only the paths listed here are open. Better Auth itself would accept the session
 // cookie on any of its endpoints, which is why the gate also covers /api/auth/*.
@@ -20,12 +20,13 @@ const signInPaths = [
   "/api/auth/passkey/verify-authentication",
 ];
 
-// Open to a live enrollment session: the sign-in and recovery pages, the redemption/completion steps, the two passkey
+// Open to a live enrollment session: the sign-in, recovery and activation pages, the redemption/completion steps, the two passkey
 // registration endpoints, the session read/logout pair and the recovery page.
 const activePaths = new Set([
   "/acceso",
   "/recuperacion",
   "/api/auth/recovery/redeem",
+  "/api/auth/activation/redeem",
   "/api/auth/enrollment/complete",
   "/api/auth/passkey/generate-register-options",
   "/api/auth/passkey/verify-registration",
@@ -36,6 +37,7 @@ const activePaths = new Set([
 // An expired one may still start over, and can do nothing else on the auth API.
 const expiredAuthPaths = new Set([
   "/api/auth/recovery/redeem",
+  "/api/auth/activation/redeem",
   "/api/auth/get-session",
   "/api/auth/sign-out",
   ...signInPaths,
@@ -65,6 +67,9 @@ export function enrollmentGate(
       isAuthApi
       ? expiredAuthPaths.has(pathname)
       : true
-    : activePaths.has(pathname) || pathname.startsWith("/_app/");
+    : activePaths.has(pathname) ||
+      pathname.startsWith("/_app/") ||
+      // The activation page of the link the session came from (reload mid-flow, same link).
+      pathname.startsWith("/activar/");
   return { kind: "enrollment", allowed, expired };
 }

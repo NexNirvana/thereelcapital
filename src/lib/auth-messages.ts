@@ -61,6 +61,29 @@ export const recoveryErrors = {
   },
 } as const;
 
+// Activation links (docs/auth-and-security.md#flows).
+export const activationErrors = {
+  invalidLink: {
+    code: "INVALID_ACTIVATION_LINK",
+    // One answer for unknown, expired, used, regenerated, revoked and suspended-account links.
+    message: "Este enlace no es válido o ya venció. Pide uno nuevo a tu administrador.",
+  },
+  tooManyAttempts: recoveryErrors.tooManyAttempts,
+  enrollmentLost: {
+    code: "ENROLLMENT_EXPIRED",
+    message:
+      "Tu sesión de registro venció. Abre de nuevo tu enlace de activación; si ya no funciona, pide uno nuevo a tu administrador.",
+  },
+} as const;
+
+/** Spanish text for a failed activation request; Better Auth answers 429 itself when rate limited. */
+export function activationErrorMessage(code: string | undefined, status?: number): string {
+  if (status === 429) return activationErrors.tooManyAttempts.message;
+  return code === recoveryErrors.invalidInput.code
+    ? recoveryErrors.invalidInput.message
+    : activationErrors.invalidLink.message;
+}
+
 /** True when the enrollment session is gone, so the only way forward is a new code. */
 export function enrollmentLost(code: string | undefined, status?: number): boolean {
   return (

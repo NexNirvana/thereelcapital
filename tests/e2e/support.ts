@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import { type BrowserContext, type Page } from "@playwright/test";
+import { newInvitation } from "../../src/lib/server/activation-link.ts";
 
 // Same throwaway value playwright.config.ts passes to the dev server; not a credential.
 export const authSecret = "e2e-only-secret-0123456789-0123456789";
@@ -23,6 +24,25 @@ export function count(sql: string): number {
   return typeof row === "object" && row !== null && "n" in row && typeof row.n === "number"
     ? row.n
     : -1;
+}
+
+// A client the admin created and has not yet activated, with an activation link; `token` is what
+// the admin would share. Rows are seeded straight into D1 because createClient has no public route.
+export async function seedPendingClient({
+  expiresInMs,
+  banned = false,
+}: { expiresInMs?: number; banned?: boolean } = {}) {
+  const userId = randomUUID();
+  const invitationId = randomUUID();
+  const now = new Date().toISOString();
+  const link = await newInvitation(authSecret);
+  d1(
+    `INSERT INTO "user" ("id","name","email","emailVerified","role","banned","createdAt","updatedAt")
+     VALUES ('${userId}','Cliente','${userId}@example.com',0,'user',${banned ? 1 : 0},'${now}','${now}');
+     INSERT INTO invitations ("id","user_id","token_hash","expires_at","created_by")
+     VALUES ('${invitationId}','${userId}','${link.tokenHash}',${expiresInMs === undefined ? link.expiresAt : Date.now() + expiresInMs},'admin');`,
+  );
+  return { userId, invitationId, token: link.token };
 }
 
 export async function seedSignedInUser(context: BrowserContext) {

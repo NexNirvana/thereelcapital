@@ -14,7 +14,8 @@ declare global {
       session: AuthSession["session"] | null;
       user: AuthSession["user"] | null;
       // Set instead of session/user while the request carries a live enrollment-only session.
-      enrollment: { userId: string } | null;
+      // `invitationId` is the activation link it came from; null for recovery.
+      enrollment: { userId: string; invitationId: string | null } | null;
     }
   }
 }
