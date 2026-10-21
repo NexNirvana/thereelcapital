@@ -30,6 +30,11 @@ export function createAuth(
     emailAndPassword: { enabled: false },
     // The password and impersonation endpoints must never be reachable.
     disabledPaths: ["/admin/impersonate-user", "/admin/set-user-password"],
+    // A session created from a recovery code (or activation link) that may only register a
+    // passkey; src/lib/server/enrollment.ts is its single enforcement point.
+    session: {
+      additionalFields: { enrollment: { type: "boolean", defaultValue: false, input: false } },
+    },
     // In-memory limits are per isolate on Workers, so the counters live in D1.
     rateLimit: { enabled: true, storage: "database" },
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
