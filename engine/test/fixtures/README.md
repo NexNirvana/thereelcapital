@@ -13,3 +13,5 @@ Issue #21 (the SIM spike) records real SIM responses; those replace these files,
 | `expirations.json` | spec example of `GET /marketdata/options/expirations/{underlying}` |
 | `strikes.json` | schema-derived from the spec's `Strikes` example, one strike per spread |
 | `chain-stream.ndjson` | spec example of a chain message, plus a schema-derived second row, a heartbeat and `EndSnapshot` |
+| `orders.json` | spec example of `GET /brokerage/accounts/{accounts}/orders`, extended with schema-derived option, canceled, rejected, multi-leg, short and unmapped-status orders |
+| `positions.json` | spec example of `GET /brokerage/accounts/{accounts}/positions`, plus a schema-derived option and a short position |

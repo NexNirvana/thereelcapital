@@ -1,0 +1,48 @@
+{
+  "Positions": [
+    {
+      "AccountID": "123456782",
+      "AveragePrice": "216.68",
+      "AssetType": "STOCK",
+      "Last": "216.63",
+      "Bid": "216.62",
+      "Ask": "216.64",
+      "ConversionRate": "1",
+      "DayTradeRequirement": "0",
+      "InitialRequirement": "0",
+      "MaintenanceMargin": "0",
+      "PositionID": "64630792",
+      "LongShort": "Long",
+      "Quantity": "10",
+      "Symbol": "MSFT",
+      "Timestamp": "2020-11-16T16:53:37Z",
+      "TodaysProfitLoss": "-0.5",
+      "TotalCost": "2166.8",
+      "MarketValue": "2166.3",
+      "MarkToMarketPrice": "216.68",
+      "UnrealizedProfitLoss": "-0.5",
+      "UnrealizedProfitLossPercent": "-0.023",
+      "UnrealizedProfitLossQty": "-0.05"
+    },
+    {
+      "AccountID": "123456782",
+      "AveragePrice": "3.15",
+      "AssetType": "STOCKOPTION",
+      "LongShort": "Long",
+      "Quantity": "2",
+      "Symbol": "MSFT 211217P332.5",
+      "PositionID": "64630793",
+      "Timestamp": "2021-12-01T16:00:00Z"
+    },
+    {
+      "AccountID": "123456782",
+      "AveragePrice": "50",
+      "AssetType": "STOCK",
+      "LongShort": "Short",
+      "Quantity": "-5",
+      "Symbol": "AAPL",
+      "PositionID": "64630794"
+    }
+  ],
+  "Errors": []
+}

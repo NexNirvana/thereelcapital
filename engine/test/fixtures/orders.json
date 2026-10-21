@@ -1,0 +1,170 @@
+{
+  "Orders": [
+    {
+      "AccountID": "123456782",
+      "CommissionFee": "0",
+      "Currency": "USD",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "Buy",
+          "ExecQuantity": "4",
+          "ExecutionPrice": "216.66",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "10",
+          "QuantityRemaining": "6",
+          "Symbol": "MSFT"
+        }
+      ],
+      "OrderID": "286234131",
+      "OpenedDateTime": "2021-02-24T15:47:45Z",
+      "OrderType": "Market",
+      "FilledPrice": "216.66",
+      "PriceUsedForBuyingPower": "230.46",
+      "Routing": "Intelligent",
+      "Status": "FPR",
+      "StatusDescription": "Partial Fill (Alive)",
+      "UnbundledRouteFee": "0"
+    },
+    {
+      "AccountID": "123456782",
+      "CommissionFee": "0",
+      "ClosedDateTime": "2020-11-16T16:53:37Z",
+      "Currency": "USD",
+      "Duration": "DAY",
+      "FilledPrice": "216.68",
+      "Legs": [
+        {
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "10",
+          "ExecQuantity": "10",
+          "QuantityRemaining": "0",
+          "BuyOrSell": "Buy",
+          "Symbol": "MSFT",
+          "AssetType": "STOCK"
+        }
+      ],
+      "OrderID": "123456789",
+      "OpenedDateTime": "2020-11-16T16:53:37Z",
+      "OrderType": "Market",
+      "PriceUsedForBuyingPower": "216.66",
+      "Routing": "Intelligent",
+      "Status": "FLL",
+      "StatusDescription": "Filled",
+      "UnbundledRouteFee": "0"
+    },
+    {
+      "AccountID": "123456782",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCKOPTION",
+          "BuyOrSell": "Sell",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Close",
+          "OptionType": "PUT",
+          "QuantityOrdered": "2",
+          "QuantityRemaining": "2",
+          "StrikePrice": "332.5",
+          "Symbol": "MSFT 211217P332.5",
+          "Underlying": "MSFT"
+        }
+      ],
+      "OrderID": "286234140",
+      "OpenedDateTime": "2021-02-24T15:50:00Z",
+      "ClosedDateTime": "2021-02-24T15:51:00Z",
+      "OrderType": "Market",
+      "Status": "CAN",
+      "StatusDescription": "Canceled"
+    },
+    {
+      "AccountID": "123456782",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "Buy",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "5",
+          "QuantityRemaining": "5",
+          "Symbol": "MSFT"
+        }
+      ],
+      "OrderID": "286234141",
+      "ClosedDateTime": "2021-02-24T15:52:00Z",
+      "OrderType": "Market",
+      "RejectReason": "Insufficient buying power",
+      "Status": "REJ",
+      "StatusDescription": "Rejected"
+    },
+    {
+      "AccountID": "123456782",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "Buy",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "1",
+          "QuantityRemaining": "1",
+          "Symbol": "MSFT"
+        },
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "Sell",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "1",
+          "QuantityRemaining": "1",
+          "Symbol": "AAPL"
+        }
+      ],
+      "OrderID": "286234142",
+      "OpenedDateTime": "2021-02-24T15:53:00Z",
+      "OrderType": "Market",
+      "Status": "OPN"
+    },
+    {
+      "AccountID": "123456782",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "SellShort",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "1",
+          "QuantityRemaining": "1",
+          "Symbol": "MSFT"
+        }
+      ],
+      "OrderID": "286234143",
+      "OpenedDateTime": "2021-02-24T15:54:00Z",
+      "OrderType": "Market",
+      "Status": "OPN"
+    },
+    {
+      "AccountID": "123456782",
+      "Duration": "DAY",
+      "Legs": [
+        {
+          "AssetType": "STOCK",
+          "BuyOrSell": "Buy",
+          "ExecQuantity": "0",
+          "OpenOrClose": "Open",
+          "QuantityOrdered": "1",
+          "QuantityRemaining": "1",
+          "Symbol": "MSFT"
+        }
+      ],
+      "OrderID": "286234144",
+      "OpenedDateTime": "2021-02-24T15:55:00Z",
+      "OrderType": "Market",
+      "Status": "BRO"
+    }
+  ],
+  "Errors": []
+}
