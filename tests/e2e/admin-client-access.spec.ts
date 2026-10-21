@@ -127,7 +127,7 @@ test("revokes one session and then the rest", async ({ context, page }) => {
   seedClientSession(client.userId);
   await page.goto(`/admin/clientes/${client.userId}`);
 
-  await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
+  await page.getByRole("row").getByRole("button", { name: "Cerrar sesión" }).first().click();
   await expect(page.getByText("Sesión cerrada.")).toBeVisible();
   await expect(page.getByRole("row", { name: /Completa/ })).toHaveCount(2);
   expect(audited("session.revoke", client.userId)).toBe(1);

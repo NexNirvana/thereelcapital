@@ -57,7 +57,7 @@ test("recovers access through the screen: code, new passkey, new codes, trading 
   ).toHaveCount(10);
 
   await page.getByRole("button", { name: "Ya los guardé" }).click();
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/operar");
   expect((await (await page.request.get("/api/auth/get-session")).json()).session.enrollment).toBe(
     false,
   );

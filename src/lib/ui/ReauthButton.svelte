@@ -6,7 +6,9 @@
   import Notice from "./Notice.svelte";
 
   // A new passkey sign-in makes the session fresh again; the admin then repeats the action.
-  let { onconfirmed }: { onconfirmed: () => void } = $props();
+  // `refresh` re-runs every load after the sign-in; a caller whose own state must survive it (the
+  // recovery-code prompt shows codes that make a layout load see them as existing) turns it off.
+  let { onconfirmed, refresh = true }: { onconfirmed: () => void; refresh?: boolean } = $props();
 
   let reauthenticating = $state(false);
   let failure = $state<string | null>(null);
@@ -21,7 +23,7 @@
       return;
     }
     onconfirmed();
-    await invalidateAll();
+    if (refresh) await invalidateAll();
   }
 </script>
 

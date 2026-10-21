@@ -175,7 +175,7 @@ test("an enrollment session cannot reach anything but passkey registration", asy
   expect((await redeem(page, codes[0] ?? "")).status()).toBe(200);
 
   // Pages: the trading page redirects back to the recovery screen.
-  const home = await page.request.get("/", { maxRedirects: 0 });
+  const home = await page.request.get("/operar", { maxRedirects: 0 });
   expect([home.status(), home.headers().location]).toEqual([303, "/recuperacion"]);
 
   // The sign-in page stays reachable (the recovery screen links to it).
@@ -233,7 +233,7 @@ test("an expired enrollment session still lets the client sign in with the new p
 
   await page.goto("/acceso");
   await page.getByRole("button", { name: "Entrar con passkey" }).click();
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/operar");
   expect((await sessionOf(page)).session.enrollment).toBe(false);
 });
 
@@ -271,7 +271,7 @@ test("redeeming a code deletes the old passkeys so they can no longer sign in", 
   const verification = page.waitForResponse("**/api/auth/passkey/verify-authentication");
   await page.getByRole("button", { name: "Entrar con passkey" }).click();
   expect((await verification).ok()).toBe(false);
-  await expect(page).not.toHaveURL("/");
+  await expect(page).not.toHaveURL("/operar");
   expect(await sessionOf(page)).toBeNull();
   expect(
     count(`SELECT COUNT(*) AS n FROM "session" WHERE "userId"='${userId}' AND "enrollment"=0`),
@@ -318,7 +318,7 @@ test("finishing needs a new passkey, then returns a full session and ten fresh c
   expect(
     count(`SELECT COUNT(*) AS n FROM "session" WHERE "userId"='${userId}' AND "enrollment"=1`),
   ).toBe(0);
-  expect((await page.request.get("/", { maxRedirects: 0 })).status()).toBe(200);
+  expect((await page.request.get("/operar", { maxRedirects: 0 })).status()).toBe(200);
   expect(count(`SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id='${userId}'`)).toBe(10);
   expect(
     count(

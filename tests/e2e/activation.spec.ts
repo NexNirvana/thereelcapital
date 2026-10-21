@@ -147,7 +147,7 @@ test("registering the first passkey spends the link, then ten codes are shown on
   expect(done.headers()["cache-control"]).toBe("no-store");
   expect((await done.json()).codes).toHaveLength(10);
   expect((await sessionOf(page)).session.enrollment).toBe(false);
-  expect((await page.request.get("/", { maxRedirects: 0 })).status()).toBe(200);
+  expect((await page.request.get("/operar", { maxRedirects: 0 })).status()).toBe(200);
 
   // Opening the spent link while signed in changes nothing: no new session, the client stays in.
   const late = await open(page, token);

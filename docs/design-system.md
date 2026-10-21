@@ -59,15 +59,15 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 ## Layout shell
 
 **Desktop** (see `designs/desktop/02-new-order.png`):
-- Left sidebar **190px**, `--surface`: stacked wordmark `REEL / CAPITAL`; nav `Operar · Posiciones · Historial · Conexión`; active item = slim white vertical bar + brighter text; `thereelcapital.com` at the bottom.
-- Top utility row, separated by one hairline: `● TradeStation conectado` · outlined `SIM` badge … `•• 4821` | `10:42 ET` (market time, from the server).
+- Left sidebar **190px**, `--surface`: stacked wordmark `REEL / CAPITAL`; nav `Operar · Posiciones · Historial · Conexión` (Posiciones and Historial are listed only once #30 and #31 build them; admins also get `Admin`); active item = slim white vertical bar + brighter text; `Cerrar sesión` and `thereelcapital.com` at the bottom.
+- Top utility row, separated by one hairline: `● TradeStation conectado` · outlined `SIM` badge … `•• 4821` | `10:42 ET` (market time, `Intl` with America/New_York, refreshed each minute, not announced by screen readers). The account (last four characters) appears only while connected. The limits line stays hidden until M4 provides the counters.
 - Content max-width about 1000px, generous padding. Breadcrumb (`Operar / Nueva entrada`) → H1 → subtitle; quiet limits line top-right (`1/2 posiciones · 2/3 entradas hoy`).
 - Two unboxed columns (about 55/40) split by **one** thin vertical rule.
 - (The PNGs' footer `SIM · Datos de ejemplo` marks sample data; it is not a UI element.)
 
 **Mobile / iPad** (see `designs/mobile/`):
 - Header: wordmark left, outlined `SIM` right; line `TradeStation · •• 4821`.
-- Single column, stacked. Bottom tab nav `Operar · Posiciones · Historial` (active = underline). Conexión is reachable from the header/menu.
+- Single column, stacked. Bottom tab nav `Operar · Posiciones · Historial` (active = underline; only the built screens are listed, plus `Conexión`, `Admin` for admins and `Cerrar sesión`). Conexión is also reachable from the header.
 - Touch targets **≥ 44px**. Safe-area padding.
 
 ## Components
@@ -89,3 +89,9 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 ## Formats
 
 UI copy is Spanish. Numbers: `US$20,000`, `US$4.00`, `50 contratos`, dates `20 nov 2026`, times `10:42 ET`.
+
+**Error page** (`+error.svelte` at the root, in `(app)` and in `admin`): the Spanish title and message depend only on the status (401, 403, 404, 5xx, other 4xx), with the stable code in small type and one button (`Ir a Operar`, or `Ir al acceso` for 401). Internal messages never reach the page. An address no route matches renders it without the shell.
+
+**Recovery-code prompt**: when the signed-in client has no unused recovery codes, the shell shows a prompt above the content. `Generar códigos` calls `POST /api/recovery-codes`; a session older than 10 minutes asks for `Confirmar con passkey` first. The codes are shown once and leave the page when the client confirms with `Ya los guardé`.
+
+**Admin header**: wordmark, `Admin` and `SIM` badges, `Clientes`, then `Operar` and `Cerrar sesión` (Better Auth sign-out, then `/acceso`). On a phone the client list stacks each client as email, `Acceso`, `Conexión`, one per line.
