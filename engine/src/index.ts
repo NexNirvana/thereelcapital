@@ -29,6 +29,7 @@ import {
   type SendEntryResult,
 } from "./entries.ts";
 import { writeEvent } from "./events.ts";
+import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { migrate } from "./schema.ts";
 import {
   ActivateTrailingArgs,
@@ -113,12 +114,27 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   // Trading methods still to come: decoded and guarded now, implemented by the trading issues.
 
-  exit(input: unknown): EngineResult<never> {
-    return this.enter("exit", ExitArgs, input, () => this.notImplemented("exit"));
+  /** A scale-out step or ALL OUT: the quantity comes from the sell ledger, the order is placed once. */
+  exit(input: unknown): Promise<EngineResult<ExitResult>> {
+    return this.enterWithBroker("exit", ExitArgs, input, async (ctx, args) => {
+      const result = await exitPosition(ctx, args);
+      if (result.ok && result.value.status === "PLACED") {
+        // The loop watches the fill; it must be running while an exit is pending.
+        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+      }
+      return result;
+    });
   }
 
-  cancel(input: unknown): EngineResult<never> {
-    return this.enter("cancel", CancelArgs, input, () => this.notImplemented("cancel"));
+  /** CANCEL_PENDING until the broker confirms; the sync loop applies its answer. */
+  cancel(input: unknown): Promise<EngineResult<CancelResult>> {
+    return this.enterWithBroker("cancel", CancelArgs, input, async (ctx, args) => {
+      const result = await cancelIntent(ctx, args);
+      if (result.ok && result.value.status === "REQUESTED") {
+        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+      }
+      return result;
+    });
   }
 
   activateTrailing(input: unknown): EngineResult<never> {

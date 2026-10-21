@@ -51,9 +51,21 @@ async function eventTypes(stub: ReturnType<typeof stubFor>) {
 }
 
 describe("ClientCoordinator RPC surface", () => {
-  it.each(calls)("%s decodes its arguments and reports NOT_IMPLEMENTED", async (method, args) => {
-    const result = await stubFor(`rpc-${method}`)[method](args);
+  it("activateTrailing decodes its arguments and reports NOT_IMPLEMENTED", async () => {
+    const result = await stubFor("rpc-trailing").activateTrailing({
+      mode: "SIM",
+      positionId: "p-1",
+      trailingPct: 10,
+    });
     expect(result).toMatchObject({ ok: false, code: "NOT_IMPLEMENTED" });
+  });
+
+  it.each([
+    ["exit", { mode: "SIM", positionId: "p-1", step: 0 }],
+    ["cancel", { mode: "SIM", intentId: "i-1" }],
+  ] as const)("%s on a client that never connected is blocked, not sent", async (method, args) => {
+    const result = await stubFor(`rpc-${method}`)[method](args);
+    expect(result).toMatchObject({ ok: true, value: { status: "BLOCKED" } });
   });
 
   it.each([
