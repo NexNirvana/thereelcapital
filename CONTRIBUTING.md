@@ -51,7 +51,9 @@ GitHub enforces the rules above through two rulesets, kept as JSON in `.github/r
 
 There are no required status checks yet. Issue #3 (CI) adds them to `.github/rulesets/main.json` as a `required_status_checks` rule.
 
-Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as a repo admin, for example after the transfer:
+The repository is public, which is what makes rulesets available on the `NexNirvana` organization's GitHub Free plan (a private repository would need GitHub Team). Never commit anything private: secrets stay in `.env`/`.dev.vars` and Worker secrets.
+
+Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as a repo admin:
 
 ```sh
 bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
@@ -62,7 +64,7 @@ bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
 Every PR shows how it was verified, in the template's sections:
 
 - The exact commands run (check, lint, tests) and their results.
-- **UI changes:** screenshots from a real browser at desktop (about 1440px) and mobile (about 390px) width, next to the matching design in `designs/` when one exists. Upload them to the `pr-assets` branch under `<branch>/<name>.png` and embed them with `![name](https://github.com/OnishellT/thereelcapital/blob/pr-assets/<branch>/<name>.png?raw=true)`. `pr-assets` is an orphan branch for images only; it is never merged.
+- **UI changes:** screenshots from a real browser at desktop (about 1440px) and mobile (about 390px) width, next to the matching design in `designs/` when one exists. Upload them to the `pr-assets` branch under `<branch>/<name>.png` and embed them with `![name](https://github.com/NexNirvana/thereelcapital/blob/pr-assets/<branch>/<name>.png?raw=true)`. `pr-assets` is an orphan branch for images only; it is never merged.
 - **No UI change:** state why there is nothing to show in a browser, and how the behavior was exercised instead.
 - Anything not verified is listed as such. Never claim a check you didn't run.
 
@@ -173,7 +175,7 @@ Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
 - `strict` on; no `any`, no non-null `!` and no `as` casts outside decoders. `// @ts-expect-error` only with a reason.
 - Name things for the domain: `availableQty`, `stopLevel`, `sessionDate`, not `data`, `info` or `helper`.
 - Small modules with one purpose and named exports. No barrel files that re-export everything.
-- Import app modules with the `#lib/*` subpath import (`package.json` `imports`); SvelteKit 3 removed `$lib`.
+- Import across folders with the `#lib/*` subpath import (`package.json` `imports`); SvelteKit 3 removed `$lib`. Modules inside the same folder (for example `src/lib/domain/`) import each other relatively, which works the same in both Workers and `bun test`.
 - Money and quantities: integer cents and integer quantities (or the decimal type chosen in `src/lib/domain`); never compare floats for equality.
 - Dates: pass `now` in. Market logic uses America/New_York via the calendar module, never the runtime's local time.
 
