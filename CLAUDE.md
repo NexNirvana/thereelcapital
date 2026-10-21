@@ -75,7 +75,8 @@ Long sessions cost most through tool output kept in context.
 - Read big docs with `grep -n` and `sed -n`, not whole. Cap command output (`| head -c 4000`).
 - Use Write or Edit for file changes, not nested heredocs.
 - Check a PR with `scripts/pr-status.sh <pr>`; wait for CI with `scripts/pr-status.sh <pr> --wait` instead of monitors or sleep loops.
-- Collect all review findings of a PR and fix them in one batch.
+- Self-review the diff before leaving draft so the first bot review finds nothing; then fix each review round's findings, and every similar spot, in one batch (CONTRIBUTING.md#review-gate).
+- Small independent PRs from `main`, no stacking; `gh pr merge <n> --auto --rebase` after the final clean review.
 - Past about 250k tokens of context, restart with a short handoff note (open PRs, next steps).
 
 ## Also for you

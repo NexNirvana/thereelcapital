@@ -35,6 +35,7 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 ### Pull requests
 
 - One PR per branch and per issue. If the work grows past its issue, split it into a new issue and branch.
+- Keep PRs small and independent, each branched from `main`. Don't stack a PR on another unmerged branch; wait for the prerequisite to merge.
 - Title in the commit format below; body starts with `Closes #<issue>` and fills in the template.
 - Open it early as a draft; mark it ready when the commits are organized and CI passes.
 - Keep the branch current by rebasing on `main` (`git rebase origin/main`), never by merging `main` into it.
@@ -81,11 +82,13 @@ Every PR shows how it was verified, in the template's sections:
 - Use **one reviewer at a time per PR**. When CodeRabbit is rate-limited or busy, request Copilot or Greptile instead, so several PRs are reviewed in parallel by different reviewers. Never request two reviewers for the same commit.
 - The rules below apply to whichever reviewer is used.
 
-- Open PRs as drafts and mark them ready only when commits are organized, checks pass and verification is filled in. CodeRabbit then reviews automatically, once, on any base branch (stacked PRs included); pushes don't re-trigger it (`.coderabbit.yaml`). For Copilot or Greptile, request the review when marking the PR ready.
+- **Self-review before leaving draft.** Read the whole diff (`git diff origin/main`) against `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `greptile.json`, looking specifically for unhandled failure paths, quoting and injection, secrets reachable from the wrong scope, missing negative tests, and similar code that should change the same way. The goal is a first bot review that finds nothing.
+- Open PRs as drafts and mark them ready only when commits are organized, checks pass, the self-review is done and verification is filled in. CodeRabbit then reviews automatically, once; pushes don't re-trigger it (`.coderabbit.yaml`). For Copilot or Greptile, request the review when marking the PR ready.
 - Wait for the review to finish on the latest pushed commit. A "processing", "skipped" or "review limit reached" comment is not a review. If CodeRabbit's limit is reached, switch that PR to Copilot or Greptile rather than waiting.
-- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Push all fixes together, then request one follow-up review of those commits from Greptile (`@greptileai review`), since CodeRabbit reviews each PR only once. Resolve the threads.
+- Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Handle each review round in **one fix pass**: collect every finding, fix it together with every similar spot in the diff (a finding is usually a class of bug, not one line), push all fixes together, then request one follow-up review of those commits from Greptile (`@greptileai review`), since CodeRabbit reviews each PR only once. Resolve the threads.
 - Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
-- Green CI is required as well, once CI exists (#3).
+- Green CI is required as well.
+- Once a review of the final commit has no actionable comments and every thread is resolved, enable auto-merge with `gh pr merge <n> --auto --rebase`; GitHub merges when the required checks pass.
 - `scripts/pr-status.sh <pr> [--wait]` prints state, required checks, reviews, unresolved threads and the latest bot summary in one block; `--wait` first blocks until required checks finish.
 
 ### Organizing commits
