@@ -52,16 +52,24 @@ export async function seedPendingClient({
 // `sessionAgeMs` backdates the session, which is what the 10-minute freshness check measures.
 export async function seedSignedInUser(
   context: BrowserContext,
-  { role = "user", sessionAgeMs = 0 }: { role?: "user" | "admin"; sessionAgeMs?: number } = {},
+  {
+    role = "user",
+    sessionAgeMs = 0,
+    existingUserId,
+  }: { role?: "user" | "admin"; sessionAgeMs?: number; existingUserId?: string } = {},
 ) {
-  const userId = randomUUID();
+  const userId = existingUserId ?? randomUUID();
   const token = randomUUID().replaceAll("-", "");
   const now = new Date().toISOString();
   const sessionStart = new Date(Date.now() - sessionAgeMs).toISOString();
   const expires = new Date(Date.now() + 3_600_000).toISOString();
   d1(
-    `INSERT INTO "user" ("id","name","email","emailVerified","role","createdAt","updatedAt")
-     VALUES ('${userId}','Cliente','${userId}@example.com',0,'${role}','${now}','${now}');
+    `${
+      existingUserId
+        ? ""
+        : `INSERT INTO "user" ("id","name","email","emailVerified","role","createdAt","updatedAt")
+     VALUES ('${userId}','Cliente','${userId}@example.com',0,'${role}','${now}','${now}');`
+    }
      INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId")
      VALUES ('${randomUUID()}','${expires}','${token}','${sessionStart}','${now}','${userId}')`,
   );
@@ -165,6 +173,52 @@ function seedEngineAccounts(file: string, accountIds: readonly string[]) {
   }
 }
 
+export interface SeededOrder {
+  readonly id: string;
+  readonly symbol: string;
+  readonly state: string;
+  readonly qty: number;
+  readonly filledQty?: number;
+  readonly avgFillPrice?: number | null;
+  readonly account?: string;
+  readonly kind?: string;
+  readonly createdAt: number;
+}
+
+// Orders as the engine would have stored them. There is no order UI yet (#26), and the history
+// screen only reads what the Durable Object holds, so rows are written the way accounts are.
+function seedEngineOrders(file: string, orders: readonly SeededOrder[]) {
+  const db = new DatabaseSync(`${DO_DIR}/${file}`);
+  try {
+    db.exec("PRAGMA busy_timeout = 5000");
+    const insert = db.prepare(
+      `INSERT INTO intents (id, mode, kind, account_id, symbol, asset_type, trade_action, qty, state,
+         filled_qty, avg_fill_price, order_confirm_id, created_at, updated_at)
+       VALUES (?, 'SIM', ?, ?, ?, 'equity', 'BUY', ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const o of orders) {
+      insert.run(
+        o.id,
+        o.kind ?? "entry",
+        o.account ?? "SIM-1",
+        o.symbol,
+        o.qty,
+        o.state,
+        o.filledQty ?? 0,
+        o.avgFillPrice ?? null,
+        o.id,
+        o.createdAt,
+        o.createdAt,
+      );
+    }
+    db.prepare(
+      "INSERT INTO events (at, mode, level, type, message) VALUES (?, 'SIM', 'info', 'broker.connected', 'broker.connected')",
+    ).run(orders[0]?.createdAt ?? 0);
+  } finally {
+    db.close();
+  }
+}
+
 // A signed-in client with a CONNECTED TradeStation SIM connection, SIZE and stop % in D1, and
 // `accounts` in its engine. The engine runs the local simulation (tests/e2e/engine.env).
 export async function seedTradingClient(
@@ -173,7 +227,8 @@ export async function seedTradingClient(
   {
     accounts = ["SIM-1"],
     sizeUsd = 20_000,
-  }: { accounts?: readonly string[]; sizeUsd?: number } = {},
+    orders = [],
+  }: { accounts?: readonly string[]; sizeUsd?: number; orders?: readonly SeededOrder[] } = {},
 ) {
   const userId = await seedSignedInUser(context);
   d1(
@@ -190,5 +245,6 @@ export async function seedTradingClient(
   if (created.length !== 1)
     throw new Error(`expected one new Durable Object, got ${created.length}`);
   seedEngineAccounts(created[0] as string, accounts);
+  if (orders.length > 0) seedEngineOrders(created[0] as string, orders);
   return userId;
 }

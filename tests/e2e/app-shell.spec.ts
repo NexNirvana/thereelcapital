@@ -40,7 +40,7 @@ test("lists only built screens, shows the market clock and no invented account",
   await expect(nav.getByRole("link", { name: "Operar" })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Conexión" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Posiciones" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Historial" })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Historial" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0);
   await expect(page.getByText(/^\d\d:\d\d ET$/)).toBeVisible();
   await expect(page.locator("header.topbar .account")).toHaveCount(0);
