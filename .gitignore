@@ -10,3 +10,6 @@ playwright-report/
 .env*
 !.env.example
 .DS_Store
+
+# SIM spike scratch (reports, never committed)
+.spike/
