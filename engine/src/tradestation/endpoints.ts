@@ -18,6 +18,15 @@ export type BrokerResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly failure: BrokerFailure; readonly status?: number };
 
+const ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
+  new URL(SIM_API_BASE_URL).origin,
+  new URL(AUTH_BASE_URL).origin,
+]);
+
+export function isAllowedOrigin(url: string): boolean {
+  return URL.canParse(url) && ALLOWED_ORIGINS.has(new URL(url).origin);
+}
+
 /**
  * Sends one request and decodes nothing: the callers decode with Schema. Never retries; the error
  * carries a status at most, never a body, because token endpoints can echo submitted values.
@@ -26,6 +35,9 @@ export async function send(
   url: string,
   init: RequestInit,
 ): Promise<{ ok: true; response: Response } | Extract<BrokerResult<never>, { ok: false }>> {
+  // Defense in depth for the SIM-only rule: the only origins this module may reach are the SIM API
+  // and the auth tenant, whatever a caller passes. Anything else is refused without a request.
+  if (!isAllowedOrigin(url)) return { ok: false, failure: "REJECTED" };
   try {
     const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (response.ok) return { ok: true, response };

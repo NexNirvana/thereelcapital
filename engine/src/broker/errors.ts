@@ -22,10 +22,20 @@ export class AuthExpired extends Data.TaggedError("AuthExpired")<{
   readonly operation: BrokerOperation;
 }> {}
 
-/** HTTP 429. `retryAfterMs` is null when the broker gave no hint. */
+/** The `X-RateLimit-*` headers of a response (docs: `Reset` is seconds until the limit resets). */
+export interface RateLimitInfo {
+  readonly resource: string | null;
+  readonly limit: number | null;
+  readonly remaining: number | null;
+  readonly periodSeconds: number | null;
+  readonly resetMs: number | null;
+}
+
+/** HTTP 429. `retryAfterMs` is null when the broker gave no hint; `rateLimit` carries the headers when it did. */
 export class RateLimited extends Data.TaggedError("RateLimited")<{
   readonly operation: BrokerOperation;
   readonly retryAfterMs: number | null;
+  readonly rateLimit?: RateLimitInfo | undefined;
 }> {}
 
 /** The broker understood the request and refused it. `code` is stable, `reason` is for the event log. */
