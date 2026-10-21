@@ -10,6 +10,10 @@ git config user.email "46875497+OnishellT@users.noreply.github.com"
 
 Install [Bun](https://bun.com) at the version in `package.json` (`packageManager`), plus a Node LTS for the Node-based tools. Once the project is scaffolded, `bun install` also sets the hooks path.
 
+## TradeStation: SIM only
+
+Only the TradeStation v3 SIM environment (`https://sim-api.tradestation.com/v3`) is ever used. Nothing in this repo may call the live API or spend real money. The `pre-commit` hook rejects the live API host outside `docs/`. REAL mode stays out of the code until the owner explicitly decides otherwise.
+
 ## Workflow
 
 One issue → one branch → one pull request. Nothing is pushed to `main` directly.
