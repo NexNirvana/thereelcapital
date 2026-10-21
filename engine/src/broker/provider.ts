@@ -4,6 +4,7 @@
 // broker (CLAUDE.md, SIM only).
 
 import type { BrokerAdapterShape } from "./adapter.ts";
+import { scenarioSymbols, withScenarios } from "./local-sim/scenarios.ts";
 import {
   makeLocalSim,
   type LocalSim,
@@ -63,6 +64,7 @@ const developmentConfig = (now: () => number, seed: string): LocalSimConfig => (
   symbols: [
     { symbol: "MSFT", assetType: "equity", bid: usd(100), ask: usd(101) },
     ...developmentOptions(now()),
+    ...scenarioSymbols(),
   ],
 });
 
@@ -91,7 +93,7 @@ export function resolveBroker(args: {
   const choice = selectBroker(args.settings);
   if (!choice.ok) return { ok: false, reason: choice.reason };
   if (choice.broker === "local-sim") {
-    return { ok: true, broker: localSimFor(args.userId).adapter };
+    return { ok: true, broker: withScenarios(localSimFor(args.userId)) };
   }
   // The mode is fixed to SIM here and checked again by the transport, which also pins the base URL.
   const made = makeTradeStationAdapter({
