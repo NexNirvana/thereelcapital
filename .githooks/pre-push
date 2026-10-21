@@ -21,12 +21,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     refs/heads/main) err "push to main is not allowed; open a pull request" ;;
     refs/heads/*)
       branch=${remote_ref#refs/heads/}
-      # pr-assets is the orphan branch for PR screenshots: exempt from the name
-      # rule only; its commits still go through the message checks below.
-      if [ "$branch" != "pr-assets" ]; then
-        printf '%s\n' "$branch" | grep -Eq '^(feature|fix|hotfix)/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$' ||
-          err "branch '$branch' must be feature/<issue>-<slug>, fix/<issue>-<slug> or hotfix/<issue>-<slug>"
-      fi
+      "$hooks/check-branch-name" "$branch" 2>&1 || status=1
       ;;
   esac
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Validates a branch name against CONTRIBUTING.md#branches.
+# Usage: check-branch-name <branch>   (run by the pre-push hook and by CI)
+# pr-assets is the orphan branch for PR screenshots: exempt from the name rule only.
+set -eu
+
+[ "${1:-}" = "pr-assets" ] && exit 0
+printf '%s\n' "${1:-}" | grep -Eq '^(feature|fix|hotfix)/[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$' || {
+  printf "branch '%s' must be feature/<issue>-<slug>, fix/<issue>-<slug> or hotfix/<issue>-<slug>\n" "${1:-}" >&2
+  exit 1
+}
