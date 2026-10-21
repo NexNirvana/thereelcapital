@@ -30,7 +30,7 @@ Preparing the form (choosing an instrument, seeing the computed quantity) create
 3. **No `await` between reading and writing shared state.** The DO interleaves requests at every `await`. Reserve inside `ctx.storage.transactionSync(...)`, then await the broker, then apply the result in another synchronous transaction.
 4. **One sell ledger per position**, used by scale-outs, ALL OUT, stop and trailing:
    ```
-   committed  = Σ qty of exit intents in SENT | ACKNOWLEDGED | PARTIAL(unfilled part) | UNKNOWN
+   committed  = Σ qty of exit intents in ARMED | SENT | ACKNOWLEDGED | PARTIAL(unfilled part) | CANCEL_PENDING(unfilled part) | UNKNOWN
    available  = (original_qty − sold_qty) − committed
    ```
    An exit never asks for more than `available`. If protection fires while an exit is pending, it sells only `available`.
@@ -46,6 +46,18 @@ Preparing the form (choosing an instrument, seeing the computed quantity) create
 4. Outcome: an `OrderID` makes it ACKNOWLEDGED. `Rejected`, `AuthExpired` and `RateLimited` mean the broker did not take the order: REJECTED, and the daily reservation is released in the same transaction as the state change (the slot frees with the state). `Timeout`, `Unknown` or any unexpected failure make it UNKNOWN with both reservations held until reconciliation (#23).
 
 Entries are refused (nothing written) while the connection is unusable, a reconciliation is pending, outside the regular session, or when a limit is reached. Limits never apply to exits or cancels.
+
+## Exits and cancels
+
+`exitPosition` and `cancelIntent` (`engine/src/exits.ts`) implement them; the sell ledger and the steps are in `engine/src/ledger.ts`. The browser names a position and a step (0 to 6) or ALL OUT, or an intent to cancel; the quantity is never sent.
+
+1. `exitPosition`: connection and symbol details are read first (nothing written). Exits do not wait for a reconciliation and are never limited (limits are for entries); they need a usable connection and the regular session.
+2. **One synchronous transaction**: the position is re-read, an `UNKNOWN` exit on it blocks everything (`UNKNOWN_INTENT_PENDING`), the quantity is `scaleOutQty` (step) or `allOutQty` over `available = original − sold − committed`, `checkOrder` runs with that `available`, and the intent is inserted ARMED (`kind = exit`, `SELL` or `SELLTOCLOSE`) with the step set to `pending`. `committed` here is the unfilled part of every non-entry intent that is ARMED, SENT, ACKNOWLEDGED, PARTIAL, CANCEL_PENDING or UNKNOWN (a pending cancel can still fill).
+3. A step that rounds to zero on its own becomes `done_zero`: no intent exists and nothing is sent. A zero caused by open sells already covering the step's target returns `NOTHING_AVAILABLE` and leaves the step `available`, since those sells may still be rejected or canceled.
+4. SENT, then `placeOrder` once. Outcome as for entries: ACKNOWLEDGED, REJECTED (the step is given back in the same transaction) or UNKNOWN (the step stays `pending`, the quantity stays committed, reconciliation resolves it).
+5. Reconciliation moves the step with its intent: any fill makes it `done` (even if the order was then canceled, since later steps already count its percentage; ALL OUT sells the rest); REJECTED or CANCELED with no fill makes it `available` again.
+6. `cancelIntent`: in the regular session only, and not while another order of the position is UNKNOWN; only an app intent that is ACKNOWLEDGED or PARTIAL with a broker order id. It moves to CANCEL_PENDING first, then `cancelOrder` is called once. Success means "request sent": only the broker's order status ends CANCEL_PENDING (CANCELED, or FILLED if the order won the race). `AuthExpired` and `RateLimited` mean the broker did not take the request, so the previous state is restored; a timeout or refusal leaves CANCEL_PENDING for reconciliation. A repeated cancel returns the state without calling the broker.
+7. After either call the sync loop is scheduled, so fills are applied while anything is pending.
 
 ## Reconciliation
 

@@ -47,7 +47,7 @@ target = roundHalfUp(original_qty × cumPct / 100)     // equities: round to inc
 qty    = clamp(target − (sold_qty + committed), 0, available)
 ```
 
-- `qty = 0`: the step becomes `done_zero` (its % still counts in `cumPct`), no order is sent, and the UI says «0 contratos por redondeo».
+- `qty = 0` from the step's own rounding: the step becomes `done_zero` (its % still counts in `cumPct`), no order is sent, and the UI says «0 contratos por redondeo». A zero only because open sells already cover the target leaves the step `available` and is refused (`NOTHING_AVAILABLE`).
 - A pending step can't be pressed again. A rejected or zero-fill canceled step returns to `available`.
 
 Expected results, steps pressed in order (encode as unit tests):

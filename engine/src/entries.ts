@@ -24,6 +24,7 @@ import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./b
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { writeEvent } from "./events.ts";
+import { newIntentId } from "./ids.ts";
 import { reconciliationPending } from "./refresh.ts";
 import {
   failure,
@@ -115,14 +116,6 @@ function log(
   data?: Record<string, unknown>,
 ): void {
   writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
-
-function newIntentId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return btoa(String.fromCharCode(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
 }
 
 function askOf(quote: Quote | undefined): EntryAsk | null {
