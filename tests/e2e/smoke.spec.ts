@@ -1,6 +1,38 @@
 import { expect, test } from "@playwright/test";
 
-test("smoke page shows the engine ping result", async ({ page }) => {
+test("smoke page shows the engine ping result inside the shell", async ({ page, baseURL }) => {
+  // A missing baseURL makes the origin "null", so every request counts as external.
+  const origin = new URL(baseURL ?? "about:blank").origin;
+  const external: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).origin !== origin) external.push(request.url());
+  });
+
   await page.goto("/");
   await expect(page.getByTestId("ping")).toHaveText("pong");
+  await expect(page.getByRole("banner").getByText("SIM")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Principal" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Operar" }).first()).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => document.fonts.check('500 16px "IBM Plex Mono"'))).toBe(true);
+  expect(external).toEqual([]);
+});
+
+test("narrow viewport shows the mobile header and bottom nav, not the sidebar", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const header = page.getByRole("banner");
+  await expect(header.getByRole("link", { name: "REEL CAPITAL" })).toBeVisible();
+  await expect(header.getByText("SIM")).toBeVisible();
+  const bottom = page.getByRole("navigation", { name: "Principal" }).last();
+  await expect(bottom.getByRole("link", { name: "Operar" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.locator("aside.sidebar")).toBeHidden();
 });
