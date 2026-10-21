@@ -5,10 +5,26 @@ import { isRegularSession, sessionDate } from "./calendar";
 // NYSE's published calendar (https://www.nyse.com/markets/hours-calendars).
 // These fixtures check the library; they are not used by the app.
 const NYSE_HOLIDAYS = [
-  "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
-  "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-  "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
-  "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+  "2026-01-01",
+  "2026-01-19",
+  "2026-02-16",
+  "2026-04-03",
+  "2026-05-25",
+  "2026-06-19",
+  "2026-07-03",
+  "2026-09-07",
+  "2026-11-26",
+  "2026-12-25",
+  "2027-01-01",
+  "2027-01-18",
+  "2027-02-15",
+  "2027-03-26",
+  "2027-05-31",
+  "2027-06-18",
+  "2027-07-05",
+  "2027-09-06",
+  "2027-11-25",
+  "2027-12-24",
 ];
 const NYSE_EARLY_CLOSES = ["2026-11-27", "2026-12-24", "2027-11-26"];
 
@@ -46,7 +62,10 @@ describe("isRegularSession", () => {
   test("closed on every NYSE holiday in 2026 and 2027, for equities and options", () => {
     for (const day of NYSE_HOLIDAYS) {
       const noon = new Date(`${day}T12:00:00-05:00`);
-      expect(isRegularSession(equity, noon)).toEqual({ open: false, reason: "Market closed: no session today" });
+      expect(isRegularSession(equity, noon)).toEqual({
+        open: false,
+        reason: "Market closed: no session today",
+      });
       expect(isRegularSession(option, noon).open).toBe(false);
     }
   });
@@ -92,7 +111,11 @@ describe("market-calendar", () => {
     const schedule = nyse.schedule("2026-01-01", "2027-12-31");
     const tradingDays = new Set(schedule.map((s) => s.date.toISODate()));
     const weekdays: string[] = [];
-    for (let d = new Date(Date.UTC(2026, 0, 1)); d.getUTCFullYear() < 2028; d.setUTCDate(d.getUTCDate() + 1)) {
+    for (
+      let d = new Date(Date.UTC(2026, 0, 1));
+      d.getUTCFullYear() < 2028;
+      d.setUTCDate(d.getUTCDate() + 1)
+    ) {
       if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) weekdays.push(d.toISOString().slice(0, 10));
     }
     expect(weekdays.filter((day) => !tradingDays.has(day))).toEqual(NYSE_HOLIDAYS);
