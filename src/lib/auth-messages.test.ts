@@ -3,6 +3,7 @@ import {
   passkeyErrorMessage,
   passkeyErrors,
   enrollmentLost,
+  finishEnrollmentErrorMessage,
   passkeyRegistrationErrorMessage,
   recoveryErrorMessage,
   recoveryErrors,
@@ -46,5 +47,20 @@ describe("recovery messages", () => {
       passkeyErrors.userVerificationRequired.message,
     );
     expect(passkeyRegistrationErrorMessage("X")).toContain("registrar tu passkey");
+  });
+});
+
+describe("finishEnrollmentErrorMessage", () => {
+  it("keeps the passkey hint and the rate-limit text", () => {
+    expect(finishEnrollmentErrorMessage("PASSKEY_REQUIRED")).toBe(
+      recoveryErrors.passkeyRequired.message,
+    );
+    expect(finishEnrollmentErrorMessage(undefined, 429)).toBe(
+      recoveryErrors.tooManyAttempts.message,
+    );
+  });
+
+  it("never reads an unknown failure as a wrong code", () => {
+    expect(finishEnrollmentErrorMessage("SOMETHING_INTERNAL")).toContain("terminar el registro");
   });
 });
