@@ -45,11 +45,9 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 
 GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
 
-- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin can bypass the pull request requirement only through a pull request, never force-push or deletion protection.
+- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e`, `build` and `guards` passing (`.github/workflows/ci.yml`), no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin can bypass the pull request requirement only through a pull request, never force-push or deletion protection.
 - `pr-assets`: no force push, no deletion. Normal pushes are allowed.
 - `feature/*`, `fix/*` and `hotfix/*` are unrestricted, since they are force-pushed during review. Branch names are checked by the `pre-push` hook (a GitHub name-pattern rule would also block bot-created branches).
-
-There are no required status checks yet. Issue #3 (CI) adds them to `.github/rulesets/main.json` as a `required_status_checks` rule.
 
 The repository is public, which is what makes rulesets available on the `NexNirvana` organization's GitHub Free plan (a private repository would need GitHub Team). Never commit anything private: secrets stay in `.env`/`.dev.vars` and Worker secrets.
 
@@ -154,6 +152,7 @@ docs: record the stop residency decision from the SIM spike
 
 - **pre-commit**: blocks the wrong git identity, secrets (`.dev.vars`, `.env`, private keys, provider tokens), merge-conflict markers and files over 5 MB. After scaffolding it also runs the formatter and linter on staged files.
 - **commit-msg**: enforces the format above and rejects AI attribution.
+- **check-branch-name** and **no-live-host**: helpers (not hooks) shared with CI, which re-runs them and `commit-msg` in its `guards` job.
 - **pre-push**: rejects pushes to `main`, branch names outside the table above, and any pushed commit whose message breaks the rules.
 
 Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
