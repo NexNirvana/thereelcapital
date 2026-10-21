@@ -83,4 +83,4 @@ Each additional intentional BUY consumes one entry on its first fill (decided). 
 
 ## 10. Market calendar
 
-`isRegularSession(instrument, now)` and `sessionDate(now)` in America/New_York, from a static table of NYSE holidays and early closes (TradeStation has no calendar endpoint). The regular session is 09:30–16:00 ET, or 13:00 on early-close days. Instruments whose regular session differs (e.g. some index options) need their own calendar entry; until one exists, the guard rejects them with a clear reason.
+`isRegularSession(instrument, now)` and `sessionDate(now)` in America/New_York. Sessions, holidays and early closes come from the `market-calendar` library (equities: `NYSE`; options: `CBOE_Equity_Options`), never from hand-kept dates. The regular session is 09:30–16:00 ET, or 13:00 on early-close days. An instrument kind without an exchange calendar mapping is rejected with a clear reason.

@@ -1,0 +1,8 @@
+{
+  "name": "thereelcapital",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "market-calendar": "1.1.1"
+  }
+}
