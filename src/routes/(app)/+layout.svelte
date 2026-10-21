@@ -7,13 +7,13 @@
   let { children }: LayoutProps = $props();
 
   // Conexión is reachable from the header on mobile (docs/design-system.md#layout-shell).
-  // Only "/" exists yet; the other routes arrive with #30 /posiciones, #31 /historial and
-  // #17 /conexion, and move to resolve() once their ids exist in the route types.
+  // "/" and /conexion exist; the other routes arrive with #30 /posiciones and #31 /historial,
+  // and move to resolve() once their ids exist in the route types.
   const nav: { href: string; label: string }[] = [
     { href: resolve("/(app)"), label: "Operar" },
     { href: "/posiciones", label: "Posiciones" },
     { href: "/historial", label: "Historial" },
-    { href: "/conexion", label: "Conexión" },
+    { href: resolve("/(app)/conexion"), label: "Conexión" },
   ];
   const mobileNav = nav.slice(0, 3);
 
@@ -28,7 +28,7 @@
       <ul>
         {#each nav as item (item.href)}
           <li>
-            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30, #31 and #17 -->
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30 and #31 -->
             <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
               {item.label}
             </a>
@@ -45,8 +45,9 @@
       <a class="wordmark mobile-only" href={resolve("/(app)")}>REEL CAPITAL</a>
       <p class="connection">
         <span class="dot" aria-hidden="true"></span>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #17 -->
-        <a class="plain" href="/conexion">TradeStation <span class="desktop-only">—</span></a>
+        <a class="plain" href={resolve("/(app)/conexion")}
+          >TradeStation <span class="desktop-only">—</span></a
+        >
       </p>
       <div class="mode"><Badge label="SIM" /></div>
       <p class="account" title="Cuenta (pendiente)"><span aria-hidden="true">••</span> —</p>
@@ -62,7 +63,7 @@
     <ul>
       {#each mobileNav as item (item.href)}
         <li>
-          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30, #31 and #17 -->
+          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- routes land in #30 and #31 -->
           <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
             {item.label}
           </a>
