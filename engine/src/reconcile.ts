@@ -6,7 +6,8 @@
 
 import { sessionDate } from "#lib/domain/calendar.ts";
 import { SCALE_OUT_STEPS } from "#lib/domain/scaleout.ts";
-import type { BrokerOrder, BrokerPosition } from "./broker/adapter.ts";
+import { ORDER_MATCH_SKEW_MS, SEND_GRACE_MS } from "#lib/domain/config.ts";
+import type { BrokerOrder, BrokerPosition, SymbolDetails } from "./broker/adapter.ts";
 import { writeEvent, type EventLevel } from "./events.ts";
 
 /** What was read from the broker for the client's accounts, before the transaction starts. */
@@ -16,6 +17,8 @@ export interface BrokerSnapshot {
   /** Closed orders from further back, read only when an intent could not be found in `orders`. */
   readonly historical: readonly BrokerOrder[];
   readonly positions: readonly BrokerPosition[];
+  /** Symbol details of the options that become positions in this pass (contract data, point value). */
+  readonly details: ReadonlyMap<string, SymbolDetails>;
 }
 
 /** Per-client protection percentages a new position stores (docs/domain-rules.md §7, §8). */
@@ -115,13 +118,12 @@ export function reconcile(
       )
       .toArray();
 
-    for (const intent of pending) {
-      const order =
-        intent.broker_order_id === null ? undefined : orders.get(intent.broker_order_id);
-      if (order !== undefined) applyOrder(ctx, intent, order);
-    }
+    const { matches, unresolvedCandidates } = matchIntents(ctx, pending, orders);
+    for (const [intent, order] of matches) applyOrder(ctx, intent, order);
+    adoptOrders(ctx, orders, matches, unresolvedCandidates);
 
-    const created = createPositions(ctx, protection);
+    const created = createPositions(ctx, snapshot, protection);
+    adoptPositions(ctx, snapshot, protection);
     syncPositions(ctx, snapshot, created);
 
     const unknownLeft = ctx.sql
@@ -230,7 +232,11 @@ function settleReservation(
  * fills (docs/domain-rules.md §6). The scale-out steps are created with it, so a later pass or a
  * reconnect never resets them. Returns the ids created now.
  */
-function createPositions(ctx: ReconcileContext, protection: ProtectionSettings): Set<string> {
+function createPositions(
+  ctx: ReconcileContext,
+  snapshot: BrokerSnapshot,
+  protection: ProtectionSettings,
+): Set<string> {
   const created = new Set<string>();
   const entries = ctx.sql
     .exec<IntentRow>(
@@ -263,6 +269,7 @@ function createPositions(ctx: ReconcileContext, protection: ProtectionSettings):
       accountId: entry.account_id,
       symbol: entry.symbol,
       pointValue: entry.point_value ?? 1,
+      details: snapshot.details.get(entry.symbol),
       quantity: entry.filled_qty,
       avgEntryPrice: entry.avg_fill_price,
       source: entry.source,
@@ -287,22 +294,29 @@ function insertPosition(
     readonly accountId: string;
     readonly symbol: string;
     readonly pointValue: number;
+    readonly details: SymbolDetails | undefined;
     readonly quantity: number;
     readonly avgEntryPrice: number;
     readonly source: "app" | "external";
     readonly openedOn: string;
   },
 ): void {
+  const option = position.details?.option ?? null;
   // Nothing watches a stop yet, so protection starts as `none`; the stop monitor sets `verified`.
   ctx.sql.exec(
     `INSERT INTO positions
-       (id, mode, account_id, symbol, point_value, original_qty, sold_qty, avg_entry_price, stop_pct,
-        trailing_unlock_pct, protection_state, status, opened_on, source)
-     VALUES (?, 'SIM', ?, ?, ?, ?, 0, ?, ?, ?, 'none', 'OPEN', ?, ?)`,
+       (id, mode, account_id, symbol, underlying, expiry, strike, right, point_value, original_qty,
+        sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, protection_state, status, opened_on,
+        source)
+     VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'none', 'OPEN', ?, ?)`,
     position.id,
     position.accountId,
     position.symbol,
-    position.pointValue,
+    option?.underlying ?? null,
+    option?.expiration ?? null,
+    option?.strike ?? null,
+    option?.right ?? null,
+    position.details?.pointValue ?? position.pointValue,
     position.quantity,
     position.avgEntryPrice,
     protection.stopPct,
@@ -378,4 +392,295 @@ function syncPositions(
       });
     }
   }
+}
+
+const ENTRY_ACTIONS: readonly string[] = ["BUY", "BUYTOOPEN"];
+const EXIT_ACTIONS: readonly string[] = ["SELL", "SELLTOCLOSE"];
+const isOpenOrder = (order: BrokerOrder) =>
+  order.status === "ACKNOWLEDGED" || order.status === "PARTIAL";
+
+/**
+ * Intents whose request may have left without their OrderID coming back. ARMED is not one: it was
+ * never sent, so no order can be its own and it takes no part in the fallback match.
+ */
+const MAY_HAVE_ORDER: readonly IntentState[] = ["SENT", "UNKNOWN"];
+
+interface Matching {
+  readonly matches: ReadonlyMap<IntentRow, BrokerOrder>;
+  /** Orders that an unresolved intent might own: they are not external until it is resolved. */
+  readonly unresolvedCandidates: ReadonlySet<string>;
+}
+
+/**
+ * Finds the broker order of every pending intent: by `OrderID`, then `OrderConfirmID`, then (for an
+ * intent that never learned its OrderID) the documented fallback match: same account, symbol,
+ * action and quantity, opened after the intent was created. The fallback adopts an order only when
+ * exactly one order fits and no other intent could claim it; with several or none the intent stays
+ * UNKNOWN and holds its reservations, because guessing could double an entry or free a slot that a
+ * live order still needs (docs/tradestation-integration.md, orders).
+ */
+function matchIntents(
+  ctx: ReconcileContext,
+  pending: readonly IntentRow[],
+  orders: ReadonlyMap<string, BrokerOrder>,
+): Matching {
+  const byConfirmId = new Map<string, BrokerOrder>();
+  for (const order of orders.values()) {
+    if (order.orderConfirmId !== null) byConfirmId.set(order.orderConfirmId, order);
+  }
+  const matches = new Map<IntentRow, BrokerOrder>();
+  const claimed = new Set<string>();
+  const waiting: IntentRow[] = [];
+  for (const intent of pending) {
+    const byId = intent.broker_order_id === null ? undefined : orders.get(intent.broker_order_id);
+    const order = byId ?? byConfirmId.get(intent.order_confirm_id);
+    if (order !== undefined) {
+      matches.set(intent, order);
+      claimed.add(order.orderId);
+      if (byId === undefined) {
+        log(ctx, "info", "reconcile.confirm_match", {
+          intentId: intent.id,
+          orderId: order.orderId,
+        });
+      }
+    } else if (intent.broker_order_id !== null) {
+      // The broker no longer lists an order it acknowledged; it may be older than the history read.
+      logOnce(ctx, intent.id, "warn", "reconcile.order_missing", {
+        intentId: intent.id,
+        orderId: intent.broker_order_id,
+      });
+    } else if (intent.state === "ARMED") {
+      resolveUnmatched(ctx, intent);
+    } else if (MAY_HAVE_ORDER.includes(intent.state)) {
+      waiting.push(intent);
+    }
+  }
+
+  const taken = new Set(
+    ctx.sql
+      .exec<{ broker_order_id: string }>(
+        "SELECT broker_order_id FROM intents WHERE broker_order_id IS NOT NULL",
+      )
+      .toArray()
+      .map((row) => row.broker_order_id),
+  );
+  const candidatesOf = new Map<IntentRow, BrokerOrder[]>(
+    waiting.map((intent) => [
+      intent,
+      [...orders.values()].filter(
+        (order) =>
+          !claimed.has(order.orderId) &&
+          !taken.has(order.orderId) &&
+          order.orderConfirmId === null &&
+          order.accountId === intent.account_id &&
+          order.symbol === intent.symbol &&
+          order.tradeAction === intent.trade_action &&
+          order.quantity === intent.qty &&
+          order.openedAt >= intent.created_at - ORDER_MATCH_SKEW_MS,
+      ),
+    ]),
+  );
+  const claimants = new Map<string, number>();
+  for (const found of candidatesOf.values()) {
+    for (const order of found)
+      claimants.set(order.orderId, (claimants.get(order.orderId) ?? 0) + 1);
+  }
+  const unresolvedCandidates = new Set(claimants.keys());
+
+  for (const [intent, found] of candidatesOf) {
+    const [only] = found;
+    if (only !== undefined && found.length === 1 && claimants.get(only.orderId) === 1) {
+      matches.set(intent, only);
+      log(ctx, "info", "reconcile.fallback_match", { intentId: intent.id, orderId: only.orderId });
+    } else if (found.length > 0) {
+      // Several orders fit, or several intents want the same one: never guess.
+      logOnce(ctx, intent.id, "error", "reconcile.ambiguous", {
+        intentId: intent.id,
+        orderIds: found.map((order) => order.orderId),
+      });
+    } else {
+      resolveUnmatched(ctx, intent);
+    }
+  }
+  return { matches, unresolvedCandidates };
+}
+
+/** No broker order fits an intent that never learned its OrderID. */
+function resolveUnmatched(ctx: ReconcileContext, intent: IntentRow): void {
+  if (intent.state === "ARMED") {
+    // ARMED is written and left for SENT in one synchronous step, so only a crash between the
+    // reservation and the send leaves it: no request was made and nothing exists to wait for.
+    ctx.sql.exec(
+      "UPDATE intents SET state = 'REJECTED', updated_at = ? WHERE id = ?",
+      ctx.now,
+      intent.id,
+    );
+    if (isEntryIntent(intent) && intent.source === "app") {
+      settleReservation(ctx, intent, { consumed: false });
+    }
+    log(ctx, "warn", "reconcile.armed_never_sent", { intentId: intent.id });
+    return;
+  }
+  if (intent.state === "SENT") {
+    // A recent SENT may still have its place request in flight; leave it to answer.
+    if (ctx.now - intent.updated_at < SEND_GRACE_MS) return;
+    ctx.sql.exec(
+      "UPDATE intents SET state = 'UNKNOWN', updated_at = ? WHERE id = ?",
+      ctx.now,
+      intent.id,
+    );
+    log(ctx, "warn", "reconcile.sent_stale", { intentId: intent.id });
+  }
+  // Not found yet, and possibly never placed: keep the reservations and wait for a human.
+  logOnce(ctx, intent.id, "error", "reconcile.unresolved", { intentId: intent.id });
+}
+
+/**
+ * Open orders made outside REEL CAPITAL (another terminal) are recorded as external intents so
+ * they count against slots and `available` (docs/order-lifecycle.md#reconciliation). Orders that
+ * an unresolved intent of ours might own are left alone until it is resolved. Closed external
+ * orders need no record: their effect is in the broker's positions.
+ */
+function adoptOrders(
+  ctx: ReconcileContext,
+  orders: ReadonlyMap<string, BrokerOrder>,
+  matches: ReadonlyMap<IntentRow, BrokerOrder>,
+  unresolvedCandidates: ReadonlySet<string>,
+): void {
+  const known = new Set(
+    ctx.sql
+      .exec<{ broker_order_id: string }>(
+        "SELECT broker_order_id FROM intents WHERE broker_order_id IS NOT NULL",
+      )
+      .toArray()
+      .map((row) => row.broker_order_id),
+  );
+  for (const order of orders.values()) {
+    if (
+      !isOpenOrder(order) ||
+      known.has(order.orderId) ||
+      unresolvedCandidates.has(order.orderId)
+    ) {
+      continue;
+    }
+    if ([...matches.values()].some((matched) => matched.orderId === order.orderId)) continue;
+    const entry = ENTRY_ACTIONS.includes(order.tradeAction);
+    const position = entry
+      ? null
+      : ctx.sql
+          .exec<{ id: string }>(
+            "SELECT id FROM positions WHERE mode = 'SIM' AND account_id = ? AND symbol = ? AND status != 'CLOSED'",
+            order.accountId,
+            order.symbol,
+          )
+          .toArray()[0];
+    // A sell with no position of ours to sell from is none of our business.
+    if (!entry && (!EXIT_ACTIONS.includes(order.tradeAction) || position === undefined)) continue;
+    const id = crypto.randomUUID();
+    ctx.sql.exec(
+      `INSERT INTO intents
+         (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, state,
+          order_confirm_id, broker_order_id, filled_qty, avg_fill_price, created_at, updated_at, source)
+       VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external')`,
+      id,
+      entry ? "entry" : "exit",
+      order.accountId,
+      position?.id ?? null,
+      order.symbol,
+      order.tradeAction === "BUY" || order.tradeAction === "SELL" ? "equity" : "option",
+      order.tradeAction,
+      order.quantity,
+      order.status === "PARTIAL" ? "PARTIAL" : "ACKNOWLEDGED",
+      `external:${order.orderId}`,
+      order.orderId,
+      // Zero, so the next pass applies the whole fill and an exit's earlier fills reach sold_qty.
+      0,
+      null,
+      order.openedAt,
+      ctx.now,
+    );
+    log(ctx, "info", "reconcile.order_adopted", { intentId: id, orderId: order.orderId });
+  }
+}
+
+/**
+ * Positions the broker holds that we do not know (opened in another terminal, or already there
+ * when the client first connected) are adopted as external, so they take a slot and are
+ * protected like ours. A symbol with an entry of ours in flight is skipped: that fill is ours and
+ * becomes its position when the entry is terminal. Shorts are never adopted.
+ */
+function adoptPositions(
+  ctx: ReconcileContext,
+  snapshot: BrokerSnapshot,
+  protection: ProtectionSettings,
+): void {
+  for (const held of snapshot.positions) {
+    if (held.quantity <= 0) continue;
+    if (held.side === "short") {
+      logOnce(ctx, `${held.accountId}:${held.symbol}`, "warn", "reconcile.short_position", {
+        symbol: held.symbol,
+      });
+      continue;
+    }
+    const known = ctx.sql
+      .exec<{ n: number }>(
+        `SELECT (SELECT COUNT(*) FROM positions WHERE mode = 'SIM' AND symbol = ? AND status != 'CLOSED')
+              + (SELECT COUNT(*) FROM intents WHERE mode = 'SIM' AND kind = 'entry' AND symbol = ?
+                  AND position_id IS NULL
+                  AND (state IN ('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')
+                       OR filled_qty > 0)) AS n`,
+        held.symbol,
+        held.symbol,
+      )
+      .one().n;
+    if (known > 0) continue;
+    const id = crypto.randomUUID();
+    insertPosition(ctx, protection, {
+      id,
+      accountId: held.accountId,
+      symbol: held.symbol,
+      pointValue: 1,
+      details: snapshot.details.get(held.symbol),
+      quantity: held.quantity,
+      avgEntryPrice: held.avgPriceMicros,
+      source: "external",
+      openedOn: sessionDate(new Date(ctx.now)),
+    });
+    log(ctx, "info", "reconcile.position_adopted", {
+      positionId: id,
+      symbol: held.symbol,
+      quantity: held.quantity,
+    });
+  }
+}
+
+/**
+ * Option symbols whose contract data a position created in this pass will store. Read from the
+ * broker before the transaction, since the transaction cannot await.
+ */
+export function symbolsNeedingDetails(
+  sql: SqlStorage,
+  positions: readonly BrokerPosition[],
+): string[] {
+  const fromEntries = sql
+    .exec<{ symbol: string }>(
+      `SELECT DISTINCT symbol FROM intents
+        WHERE mode = 'SIM' AND kind = 'entry' AND asset_type = 'option' AND position_id IS NULL
+          AND (state IN ('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')
+               OR filled_qty > 0)`,
+    )
+    .toArray()
+    .map((row) => row.symbol);
+  const open = new Set(
+    sql
+      .exec<{ symbol: string }>(
+        "SELECT symbol FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'",
+      )
+      .toArray()
+      .map((row) => row.symbol),
+  );
+  const adoptable = positions
+    .filter((held) => held.assetType === "option" && held.side === "long" && !open.has(held.symbol))
+    .map((held) => held.symbol);
+  return [...new Set([...fromEntries, ...adoptable])];
 }

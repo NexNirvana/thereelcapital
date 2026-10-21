@@ -3,7 +3,7 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { Effect } from "effect";
-import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
+import type { BrokerAdapterShape, BrokerOrder } from "../src/broker/adapter.ts";
 import { makeLocalSim, type LocalSim } from "../src/broker/local-sim/sim.ts";
 import { createCipher } from "../src/crypto.ts";
 import type { EntryContext } from "../src/entries.ts";
@@ -114,5 +114,17 @@ export async function readSnapshot(broker: BrokerAdapterShape): Promise<BrokerSn
     orders: await run(broker.orders(accounts)),
     historical: [],
     positions: await run(broker.positions(accounts)),
+    details: new Map(),
+  };
+}
+
+/** The adapter as TradeStation behaves per the spec: its orders listing never echoes OrderConfirmID. */
+export function withoutConfirmIds(broker: BrokerAdapterShape): BrokerAdapterShape {
+  const strip = (orders: ReadonlyArray<BrokerOrder>) =>
+    orders.map((order) => ({ ...order, orderConfirmId: null }));
+  return {
+    ...broker,
+    orders: (ids) => Effect.map(broker.orders(ids), strip),
+    historicalOrders: (ids, since) => Effect.map(broker.historicalOrders(ids, since), strip),
   };
 }
