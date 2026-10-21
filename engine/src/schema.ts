@@ -154,6 +154,13 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // with. The first two had columns already; the point value did not. Null for non-entry intents.
     `ALTER TABLE intents ADD COLUMN point_value INTEGER CHECK (point_value IS NULL OR point_value > 0)`,
   ],
+  [
+    // docs/order-lifecycle.md#reconciliation: orders and positions made outside REEL CAPITAL are
+    // adopted so they count against slots and `available`; the column tells them apart, because
+    // only our own entries move the daily counters.
+    `ALTER TABLE intents ADD COLUMN source TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'external'))`,
+    `ALTER TABLE positions ADD COLUMN source TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'external'))`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */
