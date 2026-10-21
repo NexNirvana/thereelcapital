@@ -21,6 +21,14 @@ export function passkeyErrorMessage(code: string | undefined): string {
   return (known ?? passkeyErrors.generic).message;
 }
 
+/** Registering a passkey fails for different reasons than signing in with one. */
+export function passkeyRegistrationErrorMessage(code: string | undefined): string {
+  if (code === passkeyErrors.userVerificationRequired.code) {
+    return passkeyErrors.userVerificationRequired.message;
+  }
+  return "No pudimos registrar tu passkey. Inténtalo de nuevo.";
+}
+
 // Recovery (docs/auth-and-security.md#flows). Same shape as passkeyErrors; the server throws the
 // code and the Spanish text, the page looks the code up.
 export const recoveryErrors = {
@@ -32,6 +40,12 @@ export const recoveryErrors = {
   invalidInput: {
     code: "INVALID_INPUT",
     message: "Los datos enviados no son válidos.",
+  },
+  // Both codes mean the enrollment session is gone: start again with a code. ENROLLMENT_EXPIRED
+  // comes from the request hook, ENROLLMENT_REQUIRED from finishing.
+  enrollmentExpired: {
+    code: "ENROLLMENT_EXPIRED",
+    message: "Tu sesión de registro venció. Empieza de nuevo con un código de recuperación.",
   },
   enrollmentRequired: {
     code: "ENROLLMENT_REQUIRED",
@@ -46,6 +60,15 @@ export const recoveryErrors = {
     message: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
   },
 } as const;
+
+/** True when the enrollment session is gone, so the only way forward is a new code. */
+export function enrollmentLost(code: string | undefined, status?: number): boolean {
+  return (
+    code === recoveryErrors.enrollmentExpired.code ||
+    code === recoveryErrors.enrollmentRequired.code ||
+    status === 401
+  );
+}
 
 /** Spanish text for a failed recovery request; Better Auth answers 429 itself when rate limited. */
 export function recoveryErrorMessage(code: string | undefined, status?: number): string {
