@@ -52,3 +52,15 @@ export const REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
 /** Pause between the attempts of one refresh request when TradeStation cannot be reached. */
 export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
+
+/** Undecided (docs/open-questions.md): pause between sync-loop ticks while anything is open or pending. */
+export const SYNC_INTERVAL_MS = 5 * 1000;
+
+/**
+ * Undecided: a SENT intent younger than this may still have its place request in flight, so the
+ * sync loop leaves it alone; an older one with no order at the broker becomes UNKNOWN.
+ */
+export const SEND_GRACE_MS = 60 * 1000;
+
+/** Undecided: clock difference tolerated when matching a broker order's open time to an intent. */
+export const ORDER_MATCH_SKEW_MS = 60 * 1000;

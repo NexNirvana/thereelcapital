@@ -76,6 +76,7 @@ Fills are not a table: TradeStation reports executed quantity and price per orde
 
 - **Access to bindings**: with adapter-cloudflare 8, server code reads bindings with `import { env } from 'cloudflare:workers'`. (`platform.env` is the 7.x / SvelteKit 2 API.)
 - **Calls**: web → `env.ENGINE.getByName(userId).method(args)` (DO RPC). `userId` always comes from the verified session.
+- **Alarm scheduler** (`engine/src/scheduler.ts`): a Durable Object has one alarm, shared by the token refresh and the sync loop. Each job keeps its own due time in KV storage and one alarm is armed for the earliest; `alarm()` runs every job that is due, and a job that does not reschedule itself is finished.
 - **Sync loop**: while the client has open positions or non-terminal intents, a DO alarm polls TradeStation orders, positions and quotes for protected positions at a fixed interval, within the per-key rate limits. The alarm stops when nothing is open. HTTP streams are not used initially. Adopt them only if the SIM spike shows polling is too slow or option quotes need streams (see [tradestation-integration.md](tradestation-integration.md)).
 - **Market calendar**: TradeStation has no calendar endpoint, so sessions, holidays and early closes come from `market-calendar` (NYSE for equities, CBOE equity options for options), wrapped by `src/lib/domain/calendar.ts`.
 - **Admin overview**: the web Worker fans out RPC calls to the pilot clients' DOs and merges the results. There is no copied read model. Revisit if the client count grows beyond a few dozen.
