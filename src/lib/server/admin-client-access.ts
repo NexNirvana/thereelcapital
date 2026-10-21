@@ -6,6 +6,9 @@
 // touched: nothing here reaches the engine.
 import { error, isHttpError } from "@sveltejs/kit";
 import { Schema } from "effect";
+import { STOP_PCT_BOUNDS, TRAILING_UNLOCK_PCT_BOUNDS } from "#lib/domain/config.ts";
+import { MAX_DAILY_ENTRIES, MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
+import { validateStopPct, validateTrailingUnlockPct } from "#lib/domain/stop.ts";
 import {
   insertInvitation,
   regenerateActivationLink,
@@ -68,7 +71,42 @@ export const accessErrors = {
   },
 } as const;
 
-type Failure = (typeof accessErrors)[keyof typeof accessErrors] | typeof guardErrors.reauthRequired;
+// Settings refusals (docs/screens-and-flows.md#admin). The bounds in the messages come from the
+// domain config, so a decided change there reaches the text too.
+export const settingsErrors = {
+  sizeInvalid: {
+    status: 422,
+    code: "SIZE_INVALID",
+    message: "SIZE debe ser un monto entero en dólares, mayor que cero.",
+  },
+  sizeDecrease: { status: 422, code: "SIZE_DECREASE", message: "SIZE solo puede aumentar." },
+  stopOutOfBounds: {
+    status: 422,
+    code: "STOP_PCT_OUT_OF_BOUNDS",
+    message: `El stop debe ser un entero entre ${STOP_PCT_BOUNDS.min} y ${STOP_PCT_BOUNDS.max}.`,
+  },
+  unlockOutOfBounds: {
+    status: 422,
+    code: "TRAILING_UNLOCK_PCT_OUT_OF_BOUNDS",
+    message: `El desbloqueo debe ser un entero entre ${TRAILING_UNLOCK_PCT_BOUNDS.min} y ${TRAILING_UNLOCK_PCT_BOUNDS.max}.`,
+  },
+  unchanged: { status: 409, code: "SETTINGS_UNCHANGED", message: "No hay cambios que guardar." },
+  changedMeanwhile: {
+    status: 409,
+    code: "SETTINGS_CHANGED",
+    message: "La configuración cambió mientras la editabas. Recarga la página.",
+  },
+  missing: {
+    status: 409,
+    code: "SETTINGS_MISSING",
+    message: "El cliente no tiene configuración.",
+  },
+} as const;
+
+type Failure =
+  | (typeof accessErrors)[keyof typeof accessErrors]
+  | (typeof settingsErrors)[keyof typeof settingsErrors]
+  | typeof guardErrors.reauthRequired;
 export type Outcome<T = Record<never, never>> = ({ ok: true } & T) | { ok: false; error: Failure };
 
 // Better Auth ids are opaque short strings; anything else cannot be a client's id.
@@ -100,6 +138,13 @@ const LinkRow = Schema.Struct({
   revokedAt: Schema.NullOr(Schema.Number),
 });
 
+const SettingsRow = Schema.Struct({
+  sizeUsd: Schema.Number,
+  stopPct: Schema.Number,
+  trailingUnlockPct: Schema.Number,
+});
+export type ClientSettings = typeof SettingsRow.Type;
+
 export type LinkState = "none" | "open" | "used" | "expired" | "revoked";
 export interface ClientDetail {
   id: string;
@@ -110,6 +155,12 @@ export interface ClientDetail {
   passkeys: number;
   unusedCodes: number;
   link: { state: LinkState; expiresAt: number | null };
+  /** Null only for a client created without settings, which should not exist. */
+  settings: ClientSettings | null;
+  /** Fixed limits, shown read-only (docs/product-spec.md#parameters). */
+  limits: { openPositions: number; dailyEntries: number };
+  /** Allowed ranges for the form's hints; the server re-checks them with the domain validators. */
+  bounds: { stopPct: { min: number; max: number }; unlockPct: { min: number; max: number } };
   sessions: readonly {
     id: string;
     createdAt: number;
@@ -139,6 +190,17 @@ async function loadTarget<S extends AccessStatement>(db: AccessDb<S>, rawId: str
   return profile;
 }
 
+async function loadSettings<S extends AccessStatement>(db: AccessDb<S>, userId: string) {
+  const row = await db
+    .prepare(
+      `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS trailingUnlockPct
+       FROM client_settings WHERE user_id = ?`,
+    )
+    .bind(userId)
+    .first();
+  return row === null ? null : Schema.decodeUnknownSync(SettingsRow)(row);
+}
+
 /** The detail page's data. Hashes, tokens and credential material are never selected. */
 export async function getClientDetail<S extends AccessStatement>(
   db: AccessDb<S>,
@@ -146,7 +208,7 @@ export async function getClientDetail<S extends AccessStatement>(
   now = Date.now(),
 ): Promise<ClientDetail> {
   const profile = await loadTarget(db, rawId);
-  const [sessions, links] = await Promise.all([
+  const [sessions, links, settings] = await Promise.all([
     db
       .prepare(
         `SELECT "id" AS id, "createdAt" AS createdAt, "expiresAt" AS expiresAt, "userAgent" AS userAgent,
@@ -162,6 +224,7 @@ export async function getClientDetail<S extends AccessStatement>(
       )
       .bind(profile.id)
       .all(),
+    loadSettings(db, profile.id),
   ]);
   const [latest] = Schema.decodeUnknownSync(Schema.Array(LinkRow))(links.results);
   const linkState: LinkState = !latest
@@ -182,6 +245,9 @@ export async function getClientDetail<S extends AccessStatement>(
     passkeys: profile.passkeys,
     unusedCodes: profile.unusedCodes,
     link: { state: linkState, expiresAt: latest?.expiresAt ?? null },
+    settings,
+    limits: { openPositions: MAX_OPEN_POSITIONS, dailyEntries: MAX_DAILY_ENTRIES },
+    bounds: { stopPct: STOP_PCT_BOUNDS, unlockPct: TRAILING_UNLOCK_PCT_BOUNDS },
     sessions: Schema.decodeUnknownSync(Schema.Array(SessionRow))(sessions.results)
       .map((session) => ({
         ...session,
@@ -446,5 +512,80 @@ export function recoverClient<L extends GuardLocals, S extends AccessStatement>(
       insertInvitation(db, target.id, link, actor),
     ]);
     return { ok: true, issued: { token: link.token, expiresAt: link.expiresAt } };
+  });
+}
+
+// Whole numbers typed in the form; anything else becomes NaN and fails the validators.
+const SettingsForm = Schema.Struct({
+  sizeUsd: Schema.String.check(Schema.isMaxLength(12)),
+  stopPct: Schema.String.check(Schema.isMaxLength(12)),
+  unlockPct: Schema.String.check(Schema.isMaxLength(12)),
+});
+const wholeNumber = (text: string) => (/^\d+$/.test(text) ? Number(text) : NaN);
+
+/**
+ * Saves a client's SIZE, stop % and trailing-unlock %. They apply to new entries and new
+ * positions only: open positions keep the values stored on them. SIZE (whole US dollars, the
+ * `size_usd` column) may only go up, and the bounds are the domain validators'. The UPDATE
+ * matches the values the check ran against, so a concurrent change fails instead of slipping
+ * past the increase-only rule; the audit row (before and after) lands in the same batch.
+ */
+export function updateClientSettings<L extends GuardLocals, S extends AccessStatement>(
+  event: GuardEvent<L>,
+  { db }: Context<S>,
+  targetId: string,
+  form: unknown,
+  now = Date.now(),
+): Promise<Outcome> {
+  return guarded(event, db, targetId, now, async (actor, target) => {
+    const input = decode(SettingsForm, form);
+    const sizeUsd = wholeNumber(input.sizeUsd);
+    const stopPct = wholeNumber(input.stopPct);
+    const trailingUnlockPct = wholeNumber(input.unlockPct);
+    if (!Number.isSafeInteger(sizeUsd) || sizeUsd <= 0) return refuse(settingsErrors.sizeInvalid);
+    if (!validateStopPct(stopPct).ok) return refuse(settingsErrors.stopOutOfBounds);
+    if (!validateTrailingUnlockPct(trailingUnlockPct).ok) {
+      return refuse(settingsErrors.unlockOutOfBounds);
+    }
+    const before = await loadSettings(db, target.id);
+    if (before === null) return refuse(settingsErrors.missing);
+    if (sizeUsd < before.sizeUsd) return refuse(settingsErrors.sizeDecrease);
+    const after: ClientSettings = { sizeUsd, stopPct, trailingUnlockPct };
+    if (
+      after.sizeUsd === before.sizeUsd &&
+      after.stopPct === before.stopPct &&
+      after.trailingUnlockPct === before.trailingUnlockPct
+    ) {
+      return refuse(settingsErrors.unchanged);
+    }
+    const [updated] = await db.batch([
+      db
+        .prepare(
+          `UPDATE client_settings SET size_usd = ?, stop_pct = ?, trailing_unlock_pct = ?, updated_at = ?
+           WHERE user_id = ? AND size_usd = ? AND stop_pct = ? AND trailing_unlock_pct = ?`,
+        )
+        .bind(
+          sizeUsd,
+          stopPct,
+          trailingUnlockPct,
+          now,
+          target.id,
+          before.sizeUsd,
+          before.stopPct,
+          before.trailingUnlockPct,
+        ),
+      db
+        .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`)
+        .bind(
+          crypto.randomUUID(),
+          now,
+          actor.user.id,
+          "client_settings.update",
+          target.id,
+          JSON.stringify(before),
+          JSON.stringify(after),
+        ),
+    ]);
+    return updated?.meta.changes === 1 ? { ok: true } : refuse(settingsErrors.changedMeanwhile);
   });
 }
