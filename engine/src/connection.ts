@@ -2,6 +2,13 @@
 // docs/tradestation-integration.md#credentials-and-oauth. Secrets and tokens are decrypted here
 // and nowhere else; nothing this module returns or logs contains one.
 import type { CredentialCipher } from "./crypto.ts";
+import {
+  connectionHealth,
+  entryBlock,
+  type ConnectionHealth,
+  type StoredConnectionState,
+} from "#lib/domain/connection.ts";
+import { reconciliationPending, type TokenRefresher } from "./refresh.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { writeEvent } from "./events.ts";
 import type { Mode } from "./mode.ts";
@@ -21,6 +28,8 @@ export interface ConnectionContext {
   readonly now: number;
   /** Built on demand: reading the status needs no key. Throws CredentialsKeyError when it is unusable. */
   readonly cipher: () => Promise<CredentialCipher>;
+  /** The client's one refresher, owned by the Durable Object. */
+  readonly tokens: TokenRefresher;
 }
 
 export type ConnectionView =
@@ -28,6 +37,9 @@ export type ConnectionView =
   | {
       readonly mode: Mode;
       readonly status: "CONNECTED";
+      readonly health: ConnectionHealth;
+      /** True while a new entry would be refused: unusable connection or reconciliation pending. */
+      readonly entriesBlocked: boolean;
       readonly accounts: readonly BrokerAccount[];
       /** null means unknown or non-expiring (docs/tradestation-integration.md#token-lifetime). */
       readonly refreshExpiresAt: number | null;
@@ -178,7 +190,7 @@ export async function completeConnection(
 
   const refreshTokenEnc = await cipher.encrypt(tokens.refreshToken, refreshContext(ctx.userId));
   const secretEnc = await cipher.encrypt(clientSecret, secretContext(ctx.userId));
-  // refresh_expires_at stays NULL (unknown) until a refresh shows whether the key rotates (#18).
+  // refresh_expires_at stays NULL (unknown) until a refresh shows whether the key rotates.
   await ctx.db
     .prepare(
       `INSERT INTO broker_connection
@@ -206,21 +218,36 @@ export async function completeConnection(
       );
     }
   });
+  // Kept in memory only; the refresher renews it before it runs out.
+  ctx.tokens.seed(tokens.accessToken, tokens.expiresInSeconds);
   log(ctx, "info", "broker.connected", { accounts: listed.value.length });
   return success({
     mode: "SIM",
     status: "CONNECTED",
+    health: { status: "ok" },
+    entriesBlocked: entriesBlocked({ status: "ok" }, ctx),
     accounts: listed.value,
     refreshExpiresAt: null,
     lastOkAt: ctx.now,
   });
 }
 
+function entriesBlocked(health: ConnectionHealth, ctx: ConnectionContext): boolean {
+  return entryBlock({ health, reconciliationPending: reconciliationPending(ctx.storage) }) !== null;
+}
+
+/** An unrecognised value is treated as an error, never as healthy. */
+function storedState(status: string): StoredConnectionState {
+  return status === "CONNECTED" || status === "EXPIRED" || status === "REVOKED" ? status : "ERROR";
+}
+
 export async function readConnection(ctx: ConnectionContext): Promise<ConnectionView> {
   const row = await ctx.db
-    .prepare("SELECT refresh_expires_at, last_ok_at FROM broker_connection WHERE user_id = ?")
+    .prepare(
+      "SELECT refresh_expires_at, last_ok_at, status FROM broker_connection WHERE user_id = ?",
+    )
     .bind(ctx.userId)
-    .first<{ refresh_expires_at: number | null; last_ok_at: number | null }>();
+    .first<{ refresh_expires_at: number | null; last_ok_at: number | null; status: string }>();
   if (row === null) return { mode: "SIM", status: "NOT_CONNECTED" };
   const accounts = ctx.sql
     .exec<{ account_id: string; account_type: "Cash" | "Margin" }>(
@@ -228,9 +255,16 @@ export async function readConnection(ctx: ConnectionContext): Promise<Connection
     )
     .toArray()
     .map(({ account_id, account_type }) => ({ accountId: account_id, accountType: account_type }));
+  const health = connectionHealth({
+    stored: storedState(row.status),
+    refreshExpiresAt: row.refresh_expires_at,
+    now: ctx.now,
+  });
   return {
     mode: "SIM",
     status: "CONNECTED",
+    health,
+    entriesBlocked: entriesBlocked(health, ctx),
     accounts,
     refreshExpiresAt: row.refresh_expires_at,
     lastOkAt: row.last_ok_at,
@@ -272,6 +306,7 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
     // Same reason for the account cache: it belongs to the connection that was just removed.
     if (removed.meta.changes === 0) return { revoked };
   }
+  ctx.tokens.forget();
   ctx.storage.transactionSync(() => {
     ctx.sql.exec("DELETE FROM broker_accounts");
     ctx.sql.exec("DELETE FROM oauth_attempts");

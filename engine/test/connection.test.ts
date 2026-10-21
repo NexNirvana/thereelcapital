@@ -2,6 +2,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipher } from "../src/crypto";
+import { markReconciled } from "../src/refresh";
 
 const CLIENT_ID = "ts-client-id-0123456789abcdef";
 const CLIENT_SECRET = "ts-client-secret-SHOULD-NEVER-LEAK";
@@ -175,6 +176,61 @@ describe("beginConnection", () => {
   });
 });
 
+describe("reconnecting after a failed refresh", () => {
+  it("restores the connection but keeps entries blocked until reconciliation", async () => {
+    const client = await newClient();
+    await connect(client);
+    await env.DB.prepare("UPDATE broker_connection SET status = 'REVOKED' WHERE user_id = ?")
+      .bind(client.userId)
+      .run();
+    await runInDurableObject(client.stub, (_i, state) =>
+      state.storage.kv.put("reconciliation_pending", 1),
+    );
+    expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
+      value: { health: { status: "revoked" }, entriesBlocked: true },
+    });
+
+    const reconnected = await connect(client);
+    expect(reconnected.value).toMatchObject({ health: { status: "ok" }, entriesBlocked: true });
+    expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
+      value: { health: { status: "ok" }, entriesBlocked: true },
+    });
+
+    const lifted = await runInDurableObject(client.stub, (_i, state) =>
+      markReconciled({ storage: state.storage, db: env.DB, userId: client.userId }),
+    );
+    expect(lifted).toBe(true);
+    expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
+      value: { entriesBlocked: false },
+    });
+  });
+
+  it("arms the refresh alarm once connected", async () => {
+    const client = await newClient();
+    await connect(client);
+    const alarm = await runInDurableObject(client.stub, (_i, state) => state.storage.getAlarm());
+    expect(alarm).not.toBeNull();
+  });
+});
+
+describe("alarm", () => {
+  it("refreshes ahead of expiry and arms the next one, or retries soon after a network error", async () => {
+    const client = await newClient();
+    await connect(client);
+    const run = () => runInDurableObject(client.stub, (instance) => instance.alarm());
+
+    await run();
+    expect(tokenCalls()).toHaveLength(2); // the code exchange and the refresh
+    const next = await runInDurableObject(client.stub, (_i, state) => state.storage.getAlarm());
+    expect(next).toBeGreaterThan(Date.now() + 10 * 60 * 1000);
+
+    responders.token = () => new Response(null, { status: 503 });
+    await run();
+    const retry = await runInDurableObject(client.stub, (_i, state) => state.storage.getAlarm());
+    expect(retry).toBeLessThan(Date.now() + 2 * 60 * 1000);
+  });
+});
+
 describe("completeConnection", () => {
   it("exchanges the code, lists active Cash and Margin accounts and stores encrypted credentials", async () => {
     const client = await newClient();
@@ -183,6 +239,8 @@ describe("completeConnection", () => {
     expect(result.value).toEqual({
       mode: "SIM",
       status: "CONNECTED",
+      health: { status: "ok" },
+      entriesBlocked: false,
       accounts: [
         { accountId: "SIM1001", accountType: "Margin" },
         { accountId: "SIM1002", accountType: "Cash" },

@@ -7,7 +7,9 @@ import {
   type ConnectionContext,
   type ConnectionView,
 } from "./connection.ts";
+import { REFRESH_REQUEST_RETRY_DELAY_MS, REFRESH_RETRY_DELAY_MS } from "#lib/domain/config.ts";
 import { createCipher, CredentialsKeyError } from "./crypto.ts";
+import { TokenRefresher } from "./refresh.ts";
 import { writeEvent } from "./events.ts";
 import { migrate } from "./schema.ts";
 import {
@@ -34,6 +36,8 @@ type Row = Record<string, SqlStorageValue>;
  * method takes `unknown`, decodes it, and rejects anything but SIM before touching storage.
  */
 export class ClientCoordinator extends DurableObject<EngineEnv> {
+  #tokens: TokenRefresher | null = null;
+
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
     // Built before the first request is served, so every RPC sees the full schema.
@@ -124,15 +128,35 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       "completeConnection",
       CompleteConnectionArgs,
       input,
-      (ctx, args) => completeConnection(ctx, args),
+      async (ctx, args) => {
+        const result = await completeConnection(ctx, args);
+        if (result.ok) await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
+        return result;
+      },
     );
+  }
+
+  /** Renews the access token ahead of its expiry, then arms the next renewal. */
+  async alarm(): Promise<void> {
+    const tokens = this.tokensFor();
+    if (tokens === null) return;
+    const outcome = await tokens.refresh();
+    if (outcome.kind === "ready") await this.scheduleRefresh(tokens.nextRefreshAt());
+    // A refusal or a missing connection waits for a reconnect, which arms the alarm again.
+    else if (outcome.kind === "retryable") {
+      await this.scheduleRefresh(Date.now() + REFRESH_RETRY_DELAY_MS);
+    }
   }
 
   /** Revokes the grant at TradeStation and deletes the stored credentials. */
   disconnect(input: unknown): Promise<EngineResult<{ revoked: boolean }>> {
-    return this.enterWithConnection("disconnect", ModeOnlyArgs, input, async (ctx) =>
-      success(await disconnect(ctx)),
-    );
+    return this.enterWithConnection("disconnect", ModeOnlyArgs, input, async (ctx) => {
+      const result = success(await disconnect(ctx));
+      // forget() ran synchronously inside disconnect and a reconnect would have seeded a token, so
+      // no token means no connection needs the alarm.
+      if (ctx.tokens.nextRefreshAt() === null) await this.ctx.storage.deleteAlarm();
+      return result;
+    });
   }
 
   private enter<
@@ -177,7 +201,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (!decoded.ok) return decoded;
     // The Durable Object is named after the session user (engineFor); that name is the client id.
     const userId = this.ctx.id.name;
-    if (userId === undefined) return failure("INVALID_INPUT");
+    const tokens = this.tokensFor();
+    if (userId === undefined || tokens === null) return failure("INVALID_INPUT");
     try {
       return await run(
         {
@@ -187,6 +212,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           userId,
           now: Date.now(),
           cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+          tokens,
         },
         decoded.value,
       );
@@ -195,6 +221,26 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       this.log("error", "SIM", "rpc.credentials_unavailable", method);
       return failure("CREDENTIALS_UNAVAILABLE");
     }
+  }
+
+  /** One refresher per Durable Object, so the client never has two refreshes in flight. */
+  private tokensFor(): TokenRefresher | null {
+    const userId = this.ctx.id.name;
+    if (userId === undefined) return null;
+    this.#tokens ??= new TokenRefresher({
+      sql: this.ctx.storage.sql,
+      storage: this.ctx.storage,
+      db: this.env.DB,
+      userId,
+      cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+      clock: () => Date.now(),
+      retryDelayMs: REFRESH_REQUEST_RETRY_DELAY_MS,
+    });
+    return this.#tokens;
+  }
+
+  private async scheduleRefresh(at: number | null): Promise<void> {
+    if (at !== null) await this.ctx.storage.setAlarm(Math.max(at, Date.now()));
   }
 
   private notImplemented(method: string): EngineResult<never> {
