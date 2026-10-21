@@ -54,9 +54,13 @@ intents            id, mode, kind (entry|exit|stop|trailing|cancel), account_id,
 positions          id, mode, account_id, symbol, underlying, expiry, strike, right, point_value,
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
                    trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on
-scaleout_steps     position_id, idx (0–6), state (available|pending|done|done_zero), intent_id
+scaleout_steps     position_id, mode, idx (0–6), state (available|pending|done|done_zero), intent_id
 events             id, at, mode, level, type, message, data_json   -- operational log and errors, no P&L
 ```
+
+The schema is built by append-only, versioned migrations (`schema_migrations`) that the DO constructor applies inside `blockConcurrencyWhile`, so every RPC sees the full schema. Prices are integer micro-dollars. `scaleout_steps` carries `mode` as well so that every table can be scoped by it.
+
+**RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `history`, `connection`. Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (`INVALID_INPUT`, `MODE_NOT_SIM`, `NOT_IMPLEMENTED`). Rejections and not-implemented calls go to `events` (never the input).
 
 Fills are not a table: TradeStation reports executed quantity and price per order leg, and the intent stores `filled_qty` and `avg_fill_price` from the broker.
 
