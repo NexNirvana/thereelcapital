@@ -71,6 +71,8 @@ export interface SimSymbol {
   readonly pointValue?: number;
   readonly quantityIncrement?: number;
   readonly minimumTradeQuantity?: number;
+  /** Listed (its strike appears) but with no two-sided market, so the chain snapshot omits it. */
+  readonly noChainMarket?: boolean;
   /** Contract data of an option; underlying, expirations, strikes and chains derive from it. */
   readonly option?: {
     readonly underlying: string;
@@ -469,7 +471,7 @@ export function makeLocalSim(config: LocalSimConfig): LocalSim {
         const rows: ChainRow[] = [];
         for (const c of optionsOf(underlying)) {
           const q = quotes.get(c.symbol);
-          if (c.option.expiration === expiration && q !== undefined) {
+          if (c.option.expiration === expiration && q !== undefined && c.noChainMarket !== true) {
             rows.push({
               symbol: c.symbol,
               expiration,

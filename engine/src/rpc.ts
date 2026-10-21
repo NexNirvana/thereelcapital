@@ -56,6 +56,23 @@ export const ActivateTrailingArgs = Schema.Struct({
 });
 export type ActivateTrailingArgs = typeof ActivateTrailingArgs.Type;
 
+/** Tickers as TradeStation writes them: letters, digits, dot, dash, slash. */
+const Underlying = Schema.String.check(Schema.isPattern(/^[A-Z0-9][A-Z0-9./-]{0,15}$/));
+const IsoDate = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/));
+
+export const OptionExpirationsArgs = Schema.Struct({ mode: Mode, underlying: Underlying });
+export type OptionExpirationsArgs = typeof OptionExpirationsArgs.Type;
+
+export const OptionChainArgs = Schema.Struct({
+  mode: Mode,
+  underlying: Underlying,
+  expiration: IsoDate,
+});
+export type OptionChainArgs = typeof OptionChainArgs.Type;
+
+export const OptionContractArgs = Schema.Struct({ mode: Mode, symbol: Symbol });
+export type OptionContractArgs = typeof OptionContractArgs.Type;
+
 /** `state`, `history` and `connection` only need the mode they are asked about. */
 export const ModeOnlyArgs = Schema.Struct({ mode: Mode });
 export type ModeOnlyArgs = typeof ModeOnlyArgs.Type;
@@ -86,6 +103,7 @@ export type EngineErrorCode =
   | "INVALID_INPUT"
   | "MODE_NOT_SIM"
   | "NOT_IMPLEMENTED"
+  | "NOT_FOUND"
   | "CREDENTIALS_UNAVAILABLE"
   | "STATE_INVALID"
   | "TOKEN_EXCHANGE_FAILED"
@@ -100,6 +118,7 @@ const MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_INPUT: "Los datos enviados no son válidos.",
   MODE_NOT_SIM: "Solo el modo SIM está disponible.",
   NOT_IMPLEMENTED: "Esta operación todavía no está disponible.",
+  NOT_FOUND: "No encontramos eso en TradeStation.",
   CREDENTIALS_UNAVAILABLE: "No pudimos guardar tus credenciales. Avisa al administrador.",
   STATE_INVALID: "El enlace de autorización no es válido o venció. Vuelve a conectar.",
   TOKEN_EXCHANGE_FAILED:
