@@ -1,6 +1,6 @@
 // OAuth 2.0 Authorization Code against TradeStation's v3 auth endpoints. Facts and the items still
 // marked (verify): docs/tradestation-integration.md#credentials-and-oauth
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { AUDIENCE, AUTH_BASE_URL, SCOPES, send, type BrokerResult } from "./endpoints.ts";
 
 /** The browser is sent here; `client_id` is the only credential-like value that appears in it. */
@@ -84,4 +84,67 @@ export async function revokeRefreshToken(args: {
     }),
   });
   return sent.ok ? { ok: true, value: null } : sent;
+}
+
+const RefreshResponse = Schema.Struct({
+  access_token: Schema.String.check(Schema.isMinLength(1)),
+  expires_in: Schema.Number,
+  // Only keys configured for rotating refresh tokens get a new one back.
+  refresh_token: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+
+export interface RefreshedTokens {
+  readonly accessToken: string;
+  readonly expiresInSeconds: number;
+  /** null when the response carried none: the stored refresh token stays valid. */
+  readonly rotatedRefreshToken: string | null;
+}
+
+const RETRIES = 2;
+
+/**
+ * The `refresh_token` grant. The only broker call that is retried: it is idempotent for a
+ * non-rotating key, and a rotating key only invalidates the old token once it has answered.
+ * Retries cover an unreachable or failing TradeStation (5xx, 429, network), never a refusal.
+ * The error body of a refused refresh is not documented, so any other 4xx is terminal: (verify).
+ */
+export async function refreshAccessToken(
+  args: { clientId: string; clientSecret: string; refreshToken: string },
+  retryDelayMs: number,
+): Promise<BrokerResult<RefreshedTokens>> {
+  const once = Effect.promise(() =>
+    send(`${AUTH_BASE_URL}/oauth/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: args.clientId,
+        client_secret: args.clientSecret,
+        refresh_token: args.refreshToken,
+      }),
+    }),
+  ).pipe(
+    Effect.flatMap((sent) =>
+      !sent.ok && sent.failure === "UNAVAILABLE"
+        ? Effect.sleep(retryDelayMs).pipe(Effect.andThen(Effect.fail(sent)))
+        : Effect.succeed(sent),
+    ),
+  );
+  const sent = await Effect.runPromise(
+    Effect.retry(once, { times: RETRIES }).pipe(Effect.catch((last) => Effect.succeed(last))),
+  );
+  if (!sent.ok) return sent;
+  const decoded = Schema.decodeUnknownResult(RefreshResponse)(
+    await sent.response.json().catch(() => null),
+  );
+  if (decoded._tag === "Failure") return { ok: false, failure: "INVALID_RESPONSE" };
+  const { access_token, expires_in, refresh_token } = decoded.success;
+  return {
+    ok: true,
+    value: {
+      accessToken: access_token,
+      expiresInSeconds: expires_in,
+      rotatedRefreshToken: refresh_token ?? null,
+    },
+  };
 }
