@@ -31,7 +31,7 @@ bun run test:e2e      # Playwright: builds and starts both Workers, opens the sm
 bun run types          # regenerate worker-configuration.d.ts for both Workers after editing a wrangler.jsonc
 ```
 
-Test, migrate and deploy commands are added by the issues that introduce them. Local secrets go in the git-ignored `.dev.vars` (names in `.dev.vars.example`). The D1 `database_id` in both `wrangler.jsonc` files is a local-only placeholder.
+Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`); never deploy by hand. Local secrets go in the git-ignored `.dev.vars` (names in `.dev.vars.example`).
 
 ## Read first
 
