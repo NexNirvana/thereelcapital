@@ -42,13 +42,15 @@ Besides the admin mutations, these write `audit_log` rows (`src/lib/server/auth-
 - `auth.sign_in` (after a passkey ceremony created a session, `{method: "passkey"}`) and `auth.sign_out` (before the session ends), with the user as actor and target.
 - `recovery.redeem_failed` and `activation.redeem_failed` for a rejected code or link: actor `anonymous`, no target, `{reason, ipHash}` where `ipHash` is 16 hex characters of the HMAC of the `cf-connecting-ip` value (`hashToken("audit-ip", ...)`). The rate limit (5 per 10 minutes per IP) bounds how many such rows one source can write.
 - `activation.redeem` is written only after the enrollment session exists, so a row means a session started; a link that closed in between writes `activation.redeem_failed` with reason `link_closed`.
-- `admin.create` from `bun run admin:create`.
+- `admin.create` from `bun run admin:create` and `admin.recover` from `bun run admin:recover` (actors `cli:admin-create` and `cli:admin-recover`; `admin.recover` stores counts only).
 
 A failed audit write fails the request (the audit helper throws), and for the two that start a session (`auth.sign_in`, `activation.redeem`) `auditStartedSession` first deletes the session just created, because the error response may not carry its cookie; so none of these actions happens unrecorded. Covered by `tests/e2e/auth-audit.spec.ts` and `bootstrap-admin.test.ts`.
 
 ## Flows
 
 **First admin:** `bun run admin:create <email>` (local D1) or `bun run admin:create <email> --remote` (production D1); neither needs `BETTER_AUTH_SECRET`; it inserts the admin user, an activation link and an `admin.create` audit row (actor `cli:admin-create`, `src/lib/server/bootstrap-admin.ts`), in one D1 batch, and prints the link once. Opening the link is the activation flow below.
+
+**Last admin recovery:** `bun run admin:recover <email> [--remote]` (D31, `scripts/admin-recover.ts`, `src/lib/server/recover-admin.ts`), run from the owner's machine with `wrangler` logged in, needs no secret. It refuses an unknown email, a non-admin (clients are recovered in the admin panel) and a disabled admin. One D1 batch writes the `admin.recover` audit row (counts of passkeys, unused codes and sessions before), revokes open links, deletes the admin's passkeys, sessions and recovery codes and inserts a new link, printed once. Every statement resolves the target by email and role `admin`, and the email and hash are validated before they are placed in SQL literals.
 
 **Onboarding:**
 1. The admin creates the user and `client_settings`. The app generates an activation link `https://thereelcapital.com/activar/<token>` (32 random bytes, base64url), stores only its SHA-256, sets it to expire after 72 hours, and **shows it to the admin once**.
