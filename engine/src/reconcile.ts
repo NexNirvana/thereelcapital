@@ -9,6 +9,7 @@ import { SCALE_OUT_STEPS } from "#lib/domain/scaleout.ts";
 import { ORDER_MATCH_SKEW_MS, SEND_GRACE_MS } from "#lib/domain/config.ts";
 import type { BrokerOrder, BrokerPosition, SymbolDetails } from "./broker/adapter.ts";
 import { writeEvent, type EventLevel } from "./events.ts";
+import { settleStep } from "./ledger.ts";
 
 /** What was read from the broker for the client's accounts, before the transaction starts. */
 export interface BrokerSnapshot {
@@ -210,6 +211,7 @@ function applyOrder(ctx: ReconcileContext, intent: IntentRow, order: BrokerOrder
     if (filledQty > 0) settleReservation(ctx, intent, { consumed: true });
     else if (isTerminal(state)) settleReservation(ctx, intent, { consumed: false });
   }
+  if (!isEntryIntent(intent)) settleStep(ctx.sql, intent.id, state, filledQty);
   if (!isEntryIntent(intent) && intent.position_id !== null && filledQty > intent.filled_qty) {
     ctx.sql.exec(
       "UPDATE positions SET sold_qty = MIN(original_qty, sold_qty + ?) WHERE id = ?",
@@ -525,6 +527,7 @@ function resolveUnmatched(ctx: ReconcileContext, intent: IntentRow): void {
     if (isEntryIntent(intent) && intent.source === "app") {
       settleReservation(ctx, intent, { consumed: false });
     }
+    if (!isEntryIntent(intent)) settleStep(ctx.sql, intent.id, "REJECTED", 0);
     log(ctx, "warn", "reconcile.armed_never_sent", { intentId: intent.id });
     return;
   }
