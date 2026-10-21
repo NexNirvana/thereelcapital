@@ -71,7 +71,10 @@ export interface Transport {
     path: string,
     query: Readonly<Record<string, string>>,
     timeoutMs: number,
-  ) => Effect.Effect<{ readonly response: Response; readonly abort: () => void }, BrokerError>;
+  ) => Effect.Effect<
+    { readonly response: Response; readonly signal: AbortSignal; readonly abort: () => void },
+    BrokerError
+  >;
   /** The most recent rate-limit headers, whatever the status. */
   readonly rateLimit: () => RateLimitInfo | null;
 }
@@ -265,6 +268,7 @@ export function makeTransport(
       }).pipe(
         Effect.map((response) => ({
           response,
+          signal: controller.signal,
           abort: () => {
             clearTimeout(timer);
             controller.abort();

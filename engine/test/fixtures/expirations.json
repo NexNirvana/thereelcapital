@@ -1,0 +1,8 @@
+{
+  "Expirations": [
+    { "Date": "2021-12-23T00:00:00Z", "Type": "Weekly", "Root": "AAPL" },
+    { "Date": "2021-12-17T00:00:00Z", "Type": "Monthly", "Root": "AAPL" },
+    { "Date": "2021-12-31T00:00:00Z", "Type": "Quarterly", "Root": "AAPL" },
+    { "Date": "2021-12-17T00:00:00Z", "Type": "Weekly", "Root": "AAPL" }
+  ]
+}

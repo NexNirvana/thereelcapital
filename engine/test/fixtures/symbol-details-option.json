@@ -1,0 +1,32 @@
+{
+  "Symbols": [
+    {
+      "AssetType": "STOCKOPTION",
+      "Country": "United States",
+      "Currency": "USD",
+      "Description": "MSFT Dec 17 2021 332.5 Put",
+      "Exchange": "OPRA",
+      "Symbol": "MSFT 211217P332.5",
+      "Root": "MSFT",
+      "Underlying": "MSFT",
+      "OptionType": "Put",
+      "StrikePrice": "332.5",
+      "ExpirationDate": "2021-12-17T00:00:00Z",
+      "PriceFormat": {
+        "Format": "Decimal",
+        "Decimals": "2",
+        "IncrementStyle": "Simple",
+        "Increment": "0.01",
+        "PointValue": "100"
+      },
+      "QuantityFormat": {
+        "Format": "Decimal",
+        "Decimals": "0",
+        "IncrementStyle": "Simple",
+        "Increment": "1",
+        "MinimumTradeQuantity": "1"
+      }
+    }
+  ],
+  "Errors": []
+}
