@@ -20,3 +20,36 @@ export function passkeyErrorMessage(code: string | undefined): string {
   const known = Object.values(passkeyErrors).find((entry) => entry.code === code);
   return (known ?? passkeyErrors.generic).message;
 }
+
+// Recovery (docs/auth-and-security.md#flows). Same shape as passkeyErrors; the server throws the
+// code and the Spanish text, the page looks the code up.
+export const recoveryErrors = {
+  invalidCode: {
+    code: "INVALID_RECOVERY_CODE",
+    // One answer for wrong, used and suspended-account codes, so it reveals nothing about which.
+    message: "El código no es válido o ya se usó. Revisa que esté completo e inténtalo de nuevo.",
+  },
+  invalidInput: {
+    code: "INVALID_INPUT",
+    message: "Los datos enviados no son válidos.",
+  },
+  enrollmentRequired: {
+    code: "ENROLLMENT_REQUIRED",
+    message: "Tu sesión de registro venció. Empieza de nuevo con un código de recuperación.",
+  },
+  passkeyRequired: {
+    code: "PASSKEY_REQUIRED",
+    message: "Registra tu nueva passkey antes de continuar.",
+  },
+  tooManyAttempts: {
+    code: "RATE_LIMITED",
+    message: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+  },
+} as const;
+
+/** Spanish text for a failed recovery request; Better Auth answers 429 itself when rate limited. */
+export function recoveryErrorMessage(code: string | undefined, status?: number): string {
+  if (status === 429) return recoveryErrors.tooManyAttempts.message;
+  const known = Object.values(recoveryErrors).find((entry) => entry.code === code);
+  return (known ?? recoveryErrors.invalidCode).message;
+}

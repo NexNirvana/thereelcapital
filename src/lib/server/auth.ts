@@ -1,11 +1,13 @@
 import { passkey } from "@better-auth/passkey";
-import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { admin } from "better-auth/plugins";
+import type { DatabaseSync } from "node:sqlite";
 import { bannedUserMessage, requireUserVerified } from "./passkey-policy.ts";
+import { recoveryPlugin } from "./recovery-plugin.ts";
 
 export interface AuthEnv {
   // D1 in the Workers; the schema CLI passes a SQLite database.
-  DB: NonNullable<BetterAuthOptions["database"]>;
+  DB: D1Database | DatabaseSync;
   BETTER_AUTH_SECRET: string;
   // Public origin of the app: https://thereelcapital.com in production, the local origin in dev.
   // The single source of baseURL, passkey rpID and passkey origin.
@@ -57,6 +59,8 @@ export function createAuth(
             requireUserVerified(verification.authenticationInfo.userVerified),
         },
       }),
+      // Recovery writes raw SQL, so it needs D1; the schema CLI (SQLite) only reads options.
+      ...("batch" in env.DB ? [recoveryPlugin(env.DB, env.BETTER_AUTH_SECRET)] : []),
       ...trailingPlugins,
     ],
   });
