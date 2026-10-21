@@ -71,6 +71,15 @@ Order body (equity; options use the option symbol and `BUYTOOPEN`/`SELLTOCLOSE`,
 
 **Status mapping** to [intent states](order-lifecycle.md): `ACK`, `OPN`, `DON` → ACKNOWLEDGED; `FPR` → PARTIAL; `FLL`, `FLP` → FILLED; `CAN`, `EXP`, `UCH`, `TSC`, `OUT` → CANCELED; `REJ` → REJECTED. Anything else → keep the current state and log it.
 
+## Adapter (`engine/src/tradestation/`)
+
+The TradeStation implementation of the `BrokerAdapter` interface ([architecture.md](architecture.md)). Its HTTP layer is `http.ts`:
+
+- **SIM guard.** `makeTransport` refuses any mode but `SIM` (`MODE_NOT_SIM`) and any base URL that is not exactly the SIM base (`BASE_URL_NOT_SIM`), so a LIVE configuration fails at construction, before a token is requested. Every request is re-checked against the SIM base right before `fetch`.
+- **Errors.** 401 → `AuthExpired`; 429 → `RateLimited` (`retryAfterMs` from `X-RateLimit-Reset`, which the docs define as seconds until the limit resets; there is no `Retry-After`); other 4xx → `Rejected` (`code` = the body's `Error`, else `HTTP_<status>`); 5xx or a dropped connection → `Unknown`; an aborted or timed-out request → `Timeout`. The latest `X-RateLimit-*` headers are kept (`rateLimit()`), also from successful responses.
+- **Retries.** Only `get` (reads) retries, twice, after a `Timeout`, a 5xx or a dropped connection. `send` (orderconfirm, place, cancel) makes exactly one attempt: a `Timeout` or `Unknown` there means the order may exist, and the caller marks the intent UNKNOWN ([order-lifecycle.md](order-lifecycle.md), rule 2).
+- Tokens come from `TokenRefresher.accessToken()`; a connection without a usable token fails with `AuthExpired` without sending anything.
+
 ## Native protection (decision pending the spike)
 
 v3 supports `StopMarket`, and a percent/amount trailing stop via `AdvancedOptions.TrailingStop` on a `StopMarket` order. The spec examples are equities; support for **options** in regular-session DAY/GTC is **(verify)**. GTC orders live at most 90 days.
