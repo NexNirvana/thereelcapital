@@ -35,9 +35,20 @@ Better Auth's defaults do **not** meet our requirements in three places. Each ne
 
 Only the paths in `allowedAuthPaths` (`src/lib/server/endpoint-policy.ts`) answer under `/api/auth/*`; `onRequest` of the `endpoint-policy` plugin returns 404 for everything else, whether Better Auth's core, the admin plugin or an endpoint a future release adds. Better Auth's admin API (`/admin/set-role`, `ban-user`, `create-user`, `remove-user`, `revoke-user-sessions`, ...) answers any admin session with no fresh-session check and no audit row, so the app uses it only in-process (`auth.api.createUser`, which does not pass through the router) and every admin change goes through the guarded, audited `/admin` actions. Adding an endpoint to the list is a security decision: say in the PR what guards it. The same plugin puts a `before` hook on the passkey endpoints that change what can sign in (`generate-register-options`, `verify-registration`, `update-passkey`, `delete-passkey`): a full session older than 10 minutes gets 401 `REAUTH_REQUIRED` (`isFreshSession`, the rule behind `requireFreshSession`), while an enrollment session keeps registration (it can reach nothing else, see `enrollment.ts`). Sign-in, `list-user-passkeys` and sign-out need no fresh session. Covered by `tests/e2e/auth-lockdown.spec.ts`.
 
+## Audit of authentication
+
+Besides the admin mutations, these write `audit_log` rows (`src/lib/server/auth-audit.ts`, the recovery and activation plugins); none stores a code, token, email or other secret:
+
+- `auth.sign_in` (after a passkey ceremony created a session, `{method: "passkey"}`) and `auth.sign_out` (before the session ends), with the user as actor and target.
+- `recovery.redeem_failed` and `activation.redeem_failed` for a rejected code or link: actor `anonymous`, no target, `{reason, ipHash}` where `ipHash` is 16 hex characters of the HMAC of the `cf-connecting-ip` value (`hashToken("audit-ip", ...)`). The rate limit (5 per 10 minutes per IP) bounds how many such rows one source can write.
+- `activation.redeem` is written only after the enrollment session exists, so a row means a session started; a link that closed in between writes `activation.redeem_failed` with reason `link_closed`.
+- `admin.create` from `bun run admin:create`.
+
+A failed audit write fails the request (the audit helper throws), and for the two that start a session (`auth.sign_in`, `activation.redeem`) `auditStartedSession` first deletes the session just created, because the error response may not carry its cookie; so none of these actions happens unrecorded. Covered by `tests/e2e/auth-audit.spec.ts` and `bootstrap-admin.test.ts`.
+
 ## Flows
 
-**First admin:** `bun run admin:create <email>` (local D1, reads `BETTER_AUTH_SECRET` from the environment or `.dev.vars`) or `bun run admin:create <email> --remote` (production D1, `BETTER_AUTH_SECRET` must be exported in the shell) inserts the admin user and an activation link, in one D1 batch, and prints the link once. Opening the link is the activation flow below.
+**First admin:** `bun run admin:create <email>` (local D1, reads `BETTER_AUTH_SECRET` from the environment or `.dev.vars`) or `bun run admin:create <email> --remote` (production D1, `BETTER_AUTH_SECRET` must be exported in the shell) inserts the admin user, an activation link and an `admin.create` audit row (actor `cli:admin-create`, `src/lib/server/bootstrap-admin.ts`), in one D1 batch, and prints the link once. Opening the link is the activation flow below.
 
 **Onboarding:**
 1. The admin creates the user and `client_settings`. The app generates an activation link `https://thereelcapital.com/activar/<token>` (32 random bytes, base64url), stores only its HMAC, sets it to expire after 72 hours, and **shows it to the admin once**.

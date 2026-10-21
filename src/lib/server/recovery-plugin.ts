@@ -6,6 +6,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { Schema } from "effect";
 import { RECOVERY_REDEEM_RATE_LIMIT } from "#lib/domain/config.ts";
 import { recoveryErrors } from "#lib/auth-messages.ts";
+import { auditRejectedAttempt } from "./auth-audit.ts";
 import { enrollmentMaxAgeMs } from "./enrollment.ts";
 import { startEnrollmentSession, startFullSession } from "./enrollment-session.ts";
 import { redeemRecoveryCode, releaseRecoveryCode, replaceRecoveryCodes } from "./recovery-codes.ts";
@@ -40,7 +41,10 @@ export function recoveryPlugin(db: D1Database, secret: string) {
           const { code } = body.success;
           const spentAt = Date.now();
           const userId = await redeemRecoveryCode(db, code, secret, spentAt);
-          if (userId === null) throw APIError.from("UNAUTHORIZED", recoveryErrors.invalidCode);
+          if (userId === null) {
+            await auditRejectedAttempt(db, secret, ctx, "recovery.redeem_failed", "invalid_code");
+            throw APIError.from("UNAUTHORIZED", recoveryErrors.invalidCode);
+          }
           try {
             await startEnrollmentSession(ctx, userId);
           } catch (failure) {
