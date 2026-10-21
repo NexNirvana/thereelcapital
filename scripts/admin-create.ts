@@ -4,9 +4,9 @@
 import { tmpdir } from "node:os";
 import { parseEnv } from "node:util";
 import { Schema } from "effect";
-import { hashToken, newActivationToken } from "#lib/server/token-hash.ts";
+import { ACTIVATION_LINK_LIFETIME_HOURS } from "#lib/domain/config.ts";
+import { activationUrl, newInvitation } from "#lib/server/activation-link.ts";
 
-const linkLifetimeMs = 72 * 60 * 60 * 1000;
 const productionOrigin = "https://thereelcapital.com";
 const localOrigin = "http://localhost:8787";
 // Deliberately strict: the value is placed inside a SQL literal.
@@ -51,15 +51,14 @@ if (!secret) {
 
 const now = Date.now();
 const userId = crypto.randomUUID();
-const token = newActivationToken();
-const tokenHash = await hashToken("activation-link", token, secret);
+const { token, tokenHash, expiresAt } = await newInvitation(secret, now);
 
 // One file means one D1 batch: either the admin and the link both exist, or neither does.
 const sql = `
 INSERT INTO "user" ("id", "name", "email", "emailVerified", "role", "createdAt", "updatedAt")
 VALUES ('${userId}', '${email}', '${email}', 0, 'admin', '${new Date(now).toISOString()}', '${new Date(now).toISOString()}');
 INSERT INTO invitations ("id", "user_id", "token_hash", "expires_at", "created_by")
-VALUES ('${crypto.randomUUID()}', '${userId}', '${tokenHash}', ${now + linkLifetimeMs}, '${userId}');
+VALUES ('${crypto.randomUUID()}', '${userId}', '${tokenHash}', ${expiresAt}, '${userId}');
 `;
 
 const sqlFile = `${tmpdir()}/admin-create-${userId}.sql`;
@@ -80,8 +79,10 @@ try {
 
 const origin = remote ? productionOrigin : localOrigin;
 console.log(`Admin created: ${email}`);
-console.log(`Activation link (valid 72 hours, shown once, share it personally):`);
-console.log(`${origin}/activar/${token}`);
+console.log(
+  `Activation link (valid ${ACTIVATION_LINK_LIFETIME_HOURS} hours, shown once, share it personally):`,
+);
+console.log(activationUrl(origin, token));
 
 async function readDevVarsSecret(): Promise<string | undefined> {
   const file = Bun.file(".dev.vars");

@@ -6,6 +6,8 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 
 1–5. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget; and no email (activation links shared by the admin). See [decisions.md](decisions.md) (D19–D22, D25).
 
+13. Rate limits for redeeming a recovery code and opening an activation link. Provisional in `config.ts`: 5 attempts per 10 minutes per IP each.
+
 ## TradeStation (SIM spike)
 
 6. Exact error at absolute refresh-token expiry; whether a key rotates refresh tokens.

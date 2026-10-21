@@ -5,6 +5,9 @@
 export const TRAILING_PCT_OPTIONS = [1, 5, 8, 10, 15, 20] as const;
 export const DEFAULT_TRAILING_PCT = 10;
 
+/** Initial SIZE per entry in US dollars; the admin may only increase it (docs/product-spec.md#parameters). */
+export const DEFAULT_SIZE_USD = 20_000;
+
 /** Initial stop % below the average fill price, set by the admin per client. */
 export const STOP_PCT_BOUNDS = { min: 10, max: 50 } as const;
 export const DEFAULT_STOP_PCT = 30;
@@ -24,3 +27,13 @@ export const ENROLLMENT_SESSION_MINUTES = 15;
  * until the owner decides. Codes carry about 124 bits of entropy, so this is defense in depth.
  */
 export const RECOVERY_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
+
+/** How long an activation link works (docs/auth-and-security.md#flows). */
+export const ACTIVATION_LINK_LIFETIME_HOURS = 72;
+export const ACTIVATION_LINK_LIFETIME_MS = ACTIVATION_LINK_LIFETIME_HOURS * 60 * 60 * 1000;
+
+/**
+ * Opening an activation link, per client IP. Provisional, like the recovery limit above: the
+ * tokens carry 256 bits of entropy, so this is defense in depth (docs/open-questions.md).
+ */
+export const ACTIVATION_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
