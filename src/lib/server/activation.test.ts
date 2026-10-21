@@ -332,7 +332,11 @@ describe("no email, no sign-up", () => {
       APP_ORIGIN: "http://localhost",
     });
     expect(auth.options.emailAndPassword?.enabled).toBe(false);
-    expect(auth.options.plugins?.map((plugin) => plugin.id)).toEqual(["admin", "passkey"]);
+    expect(auth.options.plugins?.map((plugin) => plugin.id)).toEqual([
+      "endpoint-policy",
+      "admin",
+      "passkey",
+    ]);
     expect(auth.options.disabledPaths).toContain("/admin/set-user-password");
   });
 });
