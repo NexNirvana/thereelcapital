@@ -1,6 +1,7 @@
 // The client's TradeStation connection: authorize, link, list accounts, disconnect.
 // docs/tradestation-integration.md#credentials-and-oauth. Secrets and tokens are decrypted here
 // and nowhere else; nothing this module returns or logs contains one.
+import { ROTATING_REFRESH_LIFETIME_MS } from "#lib/domain/config.ts";
 import type { CredentialCipher } from "./crypto.ts";
 import {
   connectionHealth,
@@ -41,7 +42,7 @@ export type ConnectionView =
       /** True while a new entry would be refused: unusable connection or reconciliation pending. */
       readonly entriesBlocked: boolean;
       readonly accounts: readonly BrokerAccount[];
-      /** null means unknown or non-expiring (docs/tradestation-integration.md#token-lifetime). */
+      /** Connect time + 24 h until the SIM spike (#21) verifies it; null only on rows stored before that. */
       readonly refreshExpiresAt: number | null;
       readonly lastOkAt: number | null;
     };
@@ -190,22 +191,24 @@ export async function completeConnection(
 
   const refreshTokenEnc = await cipher.encrypt(tokens.refreshToken, refreshContext(ctx.userId));
   const secretEnc = await cipher.encrypt(clientSecret, secretContext(ctx.userId));
-  // refresh_expires_at stays NULL (unknown) until a refresh shows whether the key rotates.
+  // Conservative: assume the key rotates and the 24 h absolute lifetime counts from the
+  // authorization (docs/tradestation-integration.md#token-lifetime, (verify) in #21).
+  const refreshExpiresAt = ctx.now + ROTATING_REFRESH_LIFETIME_MS;
   await ctx.db
     .prepare(
       `INSERT INTO broker_connection
          (user_id, client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status, last_ok_at)
-       VALUES (?, ?, ?, ?, ?, NULL, 'CONNECTED', ?)
+       VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', ?)
        ON CONFLICT (user_id) DO UPDATE SET
          client_id = excluded.client_id,
          client_secret_enc = excluded.client_secret_enc,
          refresh_token_enc = excluded.refresh_token_enc,
          key_id = excluded.key_id,
-         refresh_expires_at = NULL,
+         refresh_expires_at = excluded.refresh_expires_at,
          status = 'CONNECTED',
          last_ok_at = excluded.last_ok_at`,
     )
-    .bind(ctx.userId, clientId, secretEnc, refreshTokenEnc, cipher.keyId, ctx.now)
+    .bind(ctx.userId, clientId, secretEnc, refreshTokenEnc, cipher.keyId, refreshExpiresAt, ctx.now)
     .run();
 
   ctx.storage.transactionSync(() => {
@@ -230,7 +233,7 @@ export async function completeConnection(
     health: { status: "ok" },
     entriesBlocked: entriesBlocked({ status: "ok" }, ctx),
     accounts: listed.value,
-    refreshExpiresAt: null,
+    refreshExpiresAt,
     lastOkAt: ctx.now,
   });
 }
