@@ -284,16 +284,7 @@ export class TokenRefresher {
     const state: StoredConnectionState = outcome.kind === "terminal" ? outcome.state : "ERROR";
     if (outcome.kind === "terminal") this.#access = null;
     // Sync part first: the block must hold even if the D1 write below fails.
-    storage.transactionSync(() => {
-      sql.exec(
-        "UPDATE positions SET protection_state = 'unverified' WHERE mode = 'SIM' AND status != 'CLOSED'",
-      );
-      // A counter, not a flag, so markReconciled can tell a failure that happened while it waited.
-      storage.kv.put(
-        RECONCILIATION_PENDING_KEY,
-        (storage.kv.get<number>(RECONCILIATION_PENDING_KEY) ?? 0) + 1,
-      );
-    });
+    holdForReconciliation(storage);
     let recorded = false;
     try {
       const written = await db
@@ -315,6 +306,24 @@ export class TokenRefresher {
     });
     return outcome;
   }
+}
+
+/**
+ * Blocks entries and marks every open position's protection `unverified` until `markReconciled`.
+ * Used whenever the connection to the broker changed (refresh failed, connected, disconnected),
+ * since orders may have moved while we could not see them. Synchronous and atomic.
+ */
+export function holdForReconciliation(storage: DurableObjectStorage): void {
+  storage.transactionSync(() => {
+    storage.sql.exec(
+      "UPDATE positions SET protection_state = 'unverified' WHERE mode = 'SIM' AND status != 'CLOSED'",
+    );
+    // A counter, not a flag, so markReconciled can tell a hold that happened while it waited.
+    storage.kv.put(
+      RECONCILIATION_PENDING_KEY,
+      (storage.kv.get<number>(RECONCILIATION_PENDING_KEY) ?? 0) + 1,
+    );
+  });
 }
 
 export function reconciliationPending(storage: DurableObjectStorage): boolean {

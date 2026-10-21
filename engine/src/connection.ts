@@ -8,7 +8,7 @@ import {
   type ConnectionHealth,
   type StoredConnectionState,
 } from "#lib/domain/connection.ts";
-import { reconciliationPending, type TokenRefresher } from "./refresh.ts";
+import { holdForReconciliation, reconciliationPending, type TokenRefresher } from "./refresh.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { writeEvent } from "./events.ts";
 import type { Mode } from "./mode.ts";
@@ -217,6 +217,9 @@ export async function completeConnection(
         account.accountType,
       );
     }
+    // Orders may have moved while we were not connected: entries wait for a reconciliation
+    // (docs/order-lifecycle.md#reconciliation). Atomic with the account cache, no await between.
+    holdForReconciliation(ctx.storage);
   });
   // Kept in memory only; the refresher renews it before it runs out.
   ctx.tokens.seed(tokens.accessToken, tokens.expiresInSeconds);
@@ -310,6 +313,9 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
   ctx.storage.transactionSync(() => {
     ctx.sql.exec("DELETE FROM broker_accounts");
     ctx.sql.exec("DELETE FROM oauth_attempts");
+    // Without credentials nothing watches the positions: their protection is unverified and
+    // entries stay blocked until a later connection has been reconciled.
+    holdForReconciliation(ctx.storage);
   });
   log(ctx, revoked || row === null ? "info" : "warn", "broker.disconnected", { revoked });
   return { revoked };

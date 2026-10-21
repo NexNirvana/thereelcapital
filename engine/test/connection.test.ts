@@ -2,7 +2,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipher } from "../src/crypto";
-import { markReconciled } from "../src/refresh";
+import { holdForReconciliation, markReconciled, reconciliationPending } from "../src/refresh";
 
 const CLIENT_ID = "ts-client-id-0123456789abcdef";
 const CLIENT_SECRET = "ts-client-secret-SHOULD-NEVER-LEAK";
@@ -213,6 +213,77 @@ describe("reconnecting after a failed refresh", () => {
   });
 });
 
+async function seedOpenPosition(client: Client) {
+  await runInDurableObject(client.stub, (_i, state) =>
+    state.storage.sql.exec(
+      `INSERT INTO positions (id, mode, account_id, symbol, original_qty, avg_entry_price, stop_pct,
+         trailing_unlock_pct, protection_state, status, opened_on)
+       VALUES ('p1', 'SIM', 'SIM1001', 'AAPL', 10, 1000000, 30, 70, 'protected', 'OPEN', '2026-10-21')`,
+    ),
+  );
+}
+const protectionOf = (client: Client) =>
+  runInDurableObject(
+    client.stub,
+    (_i, state) =>
+      state.storage.sql.exec("SELECT protection_state AS p FROM positions").one().p as string,
+  );
+const pendingOf = (client: Client) =>
+  runInDurableObject(client.stub, (_i, state) => reconciliationPending(state.storage));
+const reconcile = (client: Client) =>
+  runInDurableObject(client.stub, (_i, state) =>
+    markReconciled({ storage: state.storage, db: env.DB, userId: client.userId }),
+  );
+
+describe("reconciliation after the connection changes (docs/order-lifecycle.md#reconciliation)", () => {
+  it("a first connect blocks entries and marks open positions unverified until markReconciled", async () => {
+    const client = await newClient();
+    await seedOpenPosition(client);
+    expect(await pendingOf(client)).toBe(false);
+    await connect(client);
+    expect(await pendingOf(client)).toBe(true);
+    expect(await protectionOf(client)).toBe("unverified");
+    expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
+      value: { entriesBlocked: true },
+    });
+    expect(await reconcile(client)).toBe(true);
+    expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
+      value: { entriesBlocked: false },
+    });
+  });
+
+  it("a disconnect blocks entries and marks open positions unverified, and a reconnect alone does not lift it", async () => {
+    const client = await newClient();
+    await connect(client);
+    expect(await reconcile(client)).toBe(true);
+    await seedOpenPosition(client);
+    expect(await pendingOf(client)).toBe(false);
+
+    await client.stub.disconnect({ mode: "SIM" });
+    expect(await pendingOf(client)).toBe(true);
+    expect(await protectionOf(client)).toBe("unverified");
+
+    await connect(client);
+    expect(await pendingOf(client)).toBe(true);
+  });
+
+  it("a hold that lands while markReconciled waits for D1 is not lifted by it", async () => {
+    const client = await newClient();
+    await connect(client);
+    const result = await runInDurableObject(client.stub, async (_i, state) => {
+      const lifting = markReconciled({
+        storage: state.storage,
+        db: env.DB,
+        userId: client.userId,
+      });
+      // Runs synchronously while the lift is awaiting D1, as a disconnect or a connect would.
+      holdForReconciliation(state.storage);
+      return { lifted: await lifting, pending: reconciliationPending(state.storage) };
+    });
+    expect(result).toEqual({ lifted: false, pending: true });
+  });
+});
+
 describe("alarm", () => {
   it("refreshes ahead of expiry and arms the next one, or retries soon after a network error", async () => {
     const client = await newClient();
@@ -240,7 +311,7 @@ describe("completeConnection", () => {
       mode: "SIM",
       status: "CONNECTED",
       health: { status: "ok" },
-      entriesBlocked: false,
+      entriesBlocked: true, // until the first reconciliation
       accounts: [
         { accountId: "SIM1001", accountType: "Margin" },
         { accountId: "SIM1002", accountType: "Cash" },

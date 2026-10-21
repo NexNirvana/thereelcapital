@@ -42,6 +42,8 @@ When: a client opens the app, reconnects TradeStation, the DO starts, any intent
 
 How: read the broker's orders and positions for the client's accounts in that mode → match orders to intents by `OrderID` / `OrderConfirmID` → apply status and fills → adopt positions and orders made outside REEL CAPITAL (another terminal, or existing activity at first connect) as external, so they count against `available` → recompute ledgers, counters and slots → only then accept new entries and resolve UNKNOWN intents.
 
+Entries stay blocked and open positions show `unverified` protection from a failed refresh, a connect or a disconnect until a reconciliation completes; only `markReconciled` lifts the block, and a hold that lands while it waits is not lifted by it.
+
 Reconnecting never resets counters, reservations or scale-out steps.
 
 ## Degraded states
