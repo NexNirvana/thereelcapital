@@ -22,7 +22,7 @@ Designed screens are reproduced from their PNGs. Undesigned screens use the same
 
 | Route | Screen | Notes |
 | --- | --- | --- |
-| `/admin` | Clients: list with access and connection status; create client (shows its activation link once, to share personally) | |
+| `/admin` | Clients: list with access and connection status; create client (shows its activation link once, to share personally) | Built (#32). Access: `Invitado` (no passkey yet), `Activo`, `Desactivado` (banned); connection: `Conectada` when a `broker_connection` row exists, else `Sin conectar` (refined with #35). Creating needs an admin with a session under 10 minutes old; a stale one gets 401 `REAUTH_REQUIRED` and the screen offers «Confirmar con passkey». Other errors: 409 `EMAIL_TAKEN`, 400 `INVALID_EMAIL`, 500 `CREATE_FAILED`. The link is in the action response only (`no-store`), never in a load, the audit row or a log. Every `/admin/**` load and action calls `requireAdmin` (403 for a client, 401 without a session). |
 | `/admin/clientes/[id]` | Client detail: profile and role; activation link (generate a new one, shown once; revoke); activate/deactivate; sessions (revoke); controlled recovery; settings (SIZE increase-only, stop %, unlock %, each "new entries/positions only"; the 2/3 limits read-only); connection (accounts, status, expiry, last sync; never secrets); open positions and orders | every change needs a fresh session and is audited |
 | `/admin/operativa` | all clients: open positions, pending orders, protection state, UNKNOWN intents, entries used today | read-only |
 | `/admin/historial` | orders, fills, events and errors across clients; filter by client, mode, account, symbol, state, date, type | |

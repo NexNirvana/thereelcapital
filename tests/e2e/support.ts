@@ -45,16 +45,21 @@ export async function seedPendingClient({
   return { userId, invitationId, token: link.token };
 }
 
-export async function seedSignedInUser(context: BrowserContext) {
+// `sessionAgeMs` backdates the session, which is what the 10-minute freshness check measures.
+export async function seedSignedInUser(
+  context: BrowserContext,
+  { role = "user", sessionAgeMs = 0 }: { role?: "user" | "admin"; sessionAgeMs?: number } = {},
+) {
   const userId = randomUUID();
   const token = randomUUID().replaceAll("-", "");
   const now = new Date().toISOString();
+  const sessionStart = new Date(Date.now() - sessionAgeMs).toISOString();
   const expires = new Date(Date.now() + 3_600_000).toISOString();
   d1(
     `INSERT INTO "user" ("id","name","email","emailVerified","role","createdAt","updatedAt")
-     VALUES ('${userId}','Cliente','${userId}@example.com',0,'user','${now}','${now}');
+     VALUES ('${userId}','Cliente','${userId}@example.com',0,'${role}','${now}','${now}');
      INSERT INTO "session" ("id","expiresAt","token","createdAt","updatedAt","userId")
-     VALUES ('${randomUUID()}','${expires}','${token}','${now}','${now}','${userId}')`,
+     VALUES ('${randomUUID()}','${expires}','${token}','${sessionStart}','${now}','${userId}')`,
   );
   const signature = createHmac("sha256", authSecret).update(token).digest("base64");
   await context.addCookies([
