@@ -1,0 +1,38 @@
+{
+  "Quotes": [
+    {
+      "Symbol": "MSFT",
+      "Open": "213.65",
+      "High": "215.77",
+      "Low": "205.48",
+      "PreviousClose": "214.46",
+      "Last": "212.85",
+      "Ask": "212.87",
+      "AskSize": "300",
+      "Bid": "212.85",
+      "BidSize": "200",
+      "NetChange": "-1.61",
+      "NetChangePct": "3.5",
+      "High52Week": "232.86",
+      "High52WeekTimestamp": "2020-09-02T00:00:00Z",
+      "Low52Week": "132.52",
+      "Low52WeekTimestamp": "2020-03-23T00:00:00Z",
+      "Volume": "5852511",
+      "PreviousVolume": "24154112",
+      "Close": "212.85",
+      "DailyOpenInterest": "0",
+      "TradeTime": "2020-11-18T15:19:14Z",
+      "TickSizeTier": "0",
+      "MarketFlags": {
+        "IsDelayed": false,
+        "IsHardToBorrow": false,
+        "IsBats": false,
+        "IsHalted": false
+      },
+      "LastSize": "954",
+      "LastVenue": "ARCX",
+      "VWAP": "136.340542862433"
+    }
+  ],
+  "Errors": [{ "Symbol": "NOPE", "Error": "SymbolNotFound" }]
+}

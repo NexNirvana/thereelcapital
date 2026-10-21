@@ -1,0 +1,5 @@
+{"Delta":"0.0497","Theta":"-0.0049","Gamma":"-0.0004","Rho":"0.0005","Vega":"-0.0001","ImpliedVolatility":"0.3118","IntrinsicValue":"0","ExtrinsicValue":"0.3","TheoreticalValue":"0.2816","ProbabilityITM":"0.05","ProbabilityOTM":"0.95","ProbabilityBE":"0.0479","DailyOpenInterest":1996,"Ask":"0.7","Bid":"0.1","Mid":"0.4","AskSize":13,"BidSize":9,"Close":"0.44","High":"1.05","Last":"0.44","Low":"0.19","NetChange":"-1.01","NetChangePct":"-1.7719","Open":"0.46","PreviousClose":"0.57","Volume":144,"Side":"Put","Strikes":["332.5"],"Legs":[{"Symbol":"MSFT 211217P332.5","Ratio":1,"StrikePrice":"332.5","Expiration":"2021-12-17T00:00:00Z","OptionType":"Put","AssetType":"StockOption"}]}
+{"Heartbeat":1,"Timestamp":"2021-12-01T15:00:00Z"}
+{"Ask":"3.2","Bid":"3","Side":"Call","Strikes":["332.5"],"Legs":[{"Symbol":"MSFT 211217C332.5","Ratio":1,"StrikePrice":"332.5","Expiration":"2021-12-17T00:00:00Z","OptionType":"Call","AssetType":"StockOption"}]}
+{"StreamStatus":"EndSnapshot"}
+{"Ask":"9","Bid":"8","Side":"Call","Legs":[{"Symbol":"MSFT 211217C300","Ratio":1,"StrikePrice":"300","Expiration":"2021-12-17T00:00:00Z","OptionType":"Call","AssetType":"StockOption"}]}

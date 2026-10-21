@@ -1,0 +1,28 @@
+{
+  "Symbols": [
+    {
+      "AssetType": "STOCK",
+      "Country": "United States",
+      "Currency": "USD",
+      "Description": "Microsoft Corp",
+      "Exchange": "NASDAQ",
+      "Symbol": "MSFT",
+      "Root": "MSFT",
+      "PriceFormat": {
+        "Format": "Decimal",
+        "Decimals": "2",
+        "IncrementStyle": "Simple",
+        "Increment": "0.01",
+        "PointValue": "1"
+      },
+      "QuantityFormat": {
+        "Format": "Decimal",
+        "Decimals": "0",
+        "IncrementStyle": "Simple",
+        "Increment": "1",
+        "MinimumTradeQuantity": "1"
+      }
+    }
+  ],
+  "Errors": []
+}
