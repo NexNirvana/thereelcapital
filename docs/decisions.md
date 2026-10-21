@@ -35,6 +35,7 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | D23 | IBM Plex Mono 400/500/600, self-hosted | — |
 | D24 | Full admin panel in the pilot | — |
 | D25 | Better Auth. **No email** (owner, 2026-10-21): the admin shares a single-use activation link; emails are identifiers only and are not verified | — |
+| D26 | Keep Cloudflare Web Analytics (owner, 2026-10-21): Cloudflare injects the `static.cloudflareinsights.com` beacon into production pages. It is cookieless and the only off-origin request; the app itself loads nothing from other origins, and local and e2e runs make no external requests | — |
 
 ### Delegated decisions of 2026-10-21
 

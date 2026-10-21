@@ -48,6 +48,7 @@ Recovery codes and activation tokens are high-entropy random strings stored as H
 - Every server route and action resolves the user from the session and checks the role. Client-supplied user ids are ignored.
 - Disabling a client = `banUser` (it deletes sessions and blocks new ones). It does not touch broker orders.
 - Logout or browser close does not affect protections; they live in the DO or at the broker.
+- Pages load nothing from other origins except the Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`), injected at the edge in production only (D26 in [decisions.md](decisions.md)). A future Content-Security-Policy must allow that script and its reporting endpoint.
 
 ## Secrets
 
