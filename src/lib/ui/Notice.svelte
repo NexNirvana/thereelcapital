@@ -18,6 +18,7 @@
   .notice {
     padding: 1rem;
     border: 1px solid var(--rule-strong);
+    overflow-wrap: anywhere;
   }
   p {
     margin: 0.25rem 0 0;
