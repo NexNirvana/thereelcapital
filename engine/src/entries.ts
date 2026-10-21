@@ -9,7 +9,6 @@
 //   3. mark SENT, then the single broker call (never retried)
 //   4. a synchronous write of the outcome: ACKNOWLEDGED, REJECTED (releases) or UNKNOWN (holds)
 
-import { Effect } from "effect";
 import { sessionDate } from "#lib/domain/calendar.ts";
 import { entryBlock } from "#lib/domain/connection.ts";
 import {
@@ -22,7 +21,7 @@ import {
 } from "#lib/domain/guards.ts";
 import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/domain/sizing.ts";
 import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./broker/adapter.ts";
-import type { BrokerError } from "./broker/errors.ts";
+import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { writeEvent } from "./events.ts";
 import { reconciliationPending } from "./refresh.ts";
@@ -116,16 +115,6 @@ function log(
   data?: Record<string, unknown>,
 ): void {
   writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
-
-type Attempt<A> =
-  { readonly ok: true; readonly value: A } | { readonly ok: false; readonly error: BrokerError };
-
-async function attempt<A>(effect: Effect.Effect<A, BrokerError>): Promise<Attempt<A>> {
-  const result = await Effect.runPromise(Effect.result(effect));
-  return result._tag === "Success"
-    ? { ok: true, value: result.success }
-    : { ok: false, error: result.failure };
 }
 
 function newIntentId(): string {

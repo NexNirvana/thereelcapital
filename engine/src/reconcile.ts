@@ -125,6 +125,13 @@ export function reconcile(
     const created = createPositions(ctx, snapshot, protection);
     adoptPositions(ctx, snapshot, protection);
     syncPositions(ctx, snapshot, created);
+    // docs/order-lifecycle.md#degraded-states: an UNKNOWN intent on a position makes its protection
+    // unverified until the intent is resolved.
+    ctx.sql.exec(
+      `UPDATE positions SET protection_state = 'unverified'
+        WHERE status != 'CLOSED'
+          AND id IN (SELECT position_id FROM intents WHERE state = 'UNKNOWN' AND position_id IS NOT NULL)`,
+    );
 
     const unknownLeft = ctx.sql
       .exec<{ n: number }>(

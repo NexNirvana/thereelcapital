@@ -7,10 +7,15 @@ import {
   type ConnectionContext,
   type ConnectionView,
 } from "./connection.ts";
-import { REFRESH_REQUEST_RETRY_DELAY_MS, REFRESH_RETRY_DELAY_MS } from "#lib/domain/config.ts";
+import {
+  REFRESH_REQUEST_RETRY_DELAY_MS,
+  REFRESH_RETRY_DELAY_MS,
+  SYNC_INTERVAL_MS,
+} from "#lib/domain/config.ts";
 import { createCipher, CredentialsKeyError } from "./crypto.ts";
 import { TokenRefresher } from "./refresh.ts";
 import { AlarmScheduler, type AlarmTask } from "./scheduler.ts";
+import { runSync, syncWanted, type SyncContext, type SyncResult } from "./sync.ts";
 import { resolveBroker } from "./broker/provider.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
 import { engineNow } from "./clock.ts";
@@ -52,12 +57,18 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
   #broker: BrokerAdapterShape | null = null;
   readonly #alarms: AlarmScheduler;
+  /** A pass already running is shared, so two never apply snapshots out of order. */
+  #syncing: Promise<SyncResult> | null = null;
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
     this.#alarms = new AlarmScheduler(ctx.storage);
     // Built before the first request is served, so every RPC sees the full schema.
-    void ctx.blockConcurrencyWhile(async () => migrate(ctx.storage));
+    void ctx.blockConcurrencyWhile(async () => {
+      migrate(ctx.storage);
+      // The Durable Object (re)started: reconcile at once if anything is open or pending.
+      if (syncWanted(ctx.storage)) await this.#alarms.scheduleNoLater("sync", Date.now());
+    });
   }
 
   ping(): string {
@@ -71,7 +82,26 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** Reserves, persists the intent, then places the MARKET order once. */
   sendEntry(input: unknown): Promise<EngineResult<SendEntryResult>> {
-    return this.enterWithBroker("sendEntry", SendEntryArgs, input, sendEntry);
+    return this.enterWithBroker("sendEntry", SendEntryArgs, input, async (ctx, args) => {
+      const result = await sendEntry(ctx, args);
+      // A placed entry is something to watch: start the loop if it is not running.
+      if (result.ok && result.value.status === "PLACED") {
+        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+      }
+      return result;
+    });
+  }
+
+  /** Reads the broker now and reconciles (a client opened the app). Safe to call at any time. */
+  sync(input: unknown): Promise<EngineResult<{ reconciled: boolean }>> {
+    return this.enterWithBroker("sync", ModeOnlyArgs, input, async (ctx) => {
+      const result = await this.syncOnce(ctx);
+      // Work this pass found or left keeps the loop going even if it had stopped.
+      if (result.nextInMs !== null) {
+        await this.#alarms.scheduleNoLater("sync", Date.now() + result.nextInMs);
+      }
+      return success({ reconciled: result.reconciled });
+    });
   }
 
   /** The counts behind «x/2 posiciones · y/3 entradas hoy». Read-only. */
@@ -154,7 +184,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       input,
       async (ctx, args) => {
         const result = await completeConnection(ctx, args);
-        if (result.ok) await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
+        if (result.ok) {
+          await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
+          // Orders may have moved while we were not connected: reconcile before anything else.
+          // One tick from now, so the first read does not race the connection settling.
+          await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+        }
         return result;
       },
     );
@@ -195,9 +230,25 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         }
         return;
       }
-      case "sync":
+      case "sync": {
+        const ctx = this.connectionContext();
+        const broker = ctx === null ? null : this.brokerFor(ctx);
+        if (ctx === null || broker === null) return;
+        const result = await this.syncOnce({ ...ctx, broker });
+        await this.#alarms.schedule(
+          "sync",
+          result.nextInMs === null ? null : Date.now() + result.nextInMs,
+        );
         return;
+      }
     }
+  }
+
+  private syncOnce(ctx: SyncContext): Promise<SyncResult> {
+    this.#syncing ??= runSync(ctx).finally(() => {
+      this.#syncing = null;
+    });
+    return this.#syncing;
   }
 
   /** Revokes the grant at TradeStation and deletes the stored credentials. */
@@ -206,7 +257,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const result = success(await disconnect(ctx));
       // forget() ran synchronously inside disconnect and a reconnect would have seeded a token, so
       // no token means no connection needs the alarm.
-      if (ctx.tokens.nextRefreshAt() === null) await this.#alarms.schedule("refresh", null);
+      if (ctx.tokens.nextRefreshAt() === null) {
+        await this.#alarms.schedule("refresh", null);
+        // Nothing to read with, so nothing to sync until a reconnect.
+        await this.#alarms.schedule("sync", null);
+      }
       return result;
     });
   }
@@ -291,28 +346,31 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   ): Promise<EngineResult<T>> {
     const decoded = this.enter(method, schema, input, (args) => success(args));
     if (!decoded.ok) return decoded;
-    // The Durable Object is named after the session user (engineFor); that name is the client id.
-    const userId = this.ctx.id.name;
-    const tokens = this.tokensFor();
-    if (userId === undefined || tokens === null) return failure("INVALID_INPUT");
+    const context = this.connectionContext();
+    if (context === null) return failure("INVALID_INPUT");
     try {
-      return await run(
-        {
-          sql: this.ctx.storage.sql,
-          storage: this.ctx.storage,
-          db: this.env.DB,
-          userId,
-          now: engineNow(this.env),
-          cipher: () => createCipher(this.env.CREDENTIALS_KEY),
-          tokens,
-        },
-        decoded.value,
-      );
+      return await run(context, decoded.value);
     } catch (error) {
       if (!(error instanceof CredentialsKeyError)) throw error;
       this.log("error", "SIM", "rpc.credentials_unavailable", method);
       return failure("CREDENTIALS_UNAVAILABLE");
     }
+  }
+
+  /** The Durable Object is named after the session user (engineFor); that name is the client id. */
+  private connectionContext(): ConnectionContext | null {
+    const userId = this.ctx.id.name;
+    const tokens = this.tokensFor();
+    if (userId === undefined || tokens === null) return null;
+    return {
+      sql: this.ctx.storage.sql,
+      storage: this.ctx.storage,
+      db: this.env.DB,
+      userId,
+      now: engineNow(this.env),
+      cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+      tokens,
+    };
   }
 
   /** One refresher per Durable Object, so the client never has two refreshes in flight. */
