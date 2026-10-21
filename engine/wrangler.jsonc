@@ -13,6 +13,9 @@
       "database_id": "26fb05ba-4782-4ea5-babc-549452dd7c0a",
     },
   ],
+  // Which broker the engine talks to. "tradestation" is TradeStation SIM; "local-sim" is honoured only
+  // when ENVIRONMENT is "development" or "test" (broker/select.ts). Local runs override in .dev.vars.
+  "vars": { "BROKER": "tradestation", "ENVIRONMENT": "production" },
   "durable_objects": {
     "bindings": [{ "name": "COORDINATOR", "class_name": "ClientCoordinator" }],
   },

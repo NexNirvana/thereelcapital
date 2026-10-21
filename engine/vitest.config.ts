@@ -13,6 +13,9 @@ export default defineConfig({
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,
+            // The only place the local simulation is switched on (broker/select.ts).
+            BROKER: "local-sim",
+            ENVIRONMENT: "test",
             CREDENTIALS_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
           },
         },
@@ -20,6 +23,9 @@ export default defineConfig({
     }),
   ],
   test: {
+    // market-calendar is CommonJS and requires luxon; the pool's module shim loses luxon's exports
+    // unless both are pre-bundled.
+    deps: { optimizer: { ssr: { enabled: true, include: ["market-calendar", "luxon"] } } },
     include: ["engine/test/**/*.test.ts"],
     setupFiles: ["./engine/test/apply-migrations.ts"],
   },
