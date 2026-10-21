@@ -1,26 +1,12 @@
 import { redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
-import { Schema } from "effect";
 import { blockMessage, connectionBlockCode } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
+import { ASSET_TYPE, EntryQuery, SYMBOL } from "#lib/server/entry-query.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
-
-// Everything the browser may say about an entry: which tab, which account and which instrument.
-// SIZE, quantity and price are not inputs: the engine reads SIZE from the client's settings and the
-// ask from TradeStation (CLAUDE.md, never-break rule 3), and unknown fields are rejected.
-const Query = Schema.Struct({
-  tipo: Schema.optionalKey(Schema.Literals(["acciones", "opciones"])),
-  cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
-  simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
-});
-
-/** Equity tickers and option symbols ("MSFT 261120C400"): letters, digits, space, dot, dash, slash. */
-const SYMBOL = /^[A-Z0-9][A-Z0-9 ./-]*$/;
-
-const ASSET_TYPE = { acciones: "equity", opciones: "option" } as const;
 
 export const load: PageServerLoad = async (event) => {
   if (!event.locals.user) redirect(303, resolve("/acceso"));
@@ -28,7 +14,7 @@ export const load: PageServerLoad = async (event) => {
   // Quotes and accounts of one client: never cached by a shared proxy.
   event.setHeaders({ "cache-control": "no-store" });
 
-  const query = decode(Query, Object.fromEntries(event.url.searchParams));
+  const query = decode(EntryQuery, Object.fromEntries(event.url.searchParams));
   const tipo = query.tipo ?? "acciones";
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
@@ -91,7 +77,7 @@ export const load: PageServerLoad = async (event) => {
   if (prepared.value.status === "BLOCKED") {
     return { ...shown, preview: null, blocked: blockMessage(prepared.value.reasons) };
   }
-  // The intent id stays server-side: the review step asks for its own preview (#26).
+  // The intent id stays server-side: the review step (/operar/revisar) asks for its own preview.
   const { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType } = prepared.value;
   return {
     ...shown,
