@@ -6,3 +6,7 @@ APP_ORIGIN=http://localhost:8787
 # engine Worker: put it in engine/.dev.vars (git-ignored), not here.
 # AES-GCM key for broker credentials: base64 of 32 random bytes. Generate: openssl rand -base64 32
 # CREDENTIALS_KEY=
+# engine/.dev.vars only: run the engine against the local simulation instead of TradeStation SIM.
+# Honoured only together with ENVIRONMENT=development (or test); production ignores and refuses it.
+# BROKER=local-sim
+# ENVIRONMENT=development
