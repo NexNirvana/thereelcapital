@@ -3,9 +3,21 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 const accountId = "SIM123";
-const calls = [
+const entryCalls = [
   ["prepareEntry", { mode: "SIM", accountId, symbol: "AAPL", assetType: "equity" }],
-  ["sendEntry", { mode: "SIM", intentId: "i-1" }],
+  [
+    "sendEntry",
+    {
+      mode: "SIM",
+      accountId,
+      symbol: "AAPL",
+      assetType: "equity",
+      intentId: "A".repeat(22),
+      confirmedQty: 1,
+    },
+  ],
+] as const;
+const calls = [
   ["exit", { mode: "SIM", positionId: "p-1", step: 0 }],
   ["exit", { mode: "SIM", positionId: "p-1", step: "ALL_OUT" }],
   ["cancel", { mode: "SIM", intentId: "i-1" }],
@@ -19,7 +31,11 @@ const reads = [
   "completeConnection",
   "disconnect",
 ] as const;
-const allMethods = [...calls.map(([method]) => method), ...reads] as const;
+const allMethods = [
+  ...entryCalls.map(([method]) => method),
+  ...calls.map(([method]) => method),
+  ...reads,
+] as const;
 
 function stubFor(name: string) {
   return env.COORDINATOR.getByName(name);
@@ -40,6 +56,7 @@ describe("ClientCoordinator RPC surface", () => {
   });
 
   it.each([
+    ...entryCalls.map(([method, args]) => [method, args] as const),
     ...calls.map(([method, args]) => [method, args] as const),
     ...reads.map((m) => [m, {}] as const),
   ])("%s rejects REAL before doing anything", async (method, args) => {

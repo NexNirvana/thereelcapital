@@ -36,6 +36,17 @@ Preparing the form (choosing an instrument, seeing the computed quantity) create
    An exit never asks for more than `available`. If protection fires while an exit is pending, it sells only `available`.
 5. A position is CLOSED and frees its slot only when the broker reports zero remaining.
 
+## Entries
+
+`prepareEntry` and `sendEntry` (`engine/src/entries.ts`) implement the entry path. The browser names the account and instrument only: SIZE is read from `client_settings`, the quantity is [domain-rules.md §1](domain-rules.md#1-entry-sizing) over the broker's fresh ask and symbol details, and a `confirmedQty` from the client is compared with the server's and never used.
+
+1. `prepareEntry`: connection and reconciliation status, SIZE, symbol details, a fresh quote, `computeEntryQty`, `checkOrder`, then the daily and slot limits as information. No intent, no reservation. It returns a new `intentId` (16 random bytes, base64url, 22 characters, the `OrderConfirmID` limit).
+2. `sendEntry`: the same checks again. A different quantity returns `RECONFIRM` and reserves nothing. Otherwise **one synchronous transaction** re-checks reconciliation, the guards and both limits, increments `entry_counters.reserved` and inserts the intent as ARMED with `size_applied`, `quote_json` and `point_value`. The slot is derived from the intent (architecture.md#data-model), so it needs no counter.
+3. The intent is set to SENT, then `placeOrder` is called once. A repeat of the same `intentId` (even concurrent) finds the intent and returns its state without calling the broker; the same id for another account or symbol is `INVALID_INPUT`.
+4. Outcome: an `OrderID` makes it ACKNOWLEDGED. `Rejected`, `AuthExpired` and `RateLimited` mean the broker did not take the order: REJECTED, and the daily reservation is released in the same transaction as the state change (the slot frees with the state). `Timeout`, `Unknown` or any unexpected failure make it UNKNOWN with both reservations held until reconciliation (#23).
+
+Entries are refused (nothing written) while the connection is unusable, a reconciliation is pending, outside the regular session, or when a limit is reached. Limits never apply to exits or cancels.
+
 ## Reconciliation
 
 When: a client opens the app, reconnects TradeStation, the DO starts, any intent is UNKNOWN, and on every sync-loop tick while something is open.
