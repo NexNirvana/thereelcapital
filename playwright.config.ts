@@ -10,7 +10,7 @@ export default defineConfig({
   webServer: {
     // The secret is a throwaway test value, not a credential; CI has no .dev.vars.
     command:
-      "bun run dev --port 8790 --var BETTER_AUTH_SECRET:e2e-only-secret-0123456789-0123456789",
+      "bun run dev --port 8790 --var BETTER_AUTH_SECRET:e2e-only-secret-0123456789-0123456789 --var APP_ORIGIN:http://localhost:8790",
     url: "http://localhost:8790",
     reuseExistingServer: false,
     timeout: 120_000,

@@ -1,5 +1,7 @@
 # Copy to .dev.vars (git-ignored) and fill in. Names only; never commit values.
 # web Worker
 BETTER_AUTH_SECRET=
+# Overrides the production origin in wrangler.jsonc; passkeys are bound to it
+APP_ORIGIN=http://localhost:8787
 # engine Worker
 CREDENTIALS_KEY=
