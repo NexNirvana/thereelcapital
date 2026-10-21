@@ -12,3 +12,15 @@ export const DEFAULT_STOP_PCT = 30;
 /** Share of the original quantity that must be sold (confirmed) to unlock trailing. */
 export const TRAILING_UNLOCK_PCT_BOUNDS = { min: 30, max: 90 } as const;
 export const DEFAULT_TRAILING_UNLOCK_PCT = 70;
+
+/** Recovery codes issued per set (issue #14). */
+export const RECOVERY_CODE_COUNT = 10;
+
+/** How long an enrollment session lasts (docs/auth-and-security.md#flows). */
+export const ENROLLMENT_SESSION_MINUTES = 15;
+
+/**
+ * Redeeming a recovery code, per client IP. Not in the docs yet: a provisional value kept here
+ * until the owner decides. Codes carry about 124 bits of entropy, so this is defense in depth.
+ */
+export const RECOVERY_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;

@@ -13,6 +13,8 @@ declare global {
     interface Locals {
       session: AuthSession["session"] | null;
       user: AuthSession["user"] | null;
+      // Set instead of session/user while the request carries a live enrollment-only session.
+      enrollment: { userId: string } | null;
     }
   }
 }
