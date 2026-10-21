@@ -77,7 +77,7 @@
     </div>
     <a class="back" href={resolve("/acceso")}>Volver al acceso</a>
   {:else}
-    <EnrollmentSteps way="recovery" onlost={startOver} onfinish={finish} />
+    <EnrollmentSteps way="recovery" resumed={data.enrolling} onlost={startOver} onfinish={finish} />
   {/if}
 </AccessShell>
 
