@@ -12,6 +12,7 @@
     "build": "vite build",
     "types": "wrangler types -c wrangler.jsonc -c engine/wrangler.jsonc && wrangler types -c engine/wrangler.jsonc engine/worker-configuration.d.ts --env-interface EngineEnv --include-runtime=false",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "types:check": "wrangler types --check -c wrangler.jsonc -c engine/wrangler.jsonc && wrangler types --check -c engine/wrangler.jsonc engine/worker-configuration.d.ts --env-interface EngineEnv --include-runtime=false",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "test": "bun run test:unit && bun run test:engine && bun run test:e2e",
