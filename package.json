@@ -8,7 +8,8 @@
   },
   "packageManager": "bun@1.4.2",
   "scripts": {
-    "dev": "vite build && wrangler d1 migrations apply DB --local && wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc",
+    "dev:build": "vite build && wrangler d1 migrations apply DB --local",
+    "dev": "bun run dev:build && wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc --local-upstream localhost:8787",
     "build": "vite build",
     "types": "wrangler types -c wrangler.jsonc -c engine/wrangler.jsonc && wrangler types -c engine/wrangler.jsonc engine/worker-configuration.d.ts --env-interface EngineEnv --include-runtime=false",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
