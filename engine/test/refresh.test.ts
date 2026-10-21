@@ -254,6 +254,46 @@ describe("rotation", () => {
   });
 });
 
+describe("an unsaved rotated token", () => {
+  it("is kept encrypted in Durable Object storage and recovered by a new instance after eviction", async () => {
+    const client = await newClient();
+    respond = () => json({ access_token: ACCESS, expires_in: 1200, refresh_token: NEW_REFRESH });
+    await withRefresher(client, async (_tokens, _time, deps) => {
+      const realPrepare = env.DB.prepare.bind(env.DB);
+      const down = new Proxy(env.DB, {
+        get: (target, prop) =>
+          prop === "prepare"
+            ? (sql: string) => {
+                if (sql.includes("UPDATE broker_connection")) throw new Error("d1 down");
+                return realPrepare(sql);
+              }
+            : Reflect.get(target, prop),
+      });
+      const options = {
+        ...deps,
+        cipher: () => createCipher(env.CREDENTIALS_KEY),
+        clock: () => T0,
+        retryDelayMs: 0,
+      };
+      await new TokenRefresher({ ...options, db: down }).refresh();
+      expect(await refreshTokenOf(client)).toBe(OLD_REFRESH);
+
+      const kept = JSON.stringify([...deps.storage.kv.list()]);
+      expect(kept).toContain("unsaved_refresh_token");
+      expect(kept).not.toContain(NEW_REFRESH);
+
+      // A new instance has no memory of the failed write; it reads the token from storage.
+      respond = () => json({ access_token: ACCESS, expires_in: 1200 });
+      await new TokenRefresher({ ...options, db: env.DB }).refresh();
+      expect(bodies[1]?.get("refresh_token")).toBe(NEW_REFRESH);
+      expect(await refreshTokenOf(client)).toBe(NEW_REFRESH);
+      expect([...deps.storage.kv.list()].some(([key]) => key === "unsaved_refresh_token")).toBe(
+        false,
+      );
+    });
+  });
+});
+
 describe("failures", () => {
   async function seedPosition(client: Client) {
     await runInDurableObject(client.stub, (_i, state) =>
