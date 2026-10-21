@@ -23,8 +23,8 @@ export const RECOVERY_CODE_COUNT = 10;
 export const ENROLLMENT_SESSION_MINUTES = 15;
 
 /**
- * Redeeming a recovery code, per client IP. Not in the docs yet: a provisional value kept here
- * until the owner decides. Codes carry about 124 bits of entropy, so this is defense in depth.
+ * Redeeming a recovery code, per client IP: 5 attempts per 10 minutes (decision D28). Codes
+ * carry about 124 bits of entropy, so this is defense in depth.
  */
 export const RECOVERY_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
 
@@ -33,7 +33,7 @@ export const ACTIVATION_LINK_LIFETIME_HOURS = 72;
 export const ACTIVATION_LINK_LIFETIME_MS = ACTIVATION_LINK_LIFETIME_HOURS * 60 * 60 * 1000;
 
 /**
- * Opening an activation link, per client IP. Provisional, like the recovery limit above: the
- * tokens carry 256 bits of entropy, so this is defense in depth (docs/open-questions.md).
+ * Opening an activation link, per client IP. 5 attempts per 10 minutes (decision D28): the
+ * tokens carry 256 bits of entropy, so this is defense in depth.
  */
 export const ACTIVATION_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
