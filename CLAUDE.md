@@ -15,7 +15,19 @@ Stack: SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers, wi
 
 ## Commands
 
-Not scaffolded yet. The scaffolding issue records the real commands here (install, dev, check, test, migrate, deploy).
+Bun runs the scripts; the CLIs behind them (Vite, Wrangler, svelte-check, ESLint, Prettier) run on Node, never with `--bun`.
+
+```sh
+bun install            # also sets core.hooksPath to .githooks
+bun run dev            # build, then serve both Workers: wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc (http://localhost:8787)
+bun run build          # vite build (web Worker into .svelte-kit/cloudflare)
+bun run check          # svelte-kit sync + svelte-check (strict TypeScript)
+bun run lint           # prettier --check + eslint
+bun run format         # prettier --write
+bun run types          # regenerate worker-configuration.d.ts for both Workers after editing a wrangler.jsonc
+```
+
+Test, migrate and deploy commands are added by the issues that introduce them. Local secrets go in the git-ignored `.dev.vars` (names in `.dev.vars.example`). The D1 `database_id` in both `wrangler.jsonc` files is a local-only placeholder.
 
 ## Read first
 
