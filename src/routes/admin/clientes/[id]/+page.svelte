@@ -25,8 +25,10 @@
     reactivate: "Cliente reactivado.",
     revokeSession: "Sesión cerrada.",
     revokeAllSessions: "Sesiones cerradas.",
+    updateSettings: "Configuración guardada.",
   };
 
+  const usd = new Intl.NumberFormat("en-US"); // docs/design-system.md#formats: US$20,000
   const when = new Intl.DateTimeFormat("es", {
     day: "numeric",
     month: "short",
@@ -231,8 +233,84 @@
 
 <section aria-labelledby="settings">
   <h2 id="settings">Configuración</h2>
-  <!-- TODO(#34): SIZE, stop %, unlock % and the read-only limits. -->
-  <p class="hint">Disponible próximamente.</p>
+  {#if client.settings === null}
+    <p class="hint">Este cliente no tiene configuración guardada.</p>
+  {:else}
+    <p class="hint">
+      Los cambios valen solo para nuevas entradas y posiciones nuevas. Las posiciones abiertas
+      conservan los valores con los que se abrieron.
+    </p>
+    <form method="POST" action="?/updateSettings" use:enhance={submit("updateSettings")}>
+      <div class="field">
+        <label for="sizeUsd">SIZE por entrada (USD)</label>
+        <input
+          id="sizeUsd"
+          name="sizeUsd"
+          type="number"
+          inputmode="numeric"
+          min={client.settings.sizeUsd}
+          step="1"
+          required
+          aria-describedby="sizeUsd-hint"
+          value={client.settings.sizeUsd}
+        />
+        <span id="sizeUsd-hint" class="hint">
+          Actual US${usd.format(client.settings.sizeUsd)}. Solo puede aumentar; solo nuevas
+          entradas.
+        </span>
+      </div>
+      <div class="field">
+        <label for="stopPct">Stop inicial (%)</label>
+        <input
+          id="stopPct"
+          name="stopPct"
+          type="number"
+          inputmode="numeric"
+          min={client.bounds.stopPct.min}
+          max={client.bounds.stopPct.max}
+          step="1"
+          required
+          aria-describedby="stopPct-hint"
+          value={client.settings.stopPct}
+        />
+        <span id="stopPct-hint" class="hint">
+          Entre {client.bounds.stopPct.min} y {client.bounds.stopPct.max}. Debajo del precio
+          promedio de compra; solo posiciones nuevas.
+        </span>
+      </div>
+      <div class="field">
+        <label for="unlockPct">Desbloqueo del trailing (%)</label>
+        <input
+          id="unlockPct"
+          name="unlockPct"
+          type="number"
+          inputmode="numeric"
+          min={client.bounds.unlockPct.min}
+          max={client.bounds.unlockPct.max}
+          step="1"
+          required
+          aria-describedby="unlockPct-hint"
+          value={client.settings.trailingUnlockPct}
+        />
+        <span id="unlockPct-hint" class="hint">
+          Entre {client.bounds.unlockPct.min} y {client.bounds.unlockPct.max}. Porcentaje de la
+          cantidad original vendido para activar el trailing; solo posiciones nuevas.
+        </span>
+      </div>
+      <Button type="submit" disabled={busy !== null}>
+        {busy === "updateSettings" ? "Guardando" : "Guardar configuración"}
+      </Button>
+    </form>
+  {/if}
+  <h3>Límites</h3>
+  <p class="hint">Fijos para todos los clientes; solo lectura.</p>
+  <dl>
+    <DefinitionRow label="Posiciones abiertas" value={`máx. ${client.limits.openPositions}`} />
+    <DefinitionRow
+      label="Entradas por día de mercado"
+      value={`máx. ${client.limits.dailyEntries}`}
+    />
+  </dl>
 </section>
 
 <section aria-labelledby="operations">
@@ -284,6 +362,26 @@
   }
   label {
     color: var(--text-muted);
+  }
+  h3 {
+    margin: 1.5rem 0 0.5rem;
+    font-size: 1rem;
+  }
+  .field {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .field input {
+    min-height: var(--target);
+    padding: 0 0.75rem;
+    border: 1px solid var(--rule-strong);
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+  }
+  .field .hint {
+    font-size: 0.875rem;
   }
   .check {
     display: flex;

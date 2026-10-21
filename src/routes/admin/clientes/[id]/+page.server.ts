@@ -10,6 +10,7 @@ import {
   revokeAllSessions,
   revokeLink,
   revokeSession,
+  updateClientSettings,
   type Issued,
   type Outcome,
 } from "#lib/server/admin-client-access.ts";
@@ -59,6 +60,12 @@ export const actions: Actions = {
     ),
   revokeAllSessions: async (event) =>
     respond(event, "revokeAllSessions", await revokeAllSessions(event, context(), event.params.id)),
+  updateSettings: async (event) =>
+    respond(
+      event,
+      "updateSettings",
+      await updateClientSettings(event, context(), event.params.id, await form(event)),
+    ),
   recover: async (event) =>
     respond(
       event,
