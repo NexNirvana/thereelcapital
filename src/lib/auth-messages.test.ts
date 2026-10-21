@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   passkeyErrorMessage,
   passkeyErrors,
+  activationErrorMessage,
+  activationErrors,
   enrollmentLost,
   finishEnrollmentErrorMessage,
   passkeyRegistrationErrorMessage,
@@ -62,5 +64,18 @@ describe("finishEnrollmentErrorMessage", () => {
 
   it("never reads an unknown failure as a wrong code", () => {
     expect(finishEnrollmentErrorMessage("SOMETHING_INTERNAL")).toContain("terminar el registro");
+  });
+});
+
+describe("activationErrorMessage", () => {
+  it("answers every rejected link the same way and never echoes the failure", () => {
+    expect(activationErrorMessage("INVALID_ACTIVATION_LINK", 401)).toBe(
+      activationErrors.invalidLink.message,
+    );
+    expect(activationErrorMessage("SOMETHING_INTERNAL")).toBe(activationErrors.invalidLink.message);
+  });
+
+  it("tells a rate limit apart", () => {
+    expect(activationErrorMessage(undefined, 429)).toBe(recoveryErrors.tooManyAttempts.message);
   });
 });

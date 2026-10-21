@@ -44,7 +44,11 @@ export const handle: Handle = async ({ event, resolve }) => {
         { status: 403 },
       );
     }
-    if (!gate.expired && session) event.locals.enrollment = { userId: session.user.id };
+    if (!gate.expired && session)
+      event.locals.enrollment = {
+        userId: session.user.id,
+        invitationId: session.session.invitationId ?? null,
+      };
   }
 
   return svelteKitHandler({ auth, event, resolve, building });

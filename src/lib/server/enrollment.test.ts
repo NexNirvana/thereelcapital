@@ -17,6 +17,8 @@ describe("enrollment gate", () => {
     for (const path of [
       "/acceso",
       "/recuperacion",
+      "/activar/some-token",
+      "/api/auth/activation/redeem",
       "/api/auth/passkey/generate-register-options",
       "/api/auth/passkey/verify-registration",
       "/api/auth/enrollment/complete",
@@ -37,6 +39,12 @@ describe("enrollment gate", () => {
       "/api/auth/revoke-sessions",
       "/api/auth/update-user",
       "/api/auth/recovery/redeem/../passkey/list-user-passkeys",
+      "/api/auth/activation/redeem/extra",
+      "/api/auth/admin/create-user",
+      "/api/activar/some-token",
+      "/activar",
+      "/conexion",
+      "/posiciones",
     ]) {
       expect(enrollmentGate(live, path, now)).toMatchObject({ allowed: false });
     }
@@ -52,7 +60,12 @@ describe("enrollment gate", () => {
       allowed: true,
       expired: true,
     });
+    expect(enrollmentGate(stale, "/api/auth/activation/redeem", now)).toMatchObject({
+      allowed: true,
+      expired: true,
+    });
     expect(enrollmentGate(stale, "/recuperacion", now)).toMatchObject({ allowed: true });
+    expect(enrollmentGate(stale, "/activar/some-token", now)).toMatchObject({ allowed: true });
   });
 
   test("passkey sign-in stays possible, live or expired", () => {
