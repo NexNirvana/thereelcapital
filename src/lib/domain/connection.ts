@@ -18,7 +18,7 @@ export type ConnectionHealth =
 
 export function connectionHealth(args: {
   readonly stored: StoredConnectionState;
-  /** null means unknown or non-expiring. */
+  /** null means unknown or non-expiring (rows stored before the connect-time expiry). */
   readonly refreshExpiresAt: number | null;
   readonly now: number;
 }): ConnectionHealth {

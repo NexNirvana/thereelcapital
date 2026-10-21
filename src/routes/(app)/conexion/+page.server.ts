@@ -39,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
             health: view.health,
             entriesBlocked: view.entriesBlocked,
             accounts: view.accounts,
-            // null is "unknown or non-expiring" until a refresh shows the key's policy (#18).
+            // Connecting sets connect time + 24 h (conservative, #21); null only on rows stored before that.
             expiresAt: view.refreshExpiresAt === null ? null : expiry.format(view.refreshExpiresAt),
           }
         : { status: view.status },
