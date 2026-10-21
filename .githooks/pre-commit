@@ -41,9 +41,9 @@ git diff --cached --name-only -z --diff-filter=ACMR | xargs -0 -r sh -c '
   exit "$rc"
 ' sh "$max_bytes" || status=1
 
-added=$(git diff --cached -U0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' || true)
+added=$(git diff --cached -U0 --diff-filter=ACMR --output-indicator-new='>' | grep '^>' || true)
 
-if printf '%s\n' "$added" | grep -Eq '^\+(<<<<<<<|>>>>>>>)( |$)'; then
+if printf '%s\n' "$added" | grep -Eq '^>(<<<<<<<|>>>>>>>)( |$)'; then
   err "merge conflict markers in staged changes"
 fi
 
