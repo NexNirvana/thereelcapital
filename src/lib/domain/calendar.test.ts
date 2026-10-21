@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import {
-  COVERED_YEARS,
-  EARLY_CLOSES,
-  HOLIDAYS,
-  isRegularSession,
-  sessionDate,
-} from "./calendar";
+import { getCalendar } from "market-calendar";
+import { isRegularSession, sessionDate } from "./calendar";
+
+// NYSE's published calendar (https://www.nyse.com/markets/hours-calendars).
+// These fixtures check the library; they are not used by the app.
+const NYSE_HOLIDAYS = [
+  "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+  "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+  "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+  "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+];
+const NYSE_EARLY_CLOSES = ["2026-11-27", "2026-12-24", "2027-11-26"];
 
 const equity = { kind: "equity" };
 const option = { kind: "option" };
@@ -38,22 +43,15 @@ describe("isRegularSession", () => {
     expect(isRegularSession(equity, at("2026-06-13T15:00:00Z"))).toMatchObject({ open: false }); // Sat
     expect(isRegularSession(equity, at("2026-06-14T15:00:00Z"))).toMatchObject({ open: false }); // Sun
   });
-  test("closed on every 2026-2027 holiday", () => {
-    expect(HOLIDAYS.size).toBe(20);
-    for (const day of HOLIDAYS) {
-      const result = isRegularSession(equity, at(`${day}T17:00:00Z`)); // midday ET
-      expect(result.open).toBe(false);
-    }
-  });
-  test("holidays fall on weekdays", () => {
-    for (const day of HOLIDAYS) {
-      const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
-      expect(dow >= 1 && dow <= 5).toBe(true);
+  test("closed on every NYSE holiday in 2026 and 2027, for equities and options", () => {
+    for (const day of NYSE_HOLIDAYS) {
+      const noon = new Date(`${day}T12:00:00-05:00`);
+      expect(isRegularSession(equity, noon)).toEqual({ open: false, reason: "Market closed: no session today" });
+      expect(isRegularSession(option, noon).open).toBe(false);
     }
   });
   test("early closes end at 13:00 ET", () => {
-    expect(EARLY_CLOSES.size).toBe(3);
-    for (const day of EARLY_CLOSES) {
+    for (const day of NYSE_EARLY_CLOSES) {
       // Every early close is in November or December, so ET is EST (UTC-5).
       const inEt = (hhmm: string) => new Date(`${day}T${hhmm}:00-05:00`);
       expect(isRegularSession(equity, inEt("12:59"))).toEqual({ open: true });
@@ -88,9 +86,16 @@ describe("isRegularSession", () => {
   });
 });
 
-describe("table coverage", () => {
-  test("covers the current year (fails when the table must be extended)", () => {
-    const year = Number(sessionDate(new Date()).slice(0, 4));
-    expect(COVERED_YEARS).toContain(year);
+describe("market-calendar", () => {
+  test("matches the NYSE published holidays and early closes for 2026 and 2027", () => {
+    const nyse = getCalendar("NYSE");
+    const schedule = nyse.schedule("2026-01-01", "2027-12-31");
+    const tradingDays = new Set(schedule.map((s) => s.date.toISODate()));
+    const weekdays: string[] = [];
+    for (let d = new Date(Date.UTC(2026, 0, 1)); d.getUTCFullYear() < 2028; d.setUTCDate(d.getUTCDate() + 1)) {
+      if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) weekdays.push(d.toISOString().slice(0, 10));
+    }
+    expect(weekdays.filter((day) => !tradingDays.has(day))).toEqual(NYSE_HOLIDAYS);
+    expect(nyse.earlyCloses(schedule).map((s) => s.date.toISODate())).toEqual(NYSE_EARLY_CLOSES);
   });
 });

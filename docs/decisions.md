@@ -46,7 +46,7 @@ Still valid from the PDFs: explicit order states; idempotency; no blind retries;
 | T4 | **Polling via DO alarms**, no HTTP streams initially (except the chain, which is stream-only) | fewer moving parts (no chunk parsing or reconnect logic); polling fits the per-key limits; revisit after the SIM spike |
 | T5 | **`OrderConfirmID` = intent id** for idempotency | TradeStation uses it to deduplicate orders; there is no other client tag |
 | T6 | **No fills table** | TradeStation reports leg `ExecQuantity` and the average `FilledPrice`; there is no executions endpoint |
-| T7 | **Static NYSE calendar** in `src/lib/domain` | TradeStation has no calendar endpoint |
+| T7 | **`market-calendar`** (port of `pandas_market_calendars`, exact-pinned) for sessions, holidays and early closes; tests check it against NYSE's published dates | TradeStation has no calendar endpoint; a hand-kept date table goes stale. The port is young, so the pinned version and the fixture tests guard upgrades |
 | T8 | **App-owned hashed recovery codes** | Better Auth backup codes need TOTP 2FA and are encrypted, not hashed |
 | T9 | **Our own UV check** in the passkey `afterVerification` hooks | `@better-auth/passkey` hard-codes `requireUserVerification: false` |
 | T10 | **Email OTP only during onboarding** | Better Auth's email-OTP sign-in would otherwise bypass passkey-only sign-in |
