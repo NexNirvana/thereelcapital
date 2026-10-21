@@ -260,7 +260,7 @@ export async function getClientDetail<S extends AccessStatement>(
 }
 
 type Actor = Authenticated;
-type Context<S extends AccessStatement> = { db: AccessDb<S>; secret: string };
+type Context<S extends AccessStatement> = { db: AccessDb<S> };
 
 // Admin and a session under 10 minutes old are required (the first throws 401/403, the second
 // becomes a result the screen offers re-auth for); then the target must be a client.
@@ -303,14 +303,14 @@ export type Issued = Outcome<{ issued: IssuedLink }>;
 /** A new activation link; the previous one and its enrollment sessions stop working. */
 export function generateLink<L extends GuardLocals, S extends AccessStatement>(
   event: GuardEvent<L>,
-  { db, secret }: Context<S>,
+  { db }: Context<S>,
   targetId: string,
   now = Date.now(),
 ): Promise<Issued> {
   return guarded(event, db, targetId, now, async (actor, target) => {
     const blocker = linkBlocker(target);
     if (blocker) return refuse(blocker);
-    return { ok: true, issued: await regenerateActivationLink(db, secret, actor, target.id, now) };
+    return { ok: true, issued: await regenerateActivationLink(db, actor, target.id, now) };
   });
 }
 
@@ -466,7 +466,7 @@ const RecoveryForm = Schema.Struct({ verified: Schema.Literal("on") });
  */
 export function recoverClient<L extends GuardLocals, S extends AccessStatement>(
   event: GuardEvent<L>,
-  { db, secret }: Context<S>,
+  { db }: Context<S>,
   targetId: string,
   form: unknown,
   now = Date.now(),
@@ -479,7 +479,7 @@ export function recoverClient<L extends GuardLocals, S extends AccessStatement>(
     ) {
       return refuse(accessErrors.unconfirmed);
     }
-    const link = await newInvitation(secret, now);
+    const link = await newInvitation(now);
     await db.batch([
       // First, so the counts are those of the state being replaced.
       db

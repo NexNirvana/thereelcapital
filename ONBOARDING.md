@@ -277,6 +277,7 @@ Respuestas del usuario a las preguntas abiertas de `docs/open-questions.md`. Las
 - **Navegación móvil (decidido el 21 de octubre de 2026):** tres pestañas (Operar, Posiciones, Historial), como en los diseños; Conexión se abre desde el estado de conexión de la barra superior.
 - **Opciones sobre ETF (decidido el 21 de octubre de 2026):** se admiten, pero la sesión regular de toda opción termina a las 16:00 ET; la ventana 16:00–16:15 de las opciones sobre ETF no se ofrece.
 - **Recuperación de un administrador (decidido el 21 de octubre de 2026):** otro administrador lo recupera con la recuperación controlada (sesión reciente, auditada, nunca sobre su propia cuenta); el último administrador se recupera con `bun run admin:recover <email> --remote` desde la máquina del propietario.
+- **Hash de los enlaces de activación (decidido el 21 de octubre de 2026):** los enlaces se guardan como SHA-256 simple (no HMAC con el secreto de la aplicación), de modo que `admin:create` y `admin:recover` no necesitan el secreto en la máquina del propietario. Los códigos de recuperación conservan el HMAC con clave.
 - **Revisión técnica de la arquitectura propuesta:**
   - Un Durable Object **por cliente** (confirmado el 21 de octubre de 2026), en lugar de uno por cliente y modo. Cada registro, contador e identificador sigue separado por modo, y ese objeto es el único que se comunica con TradeStation para el cliente.
   - El Durable Object reside en un segundo Worker del mismo repositorio, porque el adaptador de SvelteKit no permite exportarlo.

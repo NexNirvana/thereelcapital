@@ -7,7 +7,7 @@ import {
   releaseRecoveryCode,
   replaceRecoveryCodes,
 } from "./recovery-codes.ts";
-import { hashToken } from "./token-hash.ts";
+import { hashActivationToken, hashToken } from "./token-hash.ts";
 import { sqliteD1 } from "./sqlite-d1.test.ts";
 
 const secret = crypto.randomUUID();
@@ -127,7 +127,7 @@ describe("redeemRecoveryCode", () => {
     expect(await redeemRecoveryCode(db, code ?? "", crypto.randomUUID())).toBeNull();
     db.sqlite.run("DELETE FROM recovery_codes");
     db.sqlite.run("INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('c', 'user-1', ?)", [
-      await hashToken("activation-link", normalizeRecoveryCode(code ?? ""), secret),
+      await hashActivationToken(normalizeRecoveryCode(code ?? "")),
     ]);
     expect(await redeemRecoveryCode(db, code ?? "", secret)).toBeNull();
   });

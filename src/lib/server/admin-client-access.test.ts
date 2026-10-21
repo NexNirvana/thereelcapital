@@ -16,7 +16,6 @@ import {
 import { guardErrors, type GuardLocals } from "./guards.ts";
 import { sqliteD1 } from "./sqlite-d1.test.ts";
 
-const secret = crypto.randomUUID();
 const now = Date.parse("2026-10-21T15:00:00Z");
 const day = 86_400_000;
 
@@ -65,7 +64,7 @@ function setup() {
       ]);
     }
   };
-  return { db, ctx: { db, secret }, user, session, passkey, codes };
+  return { db, ctx: { db }, user, session, passkey, codes };
 }
 
 const n = (db: ReturnType<typeof sqliteD1>, sql: string) =>
@@ -163,17 +162,15 @@ describe("activation link", () => {
     const s = setup();
     const first = await generateLink(admin(), s.ctx, "c1", now);
     if (!first.ok) throw new Error("expected a link");
-    const open = await findOpenInvitation(s.db, first.issued.token, secret, now);
+    const open = await findOpenInvitation(s.db, first.issued.token, now);
     expect(open?.userId).toBe("c1");
     s.session("enroll", "c1", open?.invitationId);
     s.session("other", "c1");
 
     const second = await generateLink(admin(), s.ctx, "c1", now + 1000);
     if (!second.ok) throw new Error("expected a link");
-    expect(await findOpenInvitation(s.db, first.issued.token, secret, now + 1000)).toBeNull();
-    expect((await findOpenInvitation(s.db, second.issued.token, secret, now + 1000))?.userId).toBe(
-      "c1",
-    );
+    expect(await findOpenInvitation(s.db, first.issued.token, now + 1000)).toBeNull();
+    expect((await findOpenInvitation(s.db, second.issued.token, now + 1000))?.userId).toBe("c1");
     expect(n(s.db, `"session" WHERE id = 'enroll'`)).toBe(0);
     expect(n(s.db, `"session" WHERE id = 'other'`)).toBe(1);
     const rows = audits(s.db, "activation_link.regenerate");
@@ -203,11 +200,11 @@ describe("activation link", () => {
     const s = setup();
     const issued = await generateLink(admin(), s.ctx, "c1", now);
     if (!issued.ok) throw new Error("expected a link");
-    const open = await findOpenInvitation(s.db, issued.issued.token, secret, now);
+    const open = await findOpenInvitation(s.db, issued.issued.token, now);
     s.session("enroll", "c1", open?.invitationId);
 
     expect(await revokeLink(admin(), s.ctx, "c1", now)).toEqual({ ok: true });
-    expect(await findOpenInvitation(s.db, issued.issued.token, secret, now)).toBeNull();
+    expect(await findOpenInvitation(s.db, issued.issued.token, now)).toBeNull();
     expect(n(s.db, `"session"`)).toBe(0);
     expect((await getClientDetail(s.db, "c1", now)).link.state).toBe("revoked");
     expect(audits(s.db, "activation_link.revoke")).toHaveLength(1);
@@ -340,7 +337,7 @@ describe("controlled recovery", () => {
 
     const result = await recoverClient(admin(), s.ctx, "c1", { verified: "on" }, now);
     if (!result.ok) throw new Error("expected recovery");
-    expect(await findOpenInvitation(s.db, result.issued.token, secret, now)).toMatchObject({
+    expect(await findOpenInvitation(s.db, result.issued.token, now)).toMatchObject({
       userId: "c1",
     });
     expect(n(s.db, `invitations WHERE id = 'old' AND revoked_at IS NOT NULL`)).toBe(1);

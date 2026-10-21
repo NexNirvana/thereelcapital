@@ -4,7 +4,6 @@ import { clientErrors, createClientFromForm, listClients } from "./admin-clients
 import { guardErrors, type GuardLocals } from "./guards.ts";
 import { sqliteD1 } from "./sqlite-d1.test.ts";
 
-const secret = crypto.randomUUID();
 const now = Date.parse("2026-10-21T15:00:00Z");
 const origin = "https://thereelcapital.com";
 
@@ -25,7 +24,7 @@ function setup() {
     );
     return { id: `u-${email}` };
   };
-  return { db, env: { db, secret, origin, createUser } };
+  return { db, env: { db, origin, createUser } };
 }
 
 const count = (db: ReturnType<typeof sqliteD1>, table: string) =>
@@ -86,7 +85,7 @@ describe("createClientFromForm", () => {
     expect(result.email).toBe("nuevo@example.com");
     const token = result.link.slice(`${origin}/activar/`.length);
     expect(result.link).toBe(`${origin}/activar/${token}`);
-    expect(await findOpenInvitation(db, token, secret, now)).not.toBeNull();
+    expect(await findOpenInvitation(db, token, now)).not.toBeNull();
     expect(db.sqlite.query("SELECT actor_id, action FROM audit_log").all()).toEqual([
       { actor_id: "admin-1", action: "client.create" },
     ]);

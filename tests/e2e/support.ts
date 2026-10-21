@@ -35,7 +35,7 @@ export async function seedPendingClient({
   const userId = randomUUID();
   const invitationId = randomUUID();
   const now = new Date().toISOString();
-  const link = await newInvitation(authSecret);
+  const link = await newInvitation();
   d1(
     `INSERT INTO "user" ("id","name","email","emailVerified","role","banned","createdAt","updatedAt")
      VALUES ('${userId}','Cliente','${userId}@example.com',0,'user',${banned ? 1 : 0},'${now}','${now}');

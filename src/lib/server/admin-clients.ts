@@ -73,7 +73,6 @@ const NewClientForm = Schema.Struct({
 
 export interface CreateClientEnv<S extends ActivationStatement> {
   db: ActivationDb<S> & ClientListDb;
-  secret: string;
   origin: string;
   createUser: (email: string) => Promise<{ id: string }>;
 }
@@ -114,7 +113,7 @@ export async function createClientFromForm<L extends GuardLocals, S extends Acti
   if (await emailTaken(env.db, email)) return { ok: false, error: clientErrors.emailTaken };
   try {
     const issued = await createClient(
-      { db: env.db, secret: env.secret, createUser: env.createUser },
+      { db: env.db, createUser: env.createUser },
       actor,
       email,
       now,

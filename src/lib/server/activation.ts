@@ -1,4 +1,4 @@
-// Activation links (docs/auth-and-security.md#flows). Only the HMAC of a token is stored, in
+// Activation links (docs/auth-and-security.md#flows). Only the SHA-256 of a token is stored, in
 // `invitations`; the plaintext exists once, in the response that shows it to the admin. Every
 // state change is one atomic statement (or batch) that rechecks the conditions it depends on, so
 // concurrent opens, registrations, regenerations and revocations cannot both win.
@@ -14,7 +14,7 @@ import { auditStatement, type AuditDb } from "./audit.ts";
 import type { Auth } from "./auth.ts";
 import { createEnrollmentSession, grantEnrollmentCookie } from "./enrollment-session.ts";
 import { newInvitation } from "./activation-link.ts";
-import { hashToken } from "./token-hash.ts";
+import { hashActivationToken } from "./token-hash.ts";
 
 // The slice of D1 used here; D1Database satisfies it and tests run it on SQLite.
 export interface ActivationStatement {
@@ -33,18 +33,17 @@ const openLink = `used_at IS NULL AND revoked_at IS NULL AND expires_at > ? AND 
 
 /**
  * The link behind `token` when it can still be used: unused, unexpired, not revoked and its
- * client not suspended. Looked up by hash, so no secret is compared in application code. A read
+ * client not suspended. Looked up by hash, so no token is compared in application code. A read
  * only; the link is spent when the passkey registers (`claimInvitation`).
  */
 export async function findOpenInvitation<S extends ActivationStatement>(
   db: ActivationDb<S>,
   token: string,
-  secret: string,
   now = Date.now(),
 ): Promise<{ invitationId: string; userId: string } | null> {
   const row = await db
     .prepare(`SELECT id, user_id FROM invitations WHERE token_hash = ? AND ${openLink}`)
-    .bind(await hashToken("activation-link", token, secret), now)
+    .bind(await hashActivationToken(token), now)
     .first();
   return typeof row?.id === "string" && typeof row.user_id === "string"
     ? { invitationId: row.id, userId: row.user_id }
@@ -59,11 +58,10 @@ export async function isLinkOfToken<S extends ActivationStatement>(
   db: ActivationDb<S>,
   invitationId: string,
   token: string,
-  secret: string,
 ): Promise<boolean> {
   const row = await db
     .prepare("SELECT 1 AS found FROM invitations WHERE id = ? AND token_hash = ?")
-    .bind(invitationId, await hashToken("activation-link", token, secret))
+    .bind(invitationId, await hashActivationToken(token))
     .first();
   return row !== null;
 }
@@ -188,7 +186,6 @@ export interface IssuedLink {
 
 export interface CreateClientDeps<S extends ActivationStatement> {
   db: ActivationDb<S>;
-  secret: string;
   /** `auth.api.createUser` without headers: a server-side call, no password, no public route. */
   createUser: (email: string) => Promise<{ id: string }>;
 }
@@ -207,13 +204,13 @@ export function createUserWith(auth: Auth): CreateClientDeps<ActivationStatement
  * `requireFreshSession`); no public route reaches it. No email is sent.
  */
 export async function createClient<S extends ActivationStatement>(
-  { db, secret, createUser }: CreateClientDeps<S>,
+  { db, createUser }: CreateClientDeps<S>,
   actor: Actor,
   email: string,
   now = Date.now(),
 ): Promise<IssuedLink & { userId: string }> {
   const { id: userId } = await createUser(email);
-  const link = await newInvitation(secret, now);
+  const link = await newInvitation(now);
   try {
     await db.batch([
       db
@@ -312,12 +309,11 @@ export async function revokeActivationLink<S extends ActivationStatement>(
 /** Replaces the client's open link with a new one; the old one and its sessions stop working. */
 export async function regenerateActivationLink<S extends ActivationStatement>(
   db: ActivationDb<S>,
-  secret: string,
   actor: Actor,
   userId: string,
   now = Date.now(),
 ): Promise<IssuedLink> {
-  const link = await newInvitation(secret, now);
+  const link = await newInvitation(now);
   await db.batch([
     ...revocationStatements(db, actor, userId, "activation_link.regenerate", now),
     insertInvitation(db, userId, link, actor),
