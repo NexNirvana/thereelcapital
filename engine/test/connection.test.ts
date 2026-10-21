@@ -288,7 +288,12 @@ describe("alarm", () => {
   it("refreshes ahead of expiry and arms the next one, or retries soon after a network error", async () => {
     const client = await newClient();
     await connect(client);
-    const run = () => runInDurableObject(client.stub, (instance) => instance.alarm());
+    // The alarm runs what is due, so make the renewal due now instead of waiting for its time.
+    const run = () =>
+      runInDurableObject(client.stub, async (instance, state) => {
+        state.storage.kv.put("alarm_due:refresh", Date.now());
+        await instance.alarm();
+      });
 
     await run();
     expect(tokenCalls()).toHaveLength(2); // the code exchange and the refresh

@@ -10,6 +10,7 @@ import {
 import { REFRESH_REQUEST_RETRY_DELAY_MS, REFRESH_RETRY_DELAY_MS } from "#lib/domain/config.ts";
 import { createCipher, CredentialsKeyError } from "./crypto.ts";
 import { TokenRefresher } from "./refresh.ts";
+import { AlarmScheduler, type AlarmTask } from "./scheduler.ts";
 import { resolveBroker } from "./broker/provider.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
 import { engineNow } from "./clock.ts";
@@ -50,9 +51,11 @@ type Row = Record<string, SqlStorageValue>;
 export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
   #broker: BrokerAdapterShape | null = null;
+  readonly #alarms: AlarmScheduler;
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
+    this.#alarms = new AlarmScheduler(ctx.storage);
     // Built before the first request is served, so every RPC sees the full schema.
     void ctx.blockConcurrencyWhile(async () => migrate(ctx.storage));
   }
@@ -157,15 +160,43 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     );
   }
 
-  /** Renews the access token ahead of its expiry, then arms the next renewal. */
+  /**
+   * The one alarm serves every scheduled job (scheduler.ts): each job that is due runs and
+   * reschedules itself, then the alarm is armed for the earliest remaining time.
+   */
   async alarm(): Promise<void> {
-    const tokens = this.tokensFor();
-    if (tokens === null) return;
-    const outcome = await tokens.refresh();
-    if (outcome.kind === "ready") await this.scheduleRefresh(tokens.nextRefreshAt());
-    // A refusal or a missing connection waits for a reconnect, which arms the alarm again.
-    else if (outcome.kind === "retryable") {
-      await this.scheduleRefresh(Date.now() + REFRESH_RETRY_DELAY_MS);
+    for (const task of this.#alarms.due(Date.now())) {
+      const scheduledFor = this.#alarms.dueAt(task);
+      try {
+        await this.runTask(task);
+      } catch {
+        // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
+        this.log("error", "SIM", "alarm.task_failed", task);
+        await this.#alarms.schedule(task, Date.now() + REFRESH_RETRY_DELAY_MS);
+        continue;
+      }
+      // A job that did not reschedule itself is finished; leaving it due would re-fire at once.
+      if (this.#alarms.dueAt(task) === scheduledFor) await this.#alarms.schedule(task, null);
+    }
+    await this.#alarms.arm();
+  }
+
+  /** Refresh renews the access token ahead of its expiry, then arms the next renewal. */
+  private async runTask(task: AlarmTask): Promise<void> {
+    switch (task) {
+      case "refresh": {
+        const tokens = this.tokensFor();
+        if (tokens === null) return;
+        const outcome = await tokens.refresh();
+        if (outcome.kind === "ready") await this.scheduleRefresh(tokens.nextRefreshAt());
+        // A refusal or a missing connection waits for a reconnect, which arms the alarm again.
+        else if (outcome.kind === "retryable") {
+          await this.scheduleRefresh(Date.now() + REFRESH_RETRY_DELAY_MS);
+        }
+        return;
+      }
+      case "sync":
+        return;
     }
   }
 
@@ -175,7 +206,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const result = success(await disconnect(ctx));
       // forget() ran synchronously inside disconnect and a reconnect would have seeded a token, so
       // no token means no connection needs the alarm.
-      if (ctx.tokens.nextRefreshAt() === null) await this.ctx.storage.deleteAlarm();
+      if (ctx.tokens.nextRefreshAt() === null) await this.#alarms.schedule("refresh", null);
       return result;
     });
   }
@@ -301,7 +332,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   private async scheduleRefresh(at: number | null): Promise<void> {
-    if (at !== null) await this.ctx.storage.setAlarm(Math.max(at, Date.now()));
+    if (at !== null) await this.#alarms.schedule("refresh", at);
   }
 
   private notImplemented(method: string): EngineResult<never> {
