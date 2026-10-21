@@ -1,0 +1,10 @@
+{
+  "extends": "$app/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    // Generated JS under .svelte-kit is not ours to check.
+    "checkJs": false,
+    "types": ["$app/types", "node", "bun"]
+  },
+  "include": ["src", "vite.config.ts"]
+}

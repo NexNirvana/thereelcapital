@@ -10,8 +10,7 @@ export type InstrumentKind = "equity" | "option";
 export type Instrument = { readonly kind: string };
 
 export type SessionCheck =
-  | { readonly open: true }
-  | { readonly open: false; readonly reason: string };
+  { readonly open: true } | { readonly open: false; readonly reason: string };
 
 /** The exchange calendar that defines each instrument kind's regular session. */
 const EXCHANGE_CALENDAR: Readonly<Record<InstrumentKind, string>> = {
@@ -44,7 +43,9 @@ export function isRegularSession(instrument: Instrument, now: Date): SessionChec
   if (session === undefined) return { open: false, reason: "Market closed: no session today" };
 
   const t = now.getTime();
-  if (t < session.market_open.toMillis()) return { open: false, reason: "Market closed: before the open" };
-  if (t >= session.market_close.toMillis()) return { open: false, reason: "Market closed: after the close" };
+  if (t < session.market_open.toMillis())
+    return { open: false, reason: "Market closed: before the open" };
+  if (t >= session.market_close.toMillis())
+    return { open: false, reason: "Market closed: after the close" };
   return { open: true };
 }

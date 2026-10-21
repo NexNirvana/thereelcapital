@@ -1,0 +1,4 @@
+[install]
+exact = true
+# Supply-chain guard: ignore versions published less than 7 days ago (seconds).
+minimumReleaseAge = 604800

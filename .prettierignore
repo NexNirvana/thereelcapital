@@ -1,0 +1,15 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+
+worker-configuration.d.ts
+# Docs, designs and reference material are not formatted by tooling
+*.md
+/designs/
+/references/
+/.claude/
+/.github/
+/.svelte-kit/

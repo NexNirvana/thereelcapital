@@ -21,7 +21,8 @@ export type RejectionReason =
   | "OUTSIDE_REGULAR_SESSION"
   | "POSITION_ALREADY_OPEN";
 
-export type GuardResult = { readonly ok: true } | { readonly ok: false; readonly reason: RejectionReason };
+export type GuardResult =
+  { readonly ok: true } | { readonly ok: false; readonly reason: RejectionReason };
 
 export type InstrumentRequest =
   | { readonly kind: "equity"; readonly symbol: string }
@@ -82,14 +83,16 @@ export function checkOrder(request: OrderRequest, context: OrderContext): GuardR
   const isClosing = request.tradeAction === actions.close;
   if (!isOpening && !isClosing) return reject("TRADE_ACTION_NOT_ALLOWED");
 
-  if (!Number.isSafeInteger(request.quantity) || request.quantity <= 0) return reject("QUANTITY_INVALID");
+  if (!Number.isSafeInteger(request.quantity) || request.quantity <= 0)
+    return reject("QUANTITY_INVALID");
 
   if (isClosing && request.quantity > context.available) return reject("SELL_EXCEEDS_AVAILABLE");
 
   if (!isRegularSession(instrument, context.now).open) return reject("OUTSIDE_REGULAR_SESSION");
 
   // Interim rule while additions are undefined (docs/domain-rules.md §9).
-  if (isOpening && context.openSymbols.includes(instrument.symbol)) return reject("POSITION_ALREADY_OPEN");
+  if (isOpening && context.openSymbols.includes(instrument.symbol))
+    return reject("POSITION_ALREADY_OPEN");
 
   return { ok: true };
 }

@@ -96,8 +96,12 @@ describe("checkOrder", () => {
       expect(rejection({ ...equityBuy, tradeAction: "SELL", quantity })).toBe("QUANTITY_INVALID");
       expect(rejection({ ...equityBuy, quantity })).toBe("QUANTITY_INVALID");
     }
-    expect(checkOrder({ ...equityBuy, quantity: Number.MAX_SAFE_INTEGER }, context)).toEqual({ ok: true });
-    expect(checkOrder({ ...equityBuy, tradeAction: "SELL", quantity: 1 }, context)).toEqual({ ok: true });
+    expect(checkOrder({ ...equityBuy, quantity: Number.MAX_SAFE_INTEGER }, context)).toEqual({
+      ok: true,
+    });
+    expect(checkOrder({ ...equityBuy, tradeAction: "SELL", quantity: 1 }, context)).toEqual({
+      ok: true,
+    });
   });
 
   test("rejects a sell above the available quantity", () => {
@@ -147,6 +151,8 @@ describe("entry and slot limits", () => {
     const exit = { ...equityBuy, tradeAction: "SELL" };
     expect(checkOrder(exit, { ...context, openSymbols: ["AAPL"] })).toEqual({ ok: true });
     const optionExit = { ...optionBuy, tradeAction: "SELLTOCLOSE" };
-    expect(checkOrder(optionExit, { ...context, openSymbols: [optionBuy.instrument.symbol] })).toEqual({ ok: true });
+    expect(
+      checkOrder(optionExit, { ...context, openSymbols: [optionBuy.instrument.symbol] }),
+    ).toEqual({ ok: true });
   });
 });

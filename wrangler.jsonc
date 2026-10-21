@@ -1,0 +1,29 @@
+// Web Worker (SvelteKit). docs/architecture.md#configuration-and-deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "reel-web",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reel",
+      // PLACEHOLDER: local-only. Replace with the real id when the D1 database is created.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ENGINE",
+        "class_name": "ClientCoordinator",
+        "script_name": "reel-engine",
+      },
+    ],
+  },
+}
