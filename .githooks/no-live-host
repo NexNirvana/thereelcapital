@@ -1,0 +1,12 @@
+#!/bin/sh
+# TradeStation SIM only: the live API host must never appear in code or config.
+# Usage: no-live-host <git diff revision args>   e.g. --cached, or <base> <head>
+# Run by the pre-commit hook and by CI. docs/ and this file are excluded.
+set -eu
+
+live=$(git diff -U0 --diff-filter=ACMR "$@" -- . ':(exclude)docs/**' ':(exclude).githooks/no-live-host' |
+  grep '^+' | grep -v '^+++' | sed 's/sim-api\.tradestation\.com//g' | grep -E 'api\.tradestation\.com/v[0-9]' || true)
+if [ -n "$live" ]; then
+  printf 'the live TradeStation API host is referenced; only sim-api.tradestation.com is allowed\n' >&2
+  exit 1
+fi
