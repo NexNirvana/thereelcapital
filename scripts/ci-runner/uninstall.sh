@@ -7,6 +7,8 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "${here}/lib.sh"
+# Only fetch_runner_token may use the owner's token (lib.sh keeps it in OWNER_GH_TOKEN).
+unset GH_TOKEN
 
 case "${1:-}" in
   '') ;;
