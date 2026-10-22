@@ -180,10 +180,6 @@
             <dt>Stop loss / {position.stopPct}%</dt>
             <dd data-active={stop?.active}>{stop?.label}</dd>
           </div>
-          <!-- TODO(#28): the stop monitor sets protection_state `verified`; until then this is read-only. -->
-          {#if !stop?.active}
-            <p class="note">El monitoreo del stop todavía no está disponible.</p>
-          {/if}
           <div class="row trailing">
             <dt><label for="trailing-pct">Trailing</label></dt>
             <dd>

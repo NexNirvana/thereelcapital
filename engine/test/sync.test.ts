@@ -125,7 +125,8 @@ describe("degraded states", () => {
 
       expect(await runSync(ctx)).toMatchObject({ reconciled: true });
       expect(events(ctx, "sync.recovered")).toHaveLength(1);
-      expect(protection(ctx)).toEqual([{ p: "none" }]);
+      // The monitor (D36) found a fresh quote and a working token.
+      expect(protection(ctx)).toEqual([{ p: "verified" }]);
       expect(await blockedReasons(ctx, "MSFT")).toBe("ready");
     });
   });

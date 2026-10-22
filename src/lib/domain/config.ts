@@ -57,6 +57,12 @@ export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
 export const SYNC_INTERVAL_MS = 5 * 1000;
 
 /**
+ * Undecided: how long the engine-held stop (D36) waits before sending a new stop for a position
+ * whose last stop the broker rejected. A new stop is a new order, never a resend of the rejected one.
+ */
+export const STOP_REJECTED_COOLDOWN_MS = 30 * 1000;
+
+/**
  * Undecided: a SENT intent younger than this may still have its place request in flight, so the
  * sync loop leaves it alone; an older one with no order at the broker becomes UNKNOWN.
  */

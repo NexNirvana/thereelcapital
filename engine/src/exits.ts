@@ -122,6 +122,7 @@ function reserve(
   intentId: string,
   account: BrokerAccount,
   instrument: Instrument,
+  kind: ExitKind,
 ): Reservation {
   return ctx.storage.transactionSync((): Reservation => {
     const position = readPosition(ctx, args.positionId);
@@ -205,8 +206,9 @@ function reserve(
       `INSERT INTO intents
          (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, state,
           order_confirm_id, created_at, updated_at)
-       VALUES (?, 'SIM', 'exit', ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
+       VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
       intentId,
+      kind,
       position.account_id,
       position.id,
       position.symbol,
@@ -267,9 +269,29 @@ function settle(
   );
 }
 
-export async function exitPosition(
+/** A client's own exit, or the engine's stop (docs/domain-rules.md §7); both use this one path. */
+export type ExitKind = "exit" | "stop";
+
+export function exitPosition(ctx: ExitContext, args: ExitArgs): Promise<EngineResult<ExitResult>> {
+  return placeExit(ctx, args, "exit");
+}
+
+/**
+ * The engine-held stop (D36): ALL OUT of `available` through the same ledger, intent-first and
+ * single-attempt path. It is an exit, not an entry: no counter moves and no limit applies.
+ */
+export function stopExit(
+  ctx: ExitContext,
+  positionId: string,
+  mode: ExitArgs["mode"],
+): Promise<EngineResult<ExitResult>> {
+  return placeExit(ctx, { mode, positionId, step: "ALL_OUT" }, "stop");
+}
+
+async function placeExit(
   ctx: ExitContext,
   args: ExitArgs,
+  kind: ExitKind,
 ): Promise<EngineResult<ExitResult>> {
   const blocked = (...reasons: ExitBlockCode[]) =>
     success<ExitResult>({ status: "BLOCKED", reasons });
@@ -293,7 +315,7 @@ export async function exitPosition(
   };
 
   const intentId = newIntentId();
-  const reservation = reserve(ctx, args, intentId, account, instrument);
+  const reservation = reserve(ctx, args, intentId, account, instrument, kind);
   if (reservation.kind === "blocked") return blocked(...reservation.reasons);
   if (reservation.kind === "done_zero") {
     log(ctx, "info", "exit.step_done_zero", {

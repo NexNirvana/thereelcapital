@@ -58,6 +58,8 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
   "sync.token_expired": "Conexión vencida",
   "sync.recovered": "Sincronización restablecida",
   "sync.unknown_pending": "Órdenes por verificar",
+  "protection.stop_triggered": "Stop activado",
+  "protection.quotes_unavailable": "Cotizaciones no disponibles para el stop",
 };
 
 /** Events without a wording of their own stay readable without exposing internal codes. */
