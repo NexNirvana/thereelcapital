@@ -161,6 +161,13 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `ALTER TABLE intents ADD COLUMN source TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'external'))`,
     `ALTER TABLE positions ADD COLUMN source TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'external'))`,
   ],
+  [
+    // The history page filters events by mode and time and sorts by time, and the retention prune
+    // deletes by time; intents are looked up by position (sync, protection) and by account.
+    `CREATE INDEX events_by_mode_at ON events (mode, at)`,
+    `CREATE INDEX intents_by_position ON intents (position_id) WHERE position_id IS NOT NULL`,
+    `CREATE INDEX intents_by_mode_account ON intents (mode, account_id)`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */

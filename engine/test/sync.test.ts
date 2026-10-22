@@ -7,7 +7,7 @@ import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
 import { Unknown } from "../src/broker/errors.ts";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { holdForReconciliation, reconciliationPending } from "../src/refresh.ts";
-import { SYNC_INTERVAL_MS } from "#lib/domain/config.ts";
+import { EVENT_RETENTION_MS, SYNC_INTERVAL_MS } from "#lib/domain/config.ts";
 import { runSync, syncWanted } from "../src/sync.ts";
 import {
   ACCOUNTS,
@@ -51,6 +51,41 @@ async function withOpenPosition(ctx: EntryContext, symbol = "AAPL") {
   await enter(ctx, symbol);
   expect(await runSync(ctx)).toMatchObject({ reconciled: true });
 }
+
+describe("event retention", () => {
+  const oldEvents = (ctx: EntryContext) =>
+    ctx.sql.exec("SELECT id FROM events WHERE type = 'test.old'").toArray();
+  const writeOld = (ctx: EntryContext) =>
+    ctx.sql.exec(
+      "INSERT INTO events (at, mode, level, type, message) VALUES (?, 'SIM', 'info', 'test.old', 'm')",
+      IN_SESSION - EVENT_RETENTION_MS - 1,
+    );
+
+  it("a good pass prunes events past the retention window", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    await inClient(client, clock, sim.adapter, async (ctx) => {
+      await enter(ctx, "AAPL");
+      writeOld(ctx);
+      expect(await runSync(ctx)).toMatchObject({ reconciled: true });
+      expect(oldEvents(ctx)).toEqual([]);
+    });
+  });
+
+  it("a failed pass leaves old events alone", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    await inClient(client, clock, sim.adapter, async (ctx) => {
+      await withOpenPosition(ctx);
+      writeOld(ctx);
+      sim.inject({ kind: "authExpired", operation: "orders" });
+      expect(await runSync(ctx)).toMatchObject({ reconciled: false });
+      expect(oldEvents(ctx)).toHaveLength(1);
+    });
+  });
+});
 
 describe("degraded states", () => {
   it("token expired: entries blocked, protection unverified, loop retries while the token can be renewed", async () => {

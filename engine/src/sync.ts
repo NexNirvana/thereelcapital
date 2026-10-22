@@ -26,7 +26,7 @@ import {
   reconciliationTicket,
 } from "./refresh.ts";
 import { monitorProtection } from "./protection.ts";
-import { writeEvent, type EventLevel } from "./events.ts";
+import { pruneEvents, writeEvent, type EventLevel } from "./events.ts";
 import { logOnce } from "./reconcile.ts";
 
 export interface SyncContext extends ConnectionContext {
@@ -110,6 +110,7 @@ export async function runSync(ctx: SyncContext): Promise<SyncResult> {
     ctx.storage.kv.delete(DEGRADED_KEY);
     log(ctx, "info", "sync.recovered");
   }
+  pruneEvents(ctx.sql, ctx.now, "SIM");
   if (summary.unknownLeft > 0) {
     // A stuck intent waits for a human: log when the count changes, not on every tick.
     logOnce(

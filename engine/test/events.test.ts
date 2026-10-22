@@ -1,7 +1,8 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { writeEvent } from "../src/events.ts";
+import { EVENT_RETENTION_MS } from "#lib/domain/config.ts";
+import { pruneEvents, writeEvent } from "../src/events.ts";
 
 describe("events writer", () => {
   it("stores the event with its mode and clock", async () => {
@@ -53,5 +54,51 @@ describe("events writer", () => {
       nested: { clientSecret: "[redacted]" },
       symbol: "AAPL",
     });
+  });
+
+  it("prunes only events older than the retention window", async () => {
+    const stub = env.COORDINATOR.getByName("events-prune");
+    await stub.ping();
+    const now = EVENT_RETENTION_MS * 2;
+
+    const kept = await runInDurableObject(stub, (_i, state) => {
+      const sql = state.storage.sql;
+      for (const at of [1, now - EVENT_RETENTION_MS - 1, now - EVENT_RETENTION_MS, now]) {
+        writeEvent(sql, at, { mode: "SIM", level: "info", type: "t", message: "m" });
+      }
+      pruneEvents(sql, now, "SIM");
+      return sql.exec<{ at: number }>("SELECT at FROM events ORDER BY at").toArray();
+    });
+    expect(kept.map((row) => row.at)).toEqual([now - EVENT_RETENTION_MS, now]);
+  });
+
+  it("has the indexes the history and sync queries use", async () => {
+    const stub = env.COORDINATOR.getByName("events-indexes");
+    await stub.ping();
+    const plan = await runInDurableObject(stub, (_i, state) =>
+      state.storage.sql
+        .exec<{ detail: string }>(
+          "EXPLAIN QUERY PLAN SELECT at FROM events WHERE mode = 'SIM' AND at >= 1 ORDER BY at DESC, id DESC",
+        )
+        .toArray()
+        .map((row) => row.detail)
+        .join(" "),
+    );
+    expect(plan).toContain("events_by_mode_at");
+  });
+
+  it("uses the index to find the events to prune", async () => {
+    const stub = env.COORDINATOR.getByName("events-prune-plan");
+    await stub.ping();
+    const plan = await runInDurableObject(stub, (_i, state) =>
+      state.storage.sql
+        .exec<{ detail: string }>(
+          "EXPLAIN QUERY PLAN DELETE FROM events WHERE mode = 'SIM' AND at < 1",
+        )
+        .toArray()
+        .map((row) => row.detail)
+        .join(" "),
+    );
+    expect(plan).toContain("events_by_mode_at");
   });
 });

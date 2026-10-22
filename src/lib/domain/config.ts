@@ -56,6 +56,9 @@ export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
 /** Undecided (docs/open-questions.md): pause between sync-loop ticks while anything is open or pending. */
 export const SYNC_INTERVAL_MS = 5 * 1000;
 
+/** Decided (D22): events are kept 6 years, then the sync tick prunes them. */
+export const EVENT_RETENTION_MS = 6 * 365 * 24 * 60 * 60 * 1000;
+
 /**
  * Decided (D37): how long the engine-held stop (D36) waits before sending a new stop for a position
  * whose last stop the broker rejected. A new stop is a new order, never a resend of the rejected one.

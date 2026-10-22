@@ -69,6 +69,8 @@ Entries stay blocked and open positions show `unverified` protection from a fail
 
 Reconnecting never resets counters, reservations or scale-out steps.
 
+Each good pass also prunes `events` older than the 6-year retention of D22 (`EVENT_RETENTION_MS`); nothing else is ever deleted.
+
 **Applying broker state** (`engine/src/reconcile.ts`). The sync loop reads orders and positions first, then `reconcile` applies them in ONE synchronous transaction, so counters, the sell ledger and positions never see a half-applied pass. It only records what the broker says; it never places or retries an order.
 
 - An intent's status and `filled_qty` come from its broker order. `filled_qty` never decreases, and an intent never moves backwards (a PARTIAL stays PARTIAL on a stale `ACKNOWLEDGED`, a CANCEL_PENDING stays pending while the order is open). An unmapped broker status keeps the current state and is logged.
