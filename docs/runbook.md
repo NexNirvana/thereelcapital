@@ -139,6 +139,8 @@ If it fails:
 
 Local development (`http://localhost:8787/conexion`) and production are separate connections: each stores its own tokens, so each needs its own round of these steps.
 
+The SIM spike (#21) works the same way with `bun run spike accounts --paste` on the owner's machine: it prints the authorize address to send to the holder and waits for the returned `localhost` address on stdin. The spike keeps its tokens in memory only, so it is a separate login from the app's; run each step during one call with the holder ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
+
 ## Broker incidents
 
 What the engine does on its own is in [order-lifecycle.md](order-lifecycle.md#degraded-states) and [tradestation-integration.md](tradestation-integration.md#token-lifetime). Summary and what to check:
