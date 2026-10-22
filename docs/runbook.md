@@ -118,6 +118,27 @@ Order: `bunx wrangler d1 migrations apply DB --remote`, then the engine Worker, 
 
 By default (decision D35) the client connects by pasting the address of the localhost page that does not load; nothing has to be registered on their key (`CONNECT_REDIRECT_MODE`, `src/lib/domain/config.ts`). Tell them: save the key and secret on `/conexion`, log in at TradeStation in the tab that opens, allow, then copy the whole address of the next page (it will not load, which is expected) and paste it into the field «Dirección copiada». If it fails with «No reconocemos esa dirección», the address must start with `http://localhost:3000`; with «El enlace de autorización no es válido o venció», the 10 minute window passed or it was already used, so start again. A key that rejects `http://localhost:3000` (callbacks edited by TradeStation) needs registered mode. Never ask a client to send you the pasted address: it holds a one-time code.
 
+## Connecting a TradeStation account when the holder is on another computer
+
+For when the person who owns the TradeStation account (the holder) is not at the owner's computer. The owner runs the app side; the holder only logs in at TradeStation. This is the D35 paste mode, split between two people.
+
+1. **Owner:** sign in to the app, open `/conexion`, save the API key and secret, and press «Conectar». Do not log in at TradeStation. Copy the address of the `signin.tradestation.com/authorize` tab that opens, and send it to the holder. Keep that browser and tab open.
+2. **Holder:** open the address, log in at TradeStation (password and 2FA), and allow access. The next page, `http://localhost:3000/?code=…&state=…`, will not load; that is expected. Send the whole address in the browser's address bar back to the owner.
+3. **Owner:** paste it into «Dirección copiada» on `/conexion`, in the same browser and within 10 minutes of pressing «Conectar» (`ATTEMPT_TTL_MS`, `engine/src/connection.ts`). The app then lists the accounts; check that the account is a SIM account.
+
+Safety notes:
+
+- The authorize address carries the API key (`client_id`), never the secret. Sharing it is harmless on its own.
+- The `code` in the returned address is single use and short lived, and is useless without the API secret, which only the engine holds. Still, send it only to the owner, and delete the message after pasting.
+- The holder never shares their TradeStation password or 2FA codes with anyone. They type them only on `signin.tradestation.com`.
+
+If it fails:
+
+- **«El enlace de autorización no es válido o venció»:** the attempt is older than 10 minutes, was already used, or the address was pasted in another browser or session (the `state` is single use and bound to the session). Press «Conectar» again, send the new authorize address, and repeat from step 2. Addresses from an earlier attempt never work.
+- **TradeStation rejects the login or the key:** the API key may belong to a different TradeStation account than the one the holder logs in with. Not verified against TradeStation; confirm with the holder which account the key was created under.
+
+Local development (`http://localhost:8787/conexion`) and production are separate connections: each stores its own tokens, so each needs its own round of these steps.
+
 ## Broker incidents
 
 What the engine does on its own is in [order-lifecycle.md](order-lifecycle.md#degraded-states) and [tradestation-integration.md](tradestation-integration.md#token-lifetime). Summary and what to check:
