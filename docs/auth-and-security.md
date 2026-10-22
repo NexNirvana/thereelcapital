@@ -95,5 +95,5 @@ Recovery codes are stored as HMAC-SHA-256 with a server key; activation tokens (
 
 ## Isolation
 
-- A client reaches only their own DO (`idFromName(session.userId)`); account ids are checked against that client's accounts from TradeStation.
+- A client reaches only their own DO (`idFromName(session.userId)`); account ids are checked against that client's accounts from TradeStation. The one exception is the e2e seeding route `/api/test/seed`, which addresses a DO by a body-supplied id; it exists only where `ENVIRONMENT` is `development` or `test` and answers 404 in production ([test-plan.md](test-plan.md)).
 - Admin screens read client DOs; they never place or cancel orders.

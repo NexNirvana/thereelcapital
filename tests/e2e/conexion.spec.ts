@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { count, d1, registerPasskey, seedSignedInUser, virtualAuthenticator } from "./support.ts";
+import {
+  count,
+  d1,
+  registerPasskey,
+  seedSignedInUser,
+  virtualAuthenticator,
+  origin,
+} from "./support.ts";
 
 // The engine's calls to TradeStation can't be intercepted from the browser; the token exchange,
 // accounts and revoke paths are covered against a mocked TradeStation in engine/test.
@@ -7,7 +14,7 @@ const SECRET = "e2e-secret-SHOULD-NEVER-APPEAR";
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.4.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 test("sends visitors without a session to the access screen", async ({ page }) => {
@@ -24,7 +31,7 @@ test("shows the callback URL and sends the client to TradeStation without leakin
   const userId = await seedSignedInUser(context);
   await page.goto("/conexion");
   await expect(page.getByRole("heading", { name: "Conexión" })).toBeVisible();
-  await expect(page.locator("code")).toHaveText("http://localhost:8790/conexion/callback");
+  await expect(page.locator("code")).toHaveText(`${origin}/conexion/callback`);
 
   // Posted without following the redirect, so the browser never reaches the real TradeStation.
   const response = await page.request.post("/conexion?/connect", {
@@ -43,7 +50,7 @@ test("shows the callback URL and sends the client to TradeStation without leakin
     response_type: "code",
     client_id: "e2e-client-id-0123456789",
     audience: "https://api.tradestation.com",
-    redirect_uri: "http://localhost:8790/conexion/callback",
+    redirect_uri: `${origin}/conexion/callback`,
     scope: "openid offline_access MarketData ReadAccount Trade",
   });
   expect(authorizeUrl.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/);

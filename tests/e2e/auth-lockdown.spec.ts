@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { count, d1, registerPasskey, seedSignedInUser, virtualAuthenticator } from "./support.ts";
-
-const origin = "http://localhost:8790";
+import {
+  count,
+  d1,
+  registerPasskey,
+  seedSignedInUser,
+  virtualAuthenticator,
+  origin,
+} from "./support.ts";
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.7.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;

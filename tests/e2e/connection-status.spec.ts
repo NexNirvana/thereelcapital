@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { d1, ENGINE_NOW, seedSignedInUser } from "./support.ts";
+import { d1, ENGINE_NOW, seedSignedInUser, origin } from "./support.ts";
 
 // The refresh itself talks to TradeStation from the engine and is covered against a mocked
 // TradeStation in engine/test; here a stored connection state is shown in the top bar.
@@ -40,7 +40,7 @@ const states = [
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.5.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 for (const state of states) {

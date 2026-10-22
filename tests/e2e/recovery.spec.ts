@@ -9,6 +9,7 @@ import {
   registerPasskey,
   seedSignedInUser,
   virtualAuthenticator,
+  origin,
 } from "./support.ts";
 
 // Each test gets its own client IP: the redeem endpoint is rate limited per IP (cf-connecting-ip),
@@ -18,7 +19,7 @@ test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({
     "cf-connecting-ip": ip,
     // Browsers always send it on POST; Better Auth refuses cookie-bearing requests without it.
-    origin: "http://localhost:8790",
+    origin: origin,
   });
 });
 

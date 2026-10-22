@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Page } from "@playwright/test";
-import { count, d1, registerPasskey, seedPendingClient, virtualAuthenticator } from "./support.ts";
+import {
+  count,
+  d1,
+  registerPasskey,
+  seedPendingClient,
+  virtualAuthenticator,
+  origin,
+} from "./support.ts";
 
 // Each test gets its own client IP: opening a link is rate limited per IP (cf-connecting-ip).
 test.beforeEach(async ({ context }) => {
@@ -8,7 +15,7 @@ test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({
     "cf-connecting-ip": ip,
     // Browsers always send it on POST; Better Auth refuses cookie-bearing requests without it.
-    origin: "http://localhost:8790",
+    origin: origin,
   });
 });
 
@@ -201,8 +208,8 @@ test("opening the link in another browser ends the earlier session", async ({ br
   await page.goto("/acceso");
   expect((await open(page, token)).status()).toBe(200);
   const other = await browser.newContext({
-    baseURL: "http://localhost:8790",
-    extraHTTPHeaders: { "cf-connecting-ip": "10.2.250.250", origin: "http://localhost:8790" },
+    baseURL: origin,
+    extraHTTPHeaders: { "cf-connecting-ip": "10.2.250.250", origin: origin },
   });
   const otherPage = await other.newPage();
   expect((await open(otherPage, token)).status()).toBe(200);

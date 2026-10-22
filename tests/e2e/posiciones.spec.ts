@@ -44,7 +44,7 @@ test("shows the position, its seven steps and sells the step's quantity", async 
   context,
   page,
 }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openPosition(page, "MSFT", "198 acciones");
   await expect(page.getByRole("heading", { name: "MSFT" })).toBeVisible();
   await expect(page.getByText("198 iniciales · 0 vendidos")).toBeVisible();
@@ -69,7 +69,7 @@ test("shows the position, its seven steps and sells the step's quantity", async 
 
 test("marks a step that rounds to zero and sends nothing for it", async ({ context, page }) => {
   // SIZE US$202 buys 2 shares: 30% sells 1, and the 20% step lands on the same target.
-  await seedTradingClient(context, page, { sizeUsd: 202 });
+  await seedTradingClient(context, { sizeUsd: 202 });
   await openPosition(page, "MSFT", "2 acciones");
   await step(page, 1).click();
   await expect(page.getByText("1 acción restante", { exact: true })).toBeVisible({
@@ -89,7 +89,7 @@ test("marks a step that rounds to zero and sends nothing for it", async ({ conte
 });
 
 test("sends one order when a step is double-clicked", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openPosition(page, "MSFT", "198 acciones");
   let posts = 0;
   await page.route("**/posiciones?/salir*", async (route) => {
@@ -106,7 +106,7 @@ test("sends one order when a step is double-clicked", async ({ context, page }) 
 });
 
 test("closes the position with ALL OUT only after a confirmation", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openPosition(page, "MSFT", "198 acciones");
   await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeVisible();
 
@@ -124,7 +124,7 @@ test("closes the position with ALL OUT only after a confirmation", async ({ cont
 });
 
 test("cancels a working exit and gives the step back", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openPosition(page, "SLOW", "198 acciones");
   await step(page, 1).click();
   const pending = page.getByRole("region", { name: "Órdenes pendientes" });
@@ -140,7 +140,7 @@ test("cancels a working exit and gives the step back", async ({ context, page })
 });
 
 test("says «Activo» only for a stop the engine verified", async ({ context, page }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     accounts: ["SIM-1"],
     positions: [
       { id: "pos-verified", symbol: "AAA", qty: 10, protectionState: "verified" },
@@ -162,7 +162,7 @@ test("says «Activo» only for a stop the engine verified", async ({ context, pa
 });
 
 test("shows an option with the underlying apart from the contract", async ({ context, page }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     positions: [
       {
         id: "pos-spy",
@@ -193,7 +193,7 @@ test("shows an option with the underlying apart from the contract", async ({ con
 });
 
 test("switches between two positions", async ({ context, page }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     positions: [
       { id: "pos-a", symbol: "AAA", qty: 10 },
       { id: "pos-b", symbol: "BBB", qty: 20, soldQty: 5 },
@@ -212,7 +212,7 @@ test("switches between two positions", async ({ context, page }) => {
 });
 
 test("keeps the selected position after acting on it", async ({ context, page }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     positions: [
       { id: "pos-a", symbol: "AAA", qty: 10 },
       { id: "pos-b", symbol: "BBB", qty: 20 },
@@ -227,7 +227,7 @@ test("keeps the selected position after acting on it", async ({ context, page })
 });
 
 test("wraps the seven steps 4 + 3 on a narrow screen", async ({ context, page }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     positions: [{ id: "pos-a", symbol: "AAA", qty: 10 }],
   });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -246,7 +246,7 @@ test("ignores quantity and price the browser adds and rejects a bad step", async
   context,
   page,
 }) => {
-  await seedTradingClient(context, page, {
+  await seedTradingClient(context, {
     positions: [{ id: "pos-a", symbol: "AAA", qty: 10 }],
   });
   const send = (form: Record<string, string>) =>

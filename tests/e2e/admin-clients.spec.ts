@@ -6,6 +6,7 @@ import {
   registerPasskey,
   seedSignedInUser,
   virtualAuthenticator,
+  origin,
 } from "./support.ts";
 
 test.beforeEach(async ({ context }) => {
@@ -13,7 +14,6 @@ test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip });
 });
 
-const origin = "http://localhost:8790";
 const uniqueEmail = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}@example.com`;
 const clientCount = () => count(`SELECT COUNT(*) AS n FROM "user" WHERE role = 'user'`);
 
@@ -21,9 +21,7 @@ test("keeps /admin closed to clients and to anyone not signed in", async ({ cont
   const anonymous = await page.request.get("/admin", { maxRedirects: 0 });
   expect(anonymous.status()).toBe(303);
   // SvelteKit writes the redirect relative to the request path.
-  expect(new URL(anonymous.headers().location ?? "", "http://localhost:8790/admin").pathname).toBe(
-    "/acceso",
-  );
+  expect(new URL(anonymous.headers().location ?? "", `${origin}/admin`).pathname).toBe("/acceso");
 
   await seedSignedInUser(context, { role: "user" });
   expect((await page.request.get("/admin")).status()).toBe(403);

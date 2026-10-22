@@ -6,6 +6,7 @@ import {
   seedSignedInUser,
   seedTradingClient,
   type SeededOrder,
+  origin,
 } from "./support.ts";
 
 // Set SCREENSHOT_DIR for screenshots at desktop and mobile width.
@@ -13,7 +14,7 @@ const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.9.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 async function shoot(page: Page, name: string) {
@@ -57,7 +58,7 @@ test("lists orders across clients and narrows by client, symbol, state and type"
   page,
 }) => {
   const tag = newTag();
-  const alice = await seedTradingClient(context, page, {
+  const alice = await seedTradingClient(context, {
     orders: [
       {
         id: "al1",
@@ -71,7 +72,7 @@ test("lists orders across clients and narrows by client, symbol, state and type"
       { id: "al2", symbol: `${tag}BB`, state: "REJECTED", qty: 5, createdAt: NOW - 2000 },
     ],
   });
-  const bob = await seedTradingClient(context, page, {
+  const bob = await seedTradingClient(context, {
     orders: [
       {
         id: "bo1",
@@ -133,7 +134,7 @@ test("paginates the merged orders", async ({ context, page }) => {
     filledQty: 1,
     createdAt: NOW - 1000 * (i + 1),
   }));
-  await seedTradingClient(context, page, { orders });
+  await seedTradingClient(context, { orders });
   await seedSignedInUser(context, { role: "admin" });
   await page.goto(`/admin/historial?simbolo=${tag}`);
   const table = page.getByRole("table", { name: /Órdenes/ });

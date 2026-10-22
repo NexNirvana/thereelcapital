@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ENGINE_NOW, seedPendingClient, seedSignedInUser, seedTradingClient } from "./support.ts";
+import {
+  ENGINE_NOW,
+  seedPendingClient,
+  seedSignedInUser,
+  seedTradingClient,
+  origin,
+} from "./support.ts";
 
 // Each client is seeded into D1 and its own Durable Object (no order UI exists yet), then an admin
 // reads them through the engine's `overview`. Set SCREENSHOT_DIR for desktop and mobile shots.
@@ -8,7 +14,7 @@ const HOUR = 3_600_000;
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.9.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 // The local D1 keeps every client earlier specs created; the shots show only this test's fleet.
@@ -36,8 +42,8 @@ async function shoot(page: Page, name: string, keep: readonly string[]) {
   }
 }
 
-async function seedFleet(context: Parameters<typeof seedSignedInUser>[0], page: Page) {
-  const ok = await seedTradingClient(context, page, {
+async function seedFleet(context: Parameters<typeof seedSignedInUser>[0]) {
+  const ok = await seedTradingClient(context, {
     accounts: ["SIM-1001", "SIM-1002"],
     positions: [
       { id: "p-msft", symbol: "MSFT", qty: 100, soldQty: 30, protectionState: "unverified" },
@@ -65,10 +71,10 @@ async function seedFleet(context: Parameters<typeof seedSignedInUser>[0], page: 
     entriesToday: 2,
     refreshExpiresAt: ENGINE_NOW + 10 * HOUR,
   });
-  const expiring = await seedTradingClient(context, page, { refreshExpiresAt: ENGINE_NOW + HOUR });
-  const expired = await seedTradingClient(context, page, { status: "EXPIRED" });
-  const revoked = await seedTradingClient(context, page, { status: "REVOKED" });
-  const errored = await seedTradingClient(context, page, { status: "ERROR" });
+  const expiring = await seedTradingClient(context, { refreshExpiresAt: ENGINE_NOW + HOUR });
+  const expired = await seedTradingClient(context, { status: "EXPIRED" });
+  const revoked = await seedTradingClient(context, { status: "REVOKED" });
+  const errored = await seedTradingClient(context, { status: "ERROR" });
   const pending = await seedPendingClient();
   await seedSignedInUser(context, { role: "admin" });
   return { ok, expiring, expired, revoked, errored, pending: pending.userId };
@@ -90,7 +96,7 @@ test("shows every client's connection, positions, orders and counts on /admin/op
   context,
   page,
 }) => {
-  const fleet = await seedFleet(context, page);
+  const fleet = await seedFleet(context);
   await page.goto("/admin/operativa");
   await expect(page.getByRole("heading", { name: "Operativa", level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "Operativa" })).toHaveAttribute(
@@ -126,7 +132,7 @@ test("shows every client's connection, positions, orders and counts on /admin/op
 });
 
 test("shows the real connection state in the client list", async ({ context, page }) => {
-  const fleet = await seedFleet(context, page);
+  const fleet = await seedFleet(context);
   await page.goto("/admin");
   const row = (id: string) => page.getByRole("row", { name: new RegExp(email(id)) });
   await expect(row(fleet.ok)).toContainText("Conectado");
@@ -143,7 +149,7 @@ test("shows the real connection state in the client list", async ({ context, pag
 });
 
 test("fills «Conexión y posiciones» on the client detail", async ({ context, page }) => {
-  const fleet = await seedFleet(context, page);
+  const fleet = await seedFleet(context);
   await page.goto(`/admin/clientes/${fleet.ok}`);
   const section = page.locator("section[aria-labelledby=operations]");
   await expect(section.getByRole("heading", { name: "Conexión y posiciones" })).toBeVisible();

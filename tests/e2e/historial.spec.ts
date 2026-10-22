@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ENGINE_NOW, seedSignedInUser, seedTradingClient } from "./support.ts";
+import { ENGINE_NOW, seedSignedInUser, seedTradingClient, origin } from "./support.ts";
 
 // Orders are seeded straight into the client's Durable Object (there is no order UI yet): the
 // screen only ever reads what the engine's `history` returns. Set SCREENSHOT_DIR for screenshots.
@@ -40,7 +40,7 @@ const orders = [
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.8.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 async function shoot(page: import("@playwright/test").Page, name: string) {
@@ -58,7 +58,7 @@ test("lists orders with state, quantities, fill price and New York time", async 
   context,
   page,
 }) => {
-  await seedTradingClient(context, page, { accounts: ["SIM-1", "SIM-2"], orders });
+  await seedTradingClient(context, { accounts: ["SIM-1", "SIM-2"], orders });
   await page.goto("/historial");
   await expect(page.getByRole("heading", { name: "Historial", level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "Historial" }).first()).toHaveAttribute(
@@ -83,8 +83,9 @@ test("lists orders with state, quantities, fill price and New York time", async 
 });
 
 test("filters by account, symbol and date", async ({ context, page }) => {
-  await seedTradingClient(context, page, { accounts: ["SIM-1", "SIM-2"], orders });
-  await page.goto("/historial");
+  await seedTradingClient(context, { accounts: ["SIM-1", "SIM-2"], orders });
+  // Typing before the page hydrates is lost when it takes over the form.
+  await page.goto("/historial", { waitUntil: "networkidle" });
   const table = page.getByRole("table", { name: /Órdenes/ });
 
   await page.getByLabel("Símbolo").fill("msft");
@@ -107,7 +108,7 @@ test("filters by account, symbol and date", async ({ context, page }) => {
 });
 
 test("shows an empty state and says when filters match nothing", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/historial");
   await expect(
     page.getByText("Aún no tienes órdenes. Cuando operes, aparecerán aquí."),
@@ -118,14 +119,14 @@ test("shows an empty state and says when filters match nothing", async ({ contex
 });
 
 test("shows no P&L, balance or account value", async ({ context, page }) => {
-  await seedTradingClient(context, page, { orders });
+  await seedTradingClient(context, { orders });
   await page.goto("/historial");
   const text = await page.locator("main").innerText();
   expect(text).not.toMatch(/P\s?&\s?L|ganancia|pérdida|saldo|balance|equity|poder de compra/i);
 });
 
 test("rejects unknown parameters, REAL and a malformed cursor", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   for (const query of ["clientId=x", "modo=REAL", "desde=ayer", "despues=%27%3B--"]) {
     const response = await page.goto(`/historial?${query}`);
     expect(response?.status(), query).toBe(400);
@@ -142,7 +143,7 @@ test("pages through older orders with a cursor", async ({ context, page }) => {
     avgFillPrice: 100_000_000,
     createdAt: ENGINE_NOW - i * 1000,
   }));
-  await seedTradingClient(context, page, { orders: many });
+  await seedTradingClient(context, { orders: many });
   await page.goto("/historial");
   const table = page.getByRole("table", { name: /Órdenes/ });
   await expect(table.getByRole("row")).toHaveCount(26);
@@ -154,7 +155,7 @@ test("pages through older orders with a cursor", async ({ context, page }) => {
 });
 
 test("keeps the history after signing out and in again", async ({ context, page }) => {
-  const userId = await seedTradingClient(context, page, { orders });
+  const userId = await seedTradingClient(context, { orders });
   await page.goto("/historial");
   await expect(page.getByRole("table", { name: /Órdenes/ }).getByRole("row")).toHaveCount(6);
 
@@ -174,9 +175,9 @@ test("keeps the history after signing out and in again", async ({ context, page 
 });
 
 test("another client never sees these orders", async ({ context, page }) => {
-  await seedTradingClient(context, page, { orders });
+  await seedTradingClient(context, { orders });
   await context.clearCookies();
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/historial");
   await expect(page.getByRole("table", { name: /Órdenes/ })).toHaveCount(0);
   await expect(page.getByText("Aún no tienes órdenes")).toBeVisible();

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { seedTradingClient } from "./support.ts";
+import { seedTradingClient, origin } from "./support.ts";
 
 // The engine runs the local simulation (tests/e2e/engine.env). Its dev MSFT chain has two
 // Friday expirations with 395, 400 and 405 calls and puts; the 405 put is listed with no market.
@@ -8,7 +8,7 @@ const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.8.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 async function shoot(page: Page, name: string) {
@@ -35,7 +35,7 @@ test("picks a CALL from the chain and returns to /operar with the exact option s
   context,
   page,
 }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/operar?tipo=opciones");
   await page.getByRole("link", { name: /Elegir contrato/ }).click();
   await expect(page).toHaveURL(/\/operar\/cadena/);
@@ -76,7 +76,7 @@ test("shows a side without a market as missing and does not offer it", async ({
   context,
   page,
 }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openChain(page);
   const last = page.locator("tbody tr").nth(2);
   await expect(last).toContainText("405");
@@ -91,7 +91,7 @@ test("calls the snapshot out of date as it ages and refreshes on demand", async 
   context,
   page,
 }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.clock.install();
   await openChain(page);
   const freshness = page.locator(".freshness");
@@ -108,7 +108,7 @@ test("calls the snapshot out of date as it ages and refreshes on demand", async 
 });
 
 test("refuses unknown parameters and underlyings without options", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   const response = await page.goto("/operar/cadena?subyacente=MSFT&precio=1");
   expect(response?.status()).toBe(400);
   await page.goto("/operar/cadena?subyacente=ZZZZ");
@@ -118,7 +118,7 @@ test("refuses unknown parameters and underlyings without options", async ({ cont
 });
 
 test("does not describe an equity as a contract", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/operar?tipo=opciones&simbolo=MSFT");
   await expect(page.locator(".summary .contract-name")).toHaveCount(0);
 });
