@@ -1,0 +1,120 @@
+# Operations runbook
+
+How to run the pilot. It links to the docs that own each rule instead of repeating them. Commands run from the repository root on the owner's machine, with `wrangler` logged in to the Cloudflare account (`bunx wrangler login`). Items marked **not built** or **not verified** are not described as working.
+
+## SIM only, always
+
+No TradeStation call may spend real money ([CLAUDE.md](../CLAUDE.md)). Only `https://sim-api.tradestation.com/v3` is used. To check:
+
+- `git grep -n "api.tradestation.com" -- ':!docs'` lists every mention of the live host outside `docs/`. Only the OAuth audience constant and test fixtures may appear (the allow list is in `.githooks/no-live-host`).
+- The `pre-commit` hook blocks a new line naming the live host, and the `guards` job in `.github/workflows/policy.yml` re-runs the check over every commit of a pull request ([CONTRIBUTING.md](../CONTRIBUTING.md#hooks)).
+- The adapter refuses any URL whose origin is not the SIM API ([tradestation-integration.md](tradestation-integration.md#adapter-enginesrctradestation)).
+
+If anything seems to need live access, stop and ask the owner.
+
+## First admin and admin lockout
+
+Neither command needs a secret ([D32](decisions.md)).
+
+```sh
+bun run admin:create <email> --remote
+bun run admin:recover <email> --remote
+```
+
+- `admin:create` inserts the admin, an activation link and an `admin.create` audit row in one D1 batch, and prints the link once. Share it personally; opening it starts passkey registration. Without `--remote` it writes the local database.
+- `admin:recover` is for the last admin who lost every passkey. It removes the admin's passkeys, recovery codes and sessions, revokes open links, and prints a new link once. It refuses an unknown email, a non-admin and a disabled admin.
+- With two or more admins, recover the other one from `/admin/administradores/[id]` instead.
+- A link is valid for the hours printed with it. If it expires, run `admin:recover` again for an admin who already exists. If the first registration failed after the link was spent, run `admin:recover` as well.
+
+Details: [auth-and-security.md](auth-and-security.md#flows).
+
+## Clients from `/admin`
+
+Every action needs an admin session under 10 minutes old. On `REAUTH_REQUIRED`, use «Confirmar con passkey» and repeat. Each action writes an audit row. Screens: [screens-and-flows.md](screens-and-flows.md#admin).
+
+| Task | Where |
+| --- | --- |
+| Create a client | `/admin`, create form. The activation link appears once; copy it and share it personally (the app sends no email) |
+| New link (client has no passkey yet) | `/admin/clientes/[id]`, generate or revoke link |
+| Deactivate or reactivate | `/admin/clientes/[id]`. Sessions end and sign-in is blocked; broker orders and positions are not touched |
+| Revoke sessions | `/admin/clientes/[id]`, one session or all |
+| Recover a client (lost passkey and codes) | `/admin/clientes/[id]`, controlled recovery. Verify identity outside the app first, then tick «Verifiqué la identidad del cliente fuera de la app». Passkeys, codes and sessions are deleted and a new link is issued |
+| Change SIZE, stop %, unlock % | `/admin/clientes/[id]`. SIZE only goes up; values apply to new entries and positions |
+
+## Secrets
+
+Set with `wrangler secret put`, which prompts for the value so it never appears on the command line or in logs. Never print, commit or paste a value. Names only are in `.dev.vars.example`.
+
+| Secret | Worker | Set with |
+| --- | --- | --- |
+| `BETTER_AUTH_SECRET` | `reel-web` | `bunx wrangler secret put BETTER_AUTH_SECRET -c wrangler.jsonc` |
+| `CREDENTIALS_KEY` | `reel-engine` only | `bunx wrangler secret put CREDENTIALS_KEY -c engine/wrangler.jsonc` |
+
+Generate a value with `openssl rand -base64 32` (the format `CREDENTIALS_KEY` requires). CI also holds `CLOUDFLARE_API_TOKEN` (secret) and `CLOUDFLARE_ACCOUNT_ID` (variable) for the `deploy` job; rotate the token in Cloudflare and update the GitHub secret.
+
+**Rotating `BETTER_AUTH_SECRET`.** Every pending recovery code stops working, because codes and audit IP hashes are keyed with it. Activation links and passkeys are unaffected. Session signing also depends on it; treat all sessions as ended (**not verified**). Clients then need their recovery codes re-issued, so rotate only for a suspected leak, and warn the pilot clients first. See [auth-and-security.md](auth-and-security.md#flows).
+
+**Rotating `CREDENTIALS_KEY`.** Each stored credential carries a `key_id` (a fingerprint of the key that encrypted it). The engine holds one key at a time and has **no code to read credentials encrypted under the previous key**. After a rotation, the refresh of every stored connection fails to decrypt, entries are blocked and open positions show `unverified` (`broker.refresh_failed`). Each client must press «Reconectar con TradeStation», which stores new credentials under the new `key_id`. A client who reconnects is blocked until the next good sync (below). So: announce it, rotate, ask the clients to reconnect. Exits and cancels are never blocked by this. See [tradestation-integration.md](tradestation-integration.md#token-lifetime) and [auth-and-security.md](auth-and-security.md#secrets).
+
+Losing `CREDENTIALS_KEY` without a backup has the same effect as a rotation.
+
+## Deploys
+
+Deploys run only from CI on `main` (the `deploy` job in `.github/workflows/ci.yml`). Never deploy by hand.
+
+Order: `bunx wrangler d1 migrations apply DB --remote`, then the engine Worker, then the web Worker, then a smoke check that `https://thereelcapital.com/acceso` serves «Entrar con passkey» (retried for two minutes). Details: [architecture.md](architecture.md#configuration-and-deploy).
+
+**Migrations.** D1 migrations are the numbered files in `migrations/`; the Durable Object class migration is the `migrations` entry in `engine/wrangler.jsonc`. Both are applied by `deploy`. Write D1 migrations so the previous Worker version still runs against them, because the migration is applied before the new code.
+
+**When `main` is red:**
+
+1. `scripts/pr-status.sh <pr>` for a pull request; `gh run list --branch main --limit 5` and `gh run view <run-id> --log-failed` for `main`.
+2. A failed check or test stops `deploy` before anything changes. Fix forward with a `fix/` or `hotfix/` branch ([CONTRIBUTING.md](../CONTRIBUTING.md#branches)).
+3. If `deploy` failed after the migration step, the database is already migrated. Fix forward; the next push re-runs the job (the migrations step skips what is applied).
+4. If the smoke check failed but the Workers deployed, check the Cloudflare dashboard (custom domain, Worker errors) before re-running the job.
+
+**Rollback.** `bunx wrangler rollback -c wrangler.jsonc` (and `-c engine/wrangler.jsonc`) returns a Worker to its previous version. **Not yet exercised** in this project. It does not undo D1 migrations, so prefer fixing forward through CI.
+
+## Reading the audit log and history
+
+- `/admin/auditoria`, `/admin/operativa` and `/admin/historial` are **not built** yet ([screens-and-flows.md](screens-and-flows.md#admin)). Until they are, read the audit log in D1. It stores no secrets (`at` is epoch milliseconds):
+
+  ```sh
+  bunx wrangler d1 execute DB --remote --command "SELECT datetime(at/1000,'unixepoch') AS at_utc, actor_id, action, target_user_id, before_json, after_json FROM audit_log ORDER BY at DESC LIMIT 50"
+  ```
+
+- Orders, fills and events live in each client's Durable Object, not in D1. The client sees them in `/historial`. There is no admin view across clients yet.
+- Retention: 6 years for orders, fills, events and audit, and no deletion code exists (D22 in [decisions.md](decisions.md)). Do not delete rows by hand.
+- D1 backup: Time Travel restore is **not verified** in this project; check the Cloudflare D1 documentation before relying on it.
+
+## Broker incidents
+
+What the engine does on its own is in [order-lifecycle.md](order-lifecycle.md#degraded-states) and [tradestation-integration.md](tradestation-integration.md#token-lifetime). Summary and what to check:
+
+| Situation | Automatic behavior | Admin checks |
+| --- | --- | --- |
+| Client's connection `expired` or `revoked` (the key's 24 h lifetime ended, or TradeStation refused the refresh) | Entries blocked, positions `unverified`, no further refresh until reconnect. Exits and cancels are not blocked by the hold | Ask the client to press «Reconectar con TradeStation». After reconnecting, entries stay blocked until the sync loop reconciles |
+| `reconciliation_pending` (after a failed refresh, connect or disconnect) | Entries blocked. Only a successful reconciliation (`markReconciled`) lifts it | Wait a sync tick with the app open. If it persists, check the connection status on `/admin/clientes/[id]` (the connection section is **not built**, #35) and ask the client to reconnect |
+| UNKNOWN order (timeout or unclear answer on place) | Never retried. Both reservations held and the position `unverified` until reconciliation matches it to a broker order by `OrderID` or `OrderConfirmID`. Several candidates stay UNKNOWN and log `reconcile.ambiguous` | Do not tell the client to resend. Ask them to check the order in TradeStation; the next reconciliation resolves it. A persistent one is escalated to the owner |
+| TradeStation outage (5xx, timeouts) | `sync.broker_error`: entries blocked, retried every tick, `sync.recovered` lifts the hold | Check TradeStation's status page; nothing to do |
+| 429 | `sync.rate_limited`: waits the reset time from `X-RateLimit-Reset`; the order is not placed and the reservation is released | Limits are per client key; repeated 429s point to something polling too often |
+
+Events are listed per client in `/historial`. Server-side logs: `bunx wrangler tail reel-engine` (logs events, never secrets).
+
+**Not built or not verified:** stop and trailing protection (#28, #29), so `unverified` is shown but no server stop is monitored yet; the SIM spike (#21, `bun run spike`) has not produced results, so the refused-refresh answer, token lifetime counting and several order behaviors are unconfirmed ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
+
+## CI incidents
+
+- **Jobs stay queued.** The repository variable `CI_RUNNER` points the jobs at the owner's machine. If the machine is off or no runner is registered, jobs wait forever. Switch back to GitHub-hosted runners, then re-run the jobs:
+
+  ```sh
+  scripts/ci-runner/toggle.sh off
+  ```
+
+  `toggle.sh on` switches back and refuses unless `ci.yml` keeps fork pull requests and `deploy` off the runners. Install and removal: `scripts/ci-runner/setup.sh` and `scripts/ci-runner/uninstall.sh` ([CONTRIBUTING.md](../CONTRIBUTING.md#self-hosted-runner)).
+- **Flaky tests.** e2e runs as three shards; the required `e2e` check fails if any shard failed. Re-run only the failed jobs (`gh run rerun <run-id> --failed`). If the same test flakes twice, open an issue; do not merge on a red check.
+- **Wait for a pull request.** `scripts/pr-status.sh <pr> --wait`.
+
+## Related
+
+[architecture.md](architecture.md), [auth-and-security.md](auth-and-security.md), [order-lifecycle.md](order-lifecycle.md), [tradestation-integration.md](tradestation-integration.md), [open-questions.md](open-questions.md).
