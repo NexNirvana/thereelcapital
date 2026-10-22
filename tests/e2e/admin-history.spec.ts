@@ -104,17 +104,20 @@ test("lists orders across clients and narrows by client, symbol, state and type"
   await expect(page.getByRole("table", { name: /Eventos/ })).toContainText(emailOf(alice));
   await page.goto(`/admin/historial?cliente=${alice}`);
   await shoot(page, "historial");
-  await page.goto("/admin/historial");
+  // Typing before the page hydrates is lost when it takes over the form.
+  await page.goto("/admin/historial", { waitUntil: "networkidle" });
 
   await page.getByLabel("Cliente").selectOption(bob);
   await page.getByRole("button", { name: "Filtrar" }).click();
+  await expect(page).toHaveURL(/cliente=/);
   await expect(orders).toContainText(`${tag}CC`);
   await expect(orders).not.toContainText(`${tag}AA`);
 
-  await page.goto("/admin/historial");
+  await page.goto("/admin/historial", { waitUntil: "networkidle" });
   await page.getByLabel("Estado").selectOption("REJECTED");
   await page.getByLabel("Símbolo").fill(`${tag}BB`.toLowerCase());
   await page.getByRole("button", { name: "Filtrar" }).click();
+  await expect(page).toHaveURL(/estado=REJECTED/);
   await expect(orders.getByRole("row")).toHaveCount(2);
   await expect(orders).toContainText("Rechazada");
 
@@ -164,7 +167,7 @@ test("shows the audit log as text, filtered and without credentials", async ({ c
      ('${randomUUID()}', ${at - 1000}, '${admin}', 'e2e.other_${marker}', NULL, NULL, NULL)`,
   );
 
-  await page.goto("/admin/auditoria");
+  await page.goto("/admin/auditoria", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Auditoría", level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "Auditoría" })).toHaveAttribute(
     "aria-current",
@@ -172,6 +175,7 @@ test("shows the audit log as text, filtered and without credentials", async ({ c
   );
   await page.getByLabel("Acción").selectOption(action);
   await page.getByRole("button", { name: "Filtrar" }).click();
+  await expect(page).toHaveURL(/accion=/);
   const table = page.getByRole("table", { name: /auditoría/i });
   await expect(table.getByRole("row")).toHaveCount(2);
   const row = table.getByRole("row").nth(1);
