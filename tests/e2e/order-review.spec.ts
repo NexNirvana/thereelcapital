@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { d1, seedTradingClient } from "./support.ts";
+import { d1, seedTradingClient, origin } from "./support.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares and
@@ -11,7 +11,7 @@ const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.8.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 async function shoot(page: Page, name: string) {
@@ -36,7 +36,7 @@ const SEND = "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=SLOW&/enviar";
 const state = (page: Page) => page.getByRole("status");
 
 test("reviews the order read-only, then follows it to filled", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "SLOW");
   const rows = page.locator("dl");
   await expect(rows).toContainText("TradeStation · SIM-1");
@@ -61,7 +61,7 @@ test("reviews the order read-only, then follows it to filled", async ({ context,
 });
 
 test("shows a partial fill as partial, never as executed", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "PART");
   await page.getByRole("button", { name: "Enviar orden" }).click();
   await expect(state(page)).toContainText("Ejecución parcial", { timeout: 30_000 });
@@ -71,7 +71,7 @@ test("shows a partial fill as partial, never as executed", async ({ context, pag
 });
 
 test("shows a rejected order as rejected with nothing executed", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "RJCT");
   await page.getByRole("button", { name: "Enviar orden" }).click();
   await expect(state(page)).toContainText("Rechazada", { timeout: 30_000 });
@@ -84,7 +84,7 @@ test("explains a lost broker answer as being verified, not as a failure", async 
   context,
   page,
 }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "DROP");
   await page.getByRole("button", { name: "Enviar orden" }).click();
   await expect(state(page)).toContainText("Verificando");
@@ -100,7 +100,7 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
   context,
   page,
 }) => {
-  const userId = await seedTradingClient(context, page);
+  const userId = await seedTradingClient(context);
   await openReview(page, "MSFT");
   await expect(page.locator("dl")).toContainText("198 acciones");
 
@@ -125,7 +125,7 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
 });
 
 test("sends one order when Enviar orden is double-clicked", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "MSFT");
   await page.getByRole("button", { name: /Enviar|Enviando/ }).dblclick();
   await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
@@ -134,14 +134,14 @@ test("sends one order when Enviar orden is double-clicked", async ({ context, pa
 });
 
 test("sends one order when the same intent is posted twice at once", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "SLOW");
   const intentId = await page.locator("input[name=intentId]").inputValue();
   const form = { tipo: "acciones", cuenta: "SIM-1", simbolo: "SLOW", intentId, cantidad: "198" };
   const post = () =>
     page.request.post(SEND, {
       form,
-      headers: { origin: "http://localhost:8790", accept: "text/html" },
+      headers: { origin: origin, accept: "text/html" },
       maxRedirects: 0,
     });
   const [first, second] = await Promise.all([post(), post()]);
@@ -152,7 +152,7 @@ test("sends one order when the same intent is posted twice at once", async ({ co
 });
 
 test("ignores size, price and other fields the browser adds", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await openReview(page, "SLOW");
   const intentId = await page.locator("input[name=intentId]").inputValue();
   const send = (extra: Record<string, string>) =>
@@ -165,14 +165,14 @@ test("ignores size, price and other fields the browser adds", async ({ context, 
         cantidad: "198",
         ...extra,
       },
-      headers: { origin: "http://localhost:8790", accept: "text/html" },
+      headers: { origin: origin, accept: "text/html" },
       maxRedirects: 0,
     });
 
   // A different quantity is only compared, never used: the server asks to re-confirm.
   const wrongQty = await page.request.post(SEND, {
     form: { tipo: "acciones", cuenta: "SIM-1", simbolo: "SLOW", intentId, cantidad: "5" },
-    headers: { origin: "http://localhost:8790", accept: "text/html" },
+    headers: { origin: origin, accept: "text/html" },
   });
   expect(await wrongQty.text()).toContain("La cantidad cambió");
 
@@ -185,14 +185,14 @@ test("ignores size, price and other fields the browser adds", async ({ context, 
   // The intent id of another symbol cannot be reused.
   const other = await page.request.post(SEND, {
     form: { tipo: "acciones", cuenta: "SIM-1", simbolo: "MSFT", intentId, cantidad: "198" },
-    headers: { origin: "http://localhost:8790", accept: "text/html" },
+    headers: { origin: origin, accept: "text/html" },
     maxRedirects: 0,
   });
   expect(other.status()).not.toBe(303);
 });
 
 test("sends nobody else's order to the status page", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/operar/revisar/AAAAAAAAAAAAAAAAAAAAAA");
   await expect(page.getByText("Todavía no hay registro de esta orden.")).toBeVisible();
   const bad = await page.goto("/operar/revisar/not-an-id");
@@ -200,7 +200,7 @@ test("sends nobody else's order to the status page", async ({ context, page }) =
 });
 
 test("returns to Nueva entrada when the review has no instrument", async ({ context, page }) => {
-  await seedTradingClient(context, page);
+  await seedTradingClient(context);
   await page.goto("/operar/revisar");
   await expect(page).toHaveURL(/\/operar$/);
 });

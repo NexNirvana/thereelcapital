@@ -6,9 +6,8 @@ import {
   seedPendingClient,
   seedSignedInUser,
   virtualAuthenticator,
+  origin,
 } from "./support.ts";
-
-const origin = "http://localhost:8790";
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.8.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;

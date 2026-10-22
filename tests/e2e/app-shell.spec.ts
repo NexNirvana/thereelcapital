@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { RECOVERY_CODE_COUNT } from "../../src/lib/domain/config.ts";
-import { d1, seedSignedInUser } from "./support.ts";
+import { d1, seedSignedInUser, origin } from "./support.ts";
 
 // Set SCREENSHOT_DIR to also write desktop and mobile screenshots of each state.
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
@@ -11,7 +11,7 @@ const viewports = [
 
 test.beforeEach(async ({ context }) => {
   const ip = `10.6.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
-  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: "http://localhost:8790" });
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: origin });
 });
 
 function seedCodes(userId: string, count: number) {

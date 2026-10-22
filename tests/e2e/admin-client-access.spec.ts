@@ -8,6 +8,7 @@ import {
   seedPendingClient,
   seedSignedInUser,
   virtualAuthenticator,
+  origin,
 } from "./support.ts";
 
 test.beforeEach(async ({ context }) => {
@@ -15,7 +16,6 @@ test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip });
 });
 
-const origin = "http://localhost:8790";
 const actions = [
   "generateLink",
   "revokeLink",
@@ -249,7 +249,8 @@ test("saves a client's settings with an audit row, refuses a lower SIZE and show
   await seedSignedInUser(context, { role: "admin" });
   const client = await seedPendingClient();
   const other = await seedPendingClient();
-  await page.goto(`/admin/clientes/${client.userId}`);
+  // Typing before the page hydrates is lost when it takes over the form.
+  await page.goto(`/admin/clientes/${client.userId}`, { waitUntil: "networkidle" });
 
   await expect(page.getByText("máx. 2", { exact: true })).toBeVisible();
   await expect(page.getByText("máx. 3", { exact: true })).toBeVisible();

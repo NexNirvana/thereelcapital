@@ -1,40 +1,71 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { createHmac, randomUUID } from "node:crypto";
+import { MessageChannel, Worker, receiveMessageOnPort } from "node:worker_threads";
 import { type BrowserContext, type Page } from "@playwright/test";
 import { sessionDate } from "../../src/lib/domain/calendar.ts";
 import { newInvitation } from "../../src/lib/server/activation-link.ts";
+import { origin } from "./ports.ts";
+
+export { origin };
 
 // Same throwaway value playwright.config.ts passes to the dev server; not a credential.
 export const authSecret = "e2e-only-secret-0123456789-0123456789";
 
-// Test-only seeding straight into the local D1 the dev server uses. There is no sign-up or
-// session-minting endpoint in the app, so a registered user needs a row and a signed cookie.
-export function d1(sql: string): unknown[] {
-  // The dev server's Durable Objects keep reconciling open orders and read the same D1 file, so
-  // the CLI can meet a brief SQLITE_BUSY lock; it is safe to run the statement again.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return runD1(sql);
-    } catch (error) {
-      // execFileSync's message only names the command; the lock is reported on stderr.
-      const output = `${String(error)} ${error instanceof Error && "stderr" in error ? String(error.stderr) : ""}`;
-      if (attempt === 5 || !output.includes("SQLITE_BUSY")) throw error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300 * attempt);
-    }
+// Rows are seeded through the running app (/api/test/seed, open only when ENVIRONMENT is "test"),
+// so the app is the only writer of its databases: a second process opening the same SQLite files
+// races their locks (SQLITE_BUSY).
+const SEED_URL = `${origin}/api/test/seed`;
+
+interface SeedReply {
+  readonly status: number;
+  readonly text: string;
+}
+
+// Blocks until the reply arrives, so d1() stays synchronous for the specs: the request is made on
+// a worker thread and the caller sleeps on a shared flag until it is done.
+function postSeedSync(body: unknown): SeedReply {
+  const done = new Int32Array(new SharedArrayBuffer(4));
+  const { port1, port2 } = new MessageChannel();
+  const worker = new Worker(
+    `const { workerData: { url, body, done, port } } = require("node:worker_threads");
+     fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body })
+       .then(async (response) => ({ status: response.status, text: await response.text() }))
+       .catch((error) => ({ status: 0, text: String(error) }))
+       .then((reply) => { port.postMessage(reply); Atomics.store(done, 0, 1); Atomics.notify(done, 0); });`,
+    {
+      eval: true,
+      workerData: { url: SEED_URL, body: JSON.stringify(body), done, port: port2 },
+      transferList: [port2],
+    },
+  );
+  try {
+    Atomics.wait(done, 0, 0, 30_000);
+    const message = receiveMessageOnPort(port1)?.message as SeedReply | undefined;
+    if (!message) throw new Error("the seed request timed out");
+    return message;
+  } finally {
+    void worker.terminate();
+    port1.close();
   }
 }
 
-function runD1(sql: string): unknown[] {
-  const output = execFileSync(
-    "node_modules/.bin/wrangler",
-    ["d1", "execute", "DB", "--local", "--json", "--command", sql],
-    { encoding: "utf8" },
-  );
-  const parsed: unknown = JSON.parse(output);
-  const first = Array.isArray(parsed) ? parsed[0] : undefined;
-  return first && Array.isArray(first.results) ? first.results : [];
+function checkSeedReply(reply: SeedReply): unknown {
+  if (reply.status !== 200) throw new Error(`seeding failed (${reply.status}): ${reply.text}`);
+  return JSON.parse(reply.text);
+}
+
+// Runs the statements as one transaction and returns the rows of the last one. There is no
+// sign-up or session-minting endpoint in the app, so a registered user needs rows and a signed cookie.
+export function d1(sql: string): unknown[] {
+  // The statements are the helpers' own literals, none holds a `;` followed by a line break.
+  const statements = sql
+    .split(/;\s*(?:\n|$)/)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  const reply = checkSeedReply(postSeedSync({ target: "d1", statements }));
+  const results =
+    typeof reply === "object" && reply !== null && "results" in reply ? reply.results : [];
+  return Array.isArray(results) ? results : [];
 }
 
 export function count(sql: string): number {
@@ -94,7 +125,7 @@ export async function seedSignedInUser(
     {
       name: "better-auth.session_token",
       value: encodeURIComponent(`${token}.${signature}`),
-      url: "http://localhost:8790",
+      url: origin,
     },
   ]);
   return userId;
@@ -161,32 +192,22 @@ export const ENGINE_NOW = Date.parse(
   /^TEST_NOW=(.+)$/m.exec(readFileSync("tests/e2e/engine.env", "utf8"))?.[1] ?? "",
 );
 
-const DO_DIR = ".wrangler/state/v3/do/reel-engine-ClientCoordinator";
+// The engine keeps a client's SIM accounts, orders and positions in its Durable Object, which only
+// a real connection and real trading fill in (they need TradeStation). For the specs the rows are
+// written from inside the object (see engine/src/test-seed.ts). Addressing the object by the
+// client id creates and migrates it, as the app's own requests do.
+interface EngineStatement {
+  readonly sql: string;
+  readonly params: ReadonlyArray<string | number | null>;
+}
 
-// The engine keeps a client's SIM accounts in its Durable Object, which only a real connection
-// fills in (it needs TradeStation). For the specs they are written straight into the object's
-// SQLite file, once a request has created and migrated it. Test-only, like d1() above.
-// The directory does not exist until the first Durable Object of a fresh checkout is created.
-const engineFiles = () =>
-  new Set(
-    existsSync(DO_DIR)
-      ? readdirSync(DO_DIR).filter((name) => name.endsWith(".sqlite") && name !== "metadata.sqlite")
-      : [],
-  );
-
-function seedEngineAccounts(file: string, accountIds: readonly string[]) {
-  const db = new DatabaseSync(`${DO_DIR}/${file}`);
-  try {
-    // The engine holds the file open: wait for its write lock instead of failing.
-    db.exec("PRAGMA busy_timeout = 5000");
-    db.exec("DELETE FROM broker_accounts");
-    const insert = db.prepare(
-      "INSERT INTO broker_accounts (mode, account_id, account_type) VALUES ('SIM', ?, 'Margin')",
-    );
-    for (const accountId of accountIds) insert.run(accountId);
-  } finally {
-    db.close();
-  }
+async function seedEngine(clientId: string, statements: readonly EngineStatement[]) {
+  const response = await fetch(SEED_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target: "engine", clientId, statements }),
+  });
+  if (!response.ok) throw new Error(`engine seeding failed (${response.status})`);
 }
 
 export interface SeededOrder {
@@ -203,17 +224,13 @@ export interface SeededOrder {
 
 // Orders as the engine would have stored them. There is no order UI yet (#26), and the history
 // screen only reads what the Durable Object holds, so rows are written the way accounts are.
-function seedEngineOrders(file: string, orders: readonly SeededOrder[]) {
-  const db = new DatabaseSync(`${DO_DIR}/${file}`);
-  try {
-    db.exec("PRAGMA busy_timeout = 5000");
-    const insert = db.prepare(
-      `INSERT INTO intents (id, mode, kind, account_id, symbol, asset_type, trade_action, qty, state,
+function orderStatements(orders: readonly SeededOrder[]): EngineStatement[] {
+  return [
+    ...orders.map((o) => ({
+      sql: `INSERT INTO intents (id, mode, kind, account_id, symbol, asset_type, trade_action, qty, state,
          filled_qty, avg_fill_price, order_confirm_id, created_at, updated_at)
        VALUES (?, 'SIM', ?, ?, ?, 'equity', 'BUY', ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    for (const o of orders) {
-      insert.run(
+      params: [
         o.id,
         o.kind ?? "entry",
         o.account ?? "SIM-1",
@@ -225,14 +242,13 @@ function seedEngineOrders(file: string, orders: readonly SeededOrder[]) {
         o.id,
         o.createdAt,
         o.createdAt,
-      );
-    }
-    db.prepare(
-      "INSERT INTO events (at, mode, level, type, message) VALUES (?, 'SIM', 'info', 'broker.connected', 'broker.connected')",
-    ).run(orders[0]?.createdAt ?? 0);
-  } finally {
-    db.close();
-  }
+      ],
+    })),
+    {
+      sql: "INSERT INTO events (at, mode, level, type, message) VALUES (?, 'SIM', 'info', 'broker.connected', 'broker.connected')",
+      params: [orders[0]?.createdAt ?? 0],
+    },
+  ];
 }
 
 export interface SeededPosition {
@@ -254,17 +270,16 @@ export interface SeededPosition {
 }
 
 // Open positions and the day's entry count as the engine would have stored them (no order UI yet).
-function seedEnginePositions(file: string, positions: readonly SeededPosition[], entries: number) {
-  const db = new DatabaseSync(`${DO_DIR}/${file}`);
-  try {
-    db.exec("PRAGMA busy_timeout = 5000");
-    const insert = db.prepare(
-      `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
+function positionStatements(
+  positions: readonly SeededPosition[],
+  entries: number,
+): EngineStatement[] {
+  return [
+    ...positions.map((p) => ({
+      sql: `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
          trailing_unlock_pct, protection_state, status, opened_on, underlying, expiry, strike, right)
        VALUES (?, 'SIM', ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04', ?, ?, ?, ?)`,
-    );
-    for (const p of positions) {
-      insert.run(
+      params: [
         p.id,
         p.account ?? "SIM-1",
         p.symbol,
@@ -275,29 +290,29 @@ function seedEnginePositions(file: string, positions: readonly SeededPosition[],
         p.option?.expiry ?? null,
         p.option?.strike ?? null,
         p.option?.right ?? null,
-      );
-    }
-    const step = db.prepare(
-      "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, 'SIM', ?, ?)",
-    );
-    for (const p of positions) {
-      for (let idx = 0; idx < 7; idx++) step.run(p.id, idx, p.steps?.[idx] ?? "available");
-    }
-    if (entries > 0) {
-      db.prepare(
-        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', ?, ?, 0)",
-      ).run(sessionDate(new Date(ENGINE_NOW)), entries);
-    }
-  } finally {
-    db.close();
-  }
+      ],
+    })),
+    ...positions.flatMap((p) =>
+      Array.from({ length: 7 }, (_, idx) => ({
+        sql: "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, 'SIM', ?, ?)",
+        params: [p.id, idx, p.steps?.[idx] ?? "available"],
+      })),
+    ),
+    ...(entries > 0
+      ? [
+          {
+            sql: "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', ?, ?, 0)",
+            params: [sessionDate(new Date(ENGINE_NOW)), entries],
+          },
+        ]
+      : []),
+  ];
 }
 
 // A signed-in client with a CONNECTED TradeStation SIM connection, SIZE and stop % in D1, and
 // `accounts` in its engine. The engine runs the local simulation (tests/e2e/engine.env).
 export async function seedTradingClient(
   context: BrowserContext,
-  page: Page,
   {
     accounts = ["SIM-1"],
     sizeUsd = 20_000,
@@ -324,21 +339,16 @@ export async function seedTradingClient(
      VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', ${refreshExpiresAt ?? "NULL"}, '${status}', ${ENGINE_NOW - 60_000});
      INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('${randomUUID()}', '${userId}', 'h-${randomUUID()}')`,
   );
-  // Any shell page reaches the engine and creates this client's object; the one new file is it.
-  const existing = engineFiles();
-  await page.goto("/conexion");
-  // The object's file can show up a moment after the response that created it.
-  let created: string[] = [];
-  for (let attempt = 0; attempt < 50 && created.length === 0; attempt++) {
-    created = [...engineFiles()].filter((file) => !existing.has(file));
-    if (created.length === 0) await new Promise((done) => setTimeout(done, 100));
-  }
-  if (created.length !== 1)
-    throw new Error(`expected one new Durable Object, got ${created.length}`);
-  seedEngineAccounts(created[0] as string, accounts);
-  if (orders.length > 0) seedEngineOrders(created[0] as string, orders);
-  if (positions.length > 0 || entriesToday > 0) {
-    seedEnginePositions(created[0] as string, positions, entriesToday);
-  }
+  await seedEngine(userId, [
+    { sql: "DELETE FROM broker_accounts", params: [] },
+    ...accounts.map((accountId) => ({
+      sql: "INSERT INTO broker_accounts (mode, account_id, account_type) VALUES ('SIM', ?, 'Margin')",
+      params: [accountId],
+    })),
+    ...(orders.length > 0 ? orderStatements(orders) : []),
+    ...(positions.length > 0 || entriesToday > 0
+      ? positionStatements(positions, entriesToday)
+      : []),
+  ]);
   return userId;
 }
