@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { ENGINE_NOW, seedSignedInUser, seedTradingClient, origin } from "./support.ts";
 
 // Orders are seeded straight into the client's Durable Object (there is no order UI yet): the

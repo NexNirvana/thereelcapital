@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { seedSignedInUser } from "./support.ts";
 
 test("the shell is served from /operar and / redirects there", async ({

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { hashToken } from "../../src/lib/server/token-hash.ts";
 import { newRecoveryCode, normalizeRecoveryCode } from "../../src/lib/server/recovery-codes.ts";
 import {

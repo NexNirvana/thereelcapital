@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { count, d1, registerPasskey, seedPendingClient, virtualAuthenticator } from "./support.ts";
 
 test.beforeEach(async ({ context }) => {

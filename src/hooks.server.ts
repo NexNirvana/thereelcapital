@@ -6,8 +6,9 @@ import { sveltekitCookies, svelteKitHandler } from "better-auth/svelte-kit";
 import { env } from "cloudflare:workers";
 import { createAuth } from "#lib/server/auth.ts";
 import { enrollmentGate } from "#lib/server/enrollment.ts";
+import { withSecurityHeaders } from "#lib/server/security-headers.ts";
 
-export const handle: Handle = async ({ event, resolve }) => {
+const handleRequest: Handle = async ({ event, resolve }) => {
   // sveltekitCookies goes last so cookies set by Better Auth reach SvelteKit responses.
   const auth = createAuth(env, { trailingPlugins: [sveltekitCookies(getRequestEvent)] });
 
@@ -53,3 +54,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   return svelteKitHandler({ auth, event, resolve, building });
 };
+
+// Outermost, so the enrollment gate's own answers and Better Auth's responses carry the headers too.
+export const handle: Handle = async (input) => withSecurityHeaders(await handleRequest(input));
