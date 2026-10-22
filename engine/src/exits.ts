@@ -270,22 +270,24 @@ function settle(
 }
 
 /** A client's own exit, or the engine's stop (docs/domain-rules.md §7); both use this one path. */
-export type ExitKind = "exit" | "stop";
+export type ExitKind = "exit" | "stop" | "trailing";
 
 export function exitPosition(ctx: ExitContext, args: ExitArgs): Promise<EngineResult<ExitResult>> {
   return placeExit(ctx, args, "exit");
 }
 
 /**
- * The engine-held stop (D36): ALL OUT of `available` through the same ledger, intent-first and
- * single-attempt path. It is an exit, not an entry: no counter moves and no limit applies.
+ * The engine-held stop or trailing exit (D36): ALL OUT of `available` through the same ledger,
+ * intent-first and single-attempt path. It is an exit, not an entry: no counter moves and no limit
+ * applies. `kind` records which level fired.
  */
 export function stopExit(
   ctx: ExitContext,
   positionId: string,
   mode: ExitArgs["mode"],
+  kind: "stop" | "trailing",
 ): Promise<EngineResult<ExitResult>> {
-  return placeExit(ctx, { mode, positionId, step: "ALL_OUT" }, "stop");
+  return placeExit(ctx, { mode, positionId, step: "ALL_OUT" }, kind);
 }
 
 async function placeExit(

@@ -5,7 +5,7 @@
 
 import { STOP_REJECTED_COOLDOWN_MS } from "#lib/domain/config.ts";
 import { isRegularSession } from "#lib/domain/calendar.ts";
-import { shouldExit } from "#lib/domain/stop.ts";
+import { nextTrailing, shouldExit, stopLevel, type TrailingState } from "#lib/domain/stop.ts";
 import { attempt } from "./broker/attempt.ts";
 import type { Quote } from "./broker/adapter.ts";
 import { writeEvent } from "./events.ts";
@@ -18,6 +18,9 @@ interface WatchedPosition extends Record<string, SqlStorageValue> {
   symbol: string;
   avg_entry_price: number;
   stop_pct: number;
+  trailing_pct: number | null;
+  trailing_peak: number | null;
+  trailing_level: number | null;
   protection_state: string;
   original_qty: number;
   sold_qty: number;
@@ -28,7 +31,7 @@ interface WatchedPosition extends Record<string, SqlStorageValue> {
 const QUOTES_DEGRADED_KEY = "protection_quotes_degraded";
 
 /** A bid we may act on: present, live (not delayed) and not halted. Our own receive time makes it fresh. */
-function freshBid(quote: Quote | undefined): number | null {
+export function freshBid(quote: Quote | undefined): number | null {
   if (quote === undefined || quote.bid === null || quote.isDelayed || quote.isHalted) return null;
   // A zero or negative bid is no price: it would read as below any stop level.
   if (!Number.isFinite(quote.bid) || quote.bid <= 0) return null;
@@ -54,6 +57,29 @@ function log(
 }
 
 /**
+ * docs/domain-rules.md §8: with trailing active, each fresh bid raises the peak and the level (never
+ * lowers them) and the new values are stored before anything is sent.
+ */
+function followTrailing(ctx: ExitContext, row: WatchedPosition, bid: number): TrailingState | null {
+  if (row.trailing_pct === null || row.trailing_peak === null || row.trailing_level === null) {
+    return null;
+  }
+  const next = nextTrailing(
+    { trailingPct: row.trailing_pct, peak: row.trailing_peak, level: row.trailing_level },
+    bid,
+  );
+  if (next.peak !== row.trailing_peak || next.level !== row.trailing_level) {
+    ctx.sql.exec(
+      "UPDATE positions SET trailing_peak = ?, trailing_level = ? WHERE id = ?",
+      next.peak,
+      next.level,
+      row.id,
+    );
+  }
+  return next;
+}
+
+/**
  * Cheap local checks before the exit path (which asks the broker for symbol details): something is
  * left to sell, the market is open, and the broker did not just reject a stop for this position.
  * The exit path decides again inside its own transaction; this only avoids a call per tick.
@@ -65,7 +91,7 @@ function stopCanBeSent(ctx: ExitContext, row: WatchedPosition): boolean {
   if (!isRegularSession({ kind }, new Date(ctx.now)).open) return false;
   const rejectedAt = ctx.sql
     .exec<{ at: number | null }>(
-      "SELECT MAX(updated_at) AS at FROM intents WHERE position_id = ? AND kind = 'stop' AND state = 'REJECTED'",
+      "SELECT MAX(updated_at) AS at FROM intents WHERE position_id = ? AND kind IN ('stop', 'trailing') AND state = 'REJECTED'",
       row.id,
     )
     .one().at;
@@ -81,7 +107,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
   if (reconciliationPending(ctx.storage)) return;
   const watched = ctx.sql
     .exec<WatchedPosition>(
-      `SELECT id, symbol, original_qty, sold_qty, expiry, avg_entry_price, stop_pct, protection_state,
+      `SELECT id, symbol, original_qty, sold_qty, expiry, avg_entry_price, stop_pct, trailing_pct, trailing_peak, trailing_level, protection_state,
               EXISTS (SELECT 1 FROM intents WHERE position_id = positions.id AND state = 'UNKNOWN') AS has_unknown
          FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'`,
     )
@@ -109,17 +135,18 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
       continue;
     }
     setState(ctx, row.id, "verified");
-    if (
-      !shouldExit(
-        { avgEntryPrice: row.avg_entry_price, stopPct: row.stop_pct, trailing: null },
-        bid,
-      )
-    ) {
+    const trailing = followTrailing(ctx, row, bid);
+    if (!shouldExit({ avgEntryPrice: row.avg_entry_price, stopPct: row.stop_pct, trailing }, bid)) {
       ctx.storage.kv.delete(`protection_outcome:${row.id}`);
       continue;
     }
     if (!stopCanBeSent(ctx, row)) continue;
-    const result = await stopExit(ctx, row.id, "SIM");
+    // The trailing level is the effective exit level when it is above the stop (domain-rules.md §8).
+    const kind =
+      trailing !== null && trailing.level > stopLevel(row.avg_entry_price, row.stop_pct)
+        ? "trailing"
+        : "stop";
+    const result = await stopExit(ctx, row.id, "SIM", kind);
     const outcome = !result.ok
       ? result.code
       : result.value.status === "BLOCKED"
@@ -132,7 +159,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     const key = `protection_outcome:${row.id}`;
     if (ctx.storage.kv.get(key) !== outcome) {
       ctx.storage.kv.put(key, outcome);
-      log(ctx, "info", "protection.stop_triggered", { positionId: row.id, bid, outcome });
+      log(ctx, "info", `protection.${kind}_triggered`, { positionId: row.id, bid, outcome });
     }
   }
 }

@@ -132,7 +132,6 @@ export type CompleteConnectionArgs = typeof CompleteConnectionArgs.Type;
 export type EngineErrorCode =
   | "INVALID_INPUT"
   | "MODE_NOT_SIM"
-  | "NOT_IMPLEMENTED"
   | "NOT_FOUND"
   | "CREDENTIALS_UNAVAILABLE"
   | "STATE_INVALID"
@@ -147,7 +146,6 @@ export type EngineResult<T> =
 const MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_INPUT: "Los datos enviados no son válidos.",
   MODE_NOT_SIM: "Solo el modo SIM está disponible.",
-  NOT_IMPLEMENTED: "Esta operación todavía no está disponible.",
   NOT_FOUND: "No encontramos eso en TradeStation.",
   CREDENTIALS_UNAVAILABLE: "No pudimos guardar tus credenciales. Avisa al administrador.",
   STATE_INVALID: "El enlace de autorización no es válido o venció. Vuelve a conectar.",
