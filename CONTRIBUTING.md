@@ -64,6 +64,29 @@ Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as 
 bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
 ```
 
+### Self-hosted runner
+
+CI can optionally run on the owner's machine (`scripts/ci-runner/`) to speed up pull requests. `.github/workflows/ci.yml` picks the runner from the repository variable `CI_RUNNER` (a JSON label array); unset, everything runs on GitHub-hosted runners.
+
+Safety model:
+
+- The runners (`reel-local-1..N`, labels `self-hosted,linux,x64,reel-local`) run as the unprivileged system user `ghrunner`, whose home is mode 700 and separate from the owner's account, so jobs cannot read the owner's secrets (`.env`, Cloudflare and other logins).
+- Only same-repo pull requests and pushes use them: `ci.yml` gates each job on the head repository, and fork pull requests, `deploy` and other secret-using jobs stay on GitHub-hosted runners. `toggle.sh on` refuses while `ci.yml` on `main` has no such gate.
+- The repository setting "Require approval for all outside collaborators" is on (`gh api repos/NexNirvana/thereelcapital/actions/permissions/fork-pr-contributor-approval` returns `all_external_contributors`).
+- `setup.sh` runs under `sudo` but fetches the registration token through `gh` as the invoking user, so `ghrunner` never holds a GitHub admin token. The token is passed to `config.sh` as an argument, so it is visible in `ps` for a moment; it expires after an hour and only registers a runner.
+- A job on the runner is still code from this repository running on the owner's machine: review pull requests from collaborators before CI runs them.
+
+Commands (`--dry-run` on the first and last prints every privileged action without running it):
+
+```sh
+sudo scripts/ci-runner/setup.sh [--count 4]   # install and start the runners (idempotent)
+scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the machine
+scripts/ci-runner/toggle.sh off               # deletes CI_RUNNER: CI uses GitHub-hosted runners
+sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
+```
+
+Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. Services are OpenRC `gh-runner-N`, logging to `/var/log/gh-runner-N.log`. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
+
 ### Verification and screenshots
 
 Every PR shows how it was verified, in the template's sections:
