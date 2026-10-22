@@ -59,7 +59,7 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 ## Layout shell
 
 **Desktop** (see `designs/desktop/02-new-order.png`):
-- Left sidebar **190px**, `--surface`: stacked wordmark `REEL / CAPITAL`; nav `Operar · Posiciones · Historial · Conexión` (Posiciones and Historial are listed only once #30 and #31 build them; admins also get `Admin`); active item = slim white vertical bar + brighter text; `Cerrar sesión` and `thereelcapital.com` at the bottom.
+- Left sidebar **190px**, `--surface`: stacked wordmark `REEL / CAPITAL`; nav `Operar · Posiciones · Historial · Conexión` (a screen is listed once it is built; admins also get `Admin`); active item = slim white vertical bar + brighter text; `Cerrar sesión` and `thereelcapital.com` at the bottom.
 - Top utility row, separated by one hairline: `● TradeStation conectado` · outlined `SIM` badge … `•• 4821` | `10:42 ET` (market time, `Intl` with America/New_York, refreshed each minute, not announced by screen readers). The account (last four characters) appears only while connected. The limits line stays hidden until M4 provides the counters.
 - Content max-width about 1000px, generous padding. Breadcrumb (`Operar / Nueva entrada`) → H1 → subtitle; quiet limits line top-right (`1/2 posiciones · 2/3 entradas hoy`).
 - Two unboxed columns (about 55/40) split by **one** thin vertical rule.

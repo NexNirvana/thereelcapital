@@ -12,10 +12,11 @@
   let { children, data }: LayoutProps = $props();
   const indicator = $derived(indicatorFor(data.health));
 
-  // Only built screens are listed. TODO(#30): add Posiciones (/posiciones). Conexión is also
+  // Only built screens are listed. Conexión is also
   // reachable from the top bar.
   const nav = $derived([
     { href: resolve("/(app)/operar"), label: "Operar" },
+    { href: resolve("/(app)/posiciones"), label: "Posiciones" },
     { href: resolve("/(app)/historial"), label: "Historial" },
     { href: resolve("/(app)/conexion"), label: "Conexión" },
     ...(data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []),
@@ -274,6 +275,11 @@
     .tabbar ul {
       display: flex;
       justify-content: space-between;
+      gap: 0.25rem;
+      overflow-x: auto;
+      font-size: 12px;
+      white-space: nowrap;
+      scrollbar-width: none;
     }
     .tabbar {
       color: var(--text-muted);
