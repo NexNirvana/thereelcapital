@@ -133,6 +133,7 @@ export type EngineErrorCode =
   | "INVALID_INPUT"
   | "MODE_NOT_SIM"
   | "NOT_FOUND"
+  | "RECONNECT_REQUIRED"
   | "CREDENTIALS_UNAVAILABLE"
   | "STATE_INVALID"
   | "TOKEN_EXCHANGE_FAILED"
@@ -147,6 +148,8 @@ const MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_INPUT: "Los datos enviados no son válidos.",
   MODE_NOT_SIM: "Solo el modo SIM está disponible.",
   NOT_FOUND: "No encontramos eso en TradeStation.",
+  RECONNECT_REQUIRED:
+    "Tu conexión con TradeStation no incluye el permiso para opciones. Entra en Conexión y pulsa «Reconectar».",
   CREDENTIALS_UNAVAILABLE: "No pudimos guardar tus credenciales. Avisa al administrador.",
   STATE_INVALID: "El enlace de autorización no es válido o venció. Vuelve a conectar.",
   TOKEN_EXCHANGE_FAILED:

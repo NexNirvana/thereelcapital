@@ -21,6 +21,10 @@ import { SIM_API_BASE_URL } from "./endpoints.ts";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_READ_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 250;
+/** The 403 body TradeStation sends when the token lacks a scope (SIM spike 2026-10-22). */
+const MISSING_SCOPE_MESSAGE = "Missing required scope.";
+/** Stable code for that refusal: the client must reconnect to be granted the scope. */
+export const MISSING_SCOPE_CODE = "MISSING_SCOPE";
 /** Broker messages go to the event log; keep them short. */
 const MAX_REASON_LENGTH = 200;
 
@@ -145,6 +149,9 @@ async function errorFromResponse(
   const body = Schema.decodeUnknownResult(ErrorBody)(parsed);
   const message = body._tag === "Success" ? (body.success.Message ?? "") : "";
   const code = body._tag === "Success" ? body.success.Error : undefined;
+  if (status === 403 && message === MISSING_SCOPE_MESSAGE) {
+    return new Rejected({ operation, code: MISSING_SCOPE_CODE, reason: message });
+  }
   return new Rejected({
     operation,
     code: code !== undefined && code !== "" ? code : `HTTP_${status}`,

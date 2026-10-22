@@ -8,10 +8,11 @@ All TradeStation calls are made by the client's `ClientCoordinator` DO ([archite
 
 - Each client brings **their own** API key (`client_id`) and secret. They are stored encrypted in `broker_connection`. The key is an Auth0 key: authorize and get tokens only through the v3 auth endpoints.
 - Flow: Authorization Code with the client secret (PKCE is a separate key mode for SPAs/native apps; we don't need it).
-  - Authorize: `https://signin.tradestation.com/authorize?response_type=code&client_id=…&audience=https://api.tradestation.com&redirect_uri=…&scope=openid offline_access MarketData ReadAccount Trade&state=…`
+  - Authorize: `https://signin.tradestation.com/authorize?response_type=code&client_id=…&audience=https://api.tradestation.com&redirect_uri=…&scope=openid offline_access MarketData ReadAccount Trade OptionSpreads&state=…`
   - Token: `POST https://signin.tradestation.com/oauth/token` (code exchange and `refresh_token` grant).
   - Revoke: `POST https://signin.tradestation.com/oauth/revoke`. It revokes **all** refresh tokens of that API key.
 - Callback URLs must use `https://` and be registered on the client's key; localhost on ports 80/3000/3001/8080/31022 is allowed by default. Registering ours is optional (D35): by default the app authorizes with the bare `http://localhost:3000` (see the connect flow below). Production callback, for registered mode only (`CONNECT_REDIRECT_MODE`, where the screen tells the client which URL to register): `https://thereelcapital.com/conexion/callback`.
+- `OptionSpreads` is the scope TradeStation's [scopes page](https://api.tradestation.com/docs/fundamentals/authentication/scopes) lists for "options related endpoints". Without it every options endpoint (expirations, strikes, chain) answered 403 `{"Message":"Missing required scope."}` in the SIM spike (`engine/test/fixtures/sim/expirations/expirations.json`). Requesting it fixes that **(verify on the next spike run)**. A connection authorized before this scope was added lacks it, and the access tokens the engine refreshes keep the scopes of the original authorization, so that client must press «Reconectar con TradeStation» once. The transport maps that 403 to `Rejected` with the code `MISSING_SCOPE`, and the chain reads answer `RECONNECT_REQUIRED` with Spanish copy that tells the client to reconnect.
 - `state` binds the callback to the logged-in REEL CAPITAL session. The callback only links the authorization to that existing profile.
 
 ### Connect flow (implemented)

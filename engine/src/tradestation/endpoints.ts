@@ -7,7 +7,12 @@ export const SIM_API_BASE_URL = "https://sim-api.tradestation.com/v3";
 export const AUTH_BASE_URL = "https://signin.tradestation.com";
 
 export const AUDIENCE = "https://api.tradestation.com";
-export const SCOPES = "openid offline_access MarketData ReadAccount Trade";
+/**
+ * `OptionSpreads` is what TradeStation's scopes page lists for the options endpoints; without it
+ * they answer 403 "Missing required scope." (SIM spike 2026-10-22). Tokens issued before it was
+ * requested keep the old scopes, so those connections must reconnect.
+ */
+export const SCOPES = "openid offline_access MarketData ReadAccount Trade OptionSpreads";
 
 /** A broker call that hangs must not hold the Durable Object; a timeout is a failure, not a retry. */
 const REQUEST_TIMEOUT_MS = 10_000;

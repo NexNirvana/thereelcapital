@@ -8,6 +8,7 @@ import type { BrokerAdapterShape, ChainRow } from "./broker/adapter.ts";
 import type { BrokerError } from "./broker/errors.ts";
 import { writeEvent } from "./events.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
+import { MISSING_SCOPE_CODE } from "./tradestation/http.ts";
 
 interface ChainContext {
   readonly sql: SqlStorage;
@@ -67,6 +68,9 @@ function brokerFailure(
     message: `chain.${operation}_failed`,
     data: { failure: error._tag },
   });
+  if (error._tag === "Rejected" && error.code === MISSING_SCOPE_CODE) {
+    return failure("RECONNECT_REQUIRED");
+  }
   return failure(error._tag === "Rejected" ? "NOT_FOUND" : "BROKER_UNAVAILABLE");
 }
 
