@@ -35,6 +35,19 @@ export function writeEvent(sql: SqlStorage, now: number, event: EngineEvent): vo
   );
 }
 
+/**
+ * The one-line event every engine module writes: SIM only, `message` is the type. `data` is limited to
+ * counts, ids and statuses by the callers; the writer also scrubs secret-like keys.
+ */
+export function logEvent(
+  ctx: { readonly sql: SqlStorage; readonly now: number },
+  level: EventLevel,
+  type: string,
+  data?: Readonly<Record<string, unknown>>,
+): void {
+  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
+}
+
 /** Drops a mode's events past the retention window (D22); scoped by mode to use `events_by_mode_at`. */
 export function pruneEvents(sql: SqlStorage, now: number, mode: Mode): void {
   sql.exec("DELETE FROM events WHERE mode = ? AND at < ?", mode, now - EVENT_RETENTION_MS);

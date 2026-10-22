@@ -6,7 +6,7 @@
 import { Effect } from "effect";
 import type { BrokerAdapterShape, ChainRow } from "./broker/adapter.ts";
 import type { BrokerError } from "./broker/errors.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { MISSING_SCOPE_CODE } from "./tradestation/http.ts";
 
@@ -61,12 +61,8 @@ function brokerFailure(
   operation: string,
   error: BrokerError,
 ): EngineResult<never> {
-  writeEvent(ctx.sql, ctx.now, {
-    mode: "SIM",
-    level: error._tag === "Rejected" ? "info" : "warn",
-    type: `chain.${operation}_failed`,
-    message: `chain.${operation}_failed`,
-    data: { failure: error._tag },
+  logEvent(ctx, error._tag === "Rejected" ? "info" : "warn", `chain.${operation}_failed`, {
+    failure: error._tag,
   });
   if (error._tag === "Rejected" && error.code === MISSING_SCOPE_CODE) {
     return failure("RECONNECT_REQUIRED");

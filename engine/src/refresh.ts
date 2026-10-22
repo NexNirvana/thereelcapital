@@ -8,7 +8,7 @@ import {
 } from "#lib/domain/config.ts";
 import type { StoredConnectionState } from "#lib/domain/connection.ts";
 import { UnknownKeyIdError, type CredentialCipher } from "./crypto.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { refreshAccessToken } from "./tradestation/auth.ts";
 
 /** Marks that entries stay blocked until reconciliation, even once the connection works again. */
@@ -258,23 +258,12 @@ export class TokenRefresher {
       }
       if (generation === this.#generation) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
       if (row.refresh_expires_at === null) {
-        writeEvent(sql, now, {
-          mode: "SIM",
-          level: "info",
-          type: "broker.rotation_detected",
-          message: "broker.rotation_detected",
-          data: { refreshExpiresAt },
-        });
+        logEvent({ sql, now }, "info", "broker.rotation_detected", { refreshExpiresAt });
       }
       this.#recovered(row, now);
     } catch {
       // The token stays in DO storage and the next refresh writes it, whatever the response says.
-      writeEvent(sql, now, {
-        mode: "SIM",
-        level: "error",
-        type: "broker.rotation_not_saved",
-        message: "broker.rotation_not_saved",
-      });
+      logEvent({ sql, now }, "error", "broker.rotation_not_saved");
     }
   }
 
@@ -291,12 +280,7 @@ export class TokenRefresher {
 
   #recovered(row: ConnectionRow, now: number): void {
     if (row.status !== "ERROR") return;
-    writeEvent(this.deps.sql, now, {
-      mode: "SIM",
-      level: "info",
-      type: "broker.refresh_recovered",
-      message: "broker.refresh_recovered",
-    });
+    logEvent({ sql: this.deps.sql, now }, "info", "broker.refresh_recovered");
   }
 
   /**
@@ -328,12 +312,11 @@ export class TokenRefresher {
     } catch {
       // The block above already holds; the status is written again by the next failed refresh.
     }
-    writeEvent(sql, clock(), {
-      mode: "SIM",
-      level: "warn",
-      type: "broker.refresh_failed",
-      message: "broker.refresh_failed",
-      data: { state, reason, status: httpStatus ?? null, recorded },
+    logEvent({ sql, now: clock() }, "warn", "broker.refresh_failed", {
+      state,
+      reason,
+      status: httpStatus ?? null,
+      recorded,
     });
     return outcome;
   }

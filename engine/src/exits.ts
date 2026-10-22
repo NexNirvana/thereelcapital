@@ -17,7 +17,7 @@ import type { BrokerAdapterShape, OrderRequest } from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import type { BrokerAccount } from "./tradestation/accounts.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { newIntentId } from "./ids.ts";
 import { committedQty, settleStep, stepStates } from "./ledger.ts";
 import { failure, success, type CancelArgs, type EngineResult, type ExitArgs } from "./rpc.ts";
@@ -65,15 +65,6 @@ export type CancelResult =
       /** True when the cancel was already requested: the broker was not called again. */
       readonly replay: boolean;
     };
-
-function log(
-  ctx: ConnectionContext,
-  level: "info" | "warn" | "error",
-  type: string,
-  data?: Record<string, unknown>,
-): void {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
 
 /**
  * Only a lost grant blocks an exit: it cannot reach the broker at all. A transient `error` is still
@@ -308,7 +299,7 @@ async function placeExit(
 
   const details = await attempt(ctx.broker.symbolDetails(position.symbol));
   if (!details.ok) {
-    log(ctx, "warn", "exit.details_failed", { failure: details.error._tag });
+    logEvent(ctx, "warn", "exit.details_failed", { failure: details.error._tag });
     return failure("BROKER_UNAVAILABLE");
   }
   const instrument: Instrument = {
@@ -320,7 +311,7 @@ async function placeExit(
   const reservation = reserve(ctx, args, intentId, account, instrument, kind);
   if (reservation.kind === "blocked") return blocked(...reservation.reasons);
   if (reservation.kind === "done_zero") {
-    log(ctx, "info", "exit.step_done_zero", {
+    logEvent(ctx, "info", "exit.step_done_zero", {
       positionId: args.positionId,
       step: reservation.step,
     });
@@ -346,7 +337,7 @@ async function placeExit(
       placed.error._tag === "RateLimited"
     ) {
       release(ctx, intentId);
-      log(ctx, "warn", "exit.rejected", {
+      logEvent(ctx, "warn", "exit.rejected", {
         intentId,
         failure: placed.error._tag,
         ...(placed.error._tag === "Rejected"
@@ -356,13 +347,13 @@ async function placeExit(
       state = "REJECTED";
     } else {
       settle(ctx, intentId, "UNKNOWN", null);
-      log(ctx, "warn", "exit.unknown", { intentId, failure: placed.error._tag });
+      logEvent(ctx, "warn", "exit.unknown", { intentId, failure: placed.error._tag });
       state = "UNKNOWN";
     }
   } catch {
     // An unexpected failure while the request may have left: same as a timeout.
     settle(ctx, intentId, "UNKNOWN", null);
-    log(ctx, "error", "exit.unknown", { intentId, failure: "defect" });
+    logEvent(ctx, "error", "exit.unknown", { intentId, failure: "defect" });
     state = "UNKNOWN";
   }
   return success({ status: "PLACED", intentId, state, qty: reservation.qty });
@@ -463,14 +454,14 @@ export async function cancelIntent(
           args.intentId,
         );
       }
-      log(ctx, "warn", "cancel.failed", {
+      logEvent(ctx, "warn", "cancel.failed", {
         intentId: args.intentId,
         failure: tag,
         ...(sent.error._tag === "Rejected" ? { code: sent.error.code } : {}),
       });
     }
   } catch {
-    log(ctx, "error", "cancel.failed", { intentId: args.intentId, failure: "defect" });
+    logEvent(ctx, "error", "cancel.failed", { intentId: args.intentId, failure: "defect" });
   }
   const state =
     ctx.sql

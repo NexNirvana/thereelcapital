@@ -6,7 +6,7 @@ import { activateTrailing as startTrailing, trailingEligible } from "#lib/domain
 import { attempt } from "./broker/attempt.ts";
 import { readConnection } from "./connection.ts";
 import type { ExitContext } from "./exits.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { committedQty } from "./ledger.ts";
 import { freshBid } from "./protection.ts";
 import { success, type ActivateTrailingArgs, type EngineResult } from "./rpc.ts";
@@ -99,12 +99,9 @@ export async function activateTrailing(
     return { status: "ACTIVATED", ...state };
   });
   if (outcome.status === "ACTIVATED") {
-    writeEvent(ctx.sql, ctx.now, {
-      mode: "SIM",
-      level: "info",
-      type: "protection.trailing_activated",
-      message: "protection.trailing_activated",
-      data: { positionId: args.positionId, trailingPct: outcome.trailingPct },
+    logEvent(ctx, "info", "protection.trailing_activated", {
+      positionId: args.positionId,
+      trailingPct: outcome.trailingPct,
     });
   }
   return success(outcome);

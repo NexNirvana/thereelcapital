@@ -8,7 +8,7 @@ import { sessionDate } from "#lib/domain/calendar.ts";
 import { SCALE_OUT_STEPS } from "#lib/domain/scaleout.ts";
 import { ORDER_MATCH_SKEW_MS, SEND_GRACE_MS } from "#lib/domain/config.ts";
 import type { BrokerOrder, BrokerPosition, SymbolDetails } from "./broker/adapter.ts";
-import { writeEvent, type EventLevel } from "./events.ts";
+import { logEvent, type EventLevel } from "./events.ts";
 import { settleStep } from "./ledger.ts";
 
 /** What was read from the broker for the client's accounts, before the transaction starts. */
@@ -81,15 +81,6 @@ interface PositionRow extends Record<string, SqlStorageValue> {
   sold_qty: number;
 }
 
-export function log(
-  ctx: ReconcileContext,
-  level: EventLevel,
-  type: string,
-  data?: Record<string, unknown>,
-): void {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
-
 /** For conditions that stay true across ticks: the first pass logs it, later ones stay quiet. */
 export function logOnce(
   ctx: ReconcileContext,
@@ -101,7 +92,7 @@ export function logOnce(
   const flag = `logged:${type}:${key}`;
   if (ctx.storage.kv.get(flag) !== undefined) return;
   ctx.storage.kv.put(flag, ctx.now);
-  log(ctx, level, type, data);
+  logEvent(ctx, level, type, data);
 }
 
 const isEntryIntent = (intent: IntentRow) => intent.kind === "entry";
@@ -198,7 +189,7 @@ function applyOrder(ctx: ReconcileContext, intent: IntentRow, order: BrokerOrder
     intent.id,
   );
   if (state !== intent.state || filledQty !== intent.filled_qty) {
-    log(ctx, "info", "reconcile.intent_updated", {
+    logEvent(ctx, "info", "reconcile.intent_updated", {
       intentId: intent.id,
       from: intent.state,
       to: state,
@@ -286,7 +277,7 @@ function createPositions(
     });
     ctx.sql.exec("UPDATE intents SET position_id = ? WHERE id = ?", positionId, entry.id);
     created.add(positionId);
-    log(ctx, "info", "reconcile.position_opened", {
+    logEvent(ctx, "info", "reconcile.position_opened", {
       positionId,
       intentId: entry.id,
       originalQty: entry.filled_qty,
@@ -381,14 +372,14 @@ function syncPositions(
         "UPDATE positions SET status = 'CLOSED', sold_qty = original_qty WHERE id = ?",
         position.id,
       );
-      log(ctx, "info", "reconcile.position_closed", { positionId: position.id });
+      logEvent(ctx, "info", "reconcile.position_closed", { positionId: position.id });
     } else if (held < remaining) {
       ctx.sql.exec(
         "UPDATE positions SET sold_qty = original_qty - ? WHERE id = ?",
         held,
         position.id,
       );
-      log(ctx, "warn", "reconcile.external_sale", {
+      logEvent(ctx, "warn", "reconcile.external_sale", {
         positionId: position.id,
         soldQty: position.original_qty - held,
       });
@@ -447,7 +438,7 @@ function matchIntents(
       matches.set(intent, order);
       claimed.add(order.orderId);
       if (byId === undefined) {
-        log(ctx, "info", "reconcile.confirm_match", {
+        logEvent(ctx, "info", "reconcile.confirm_match", {
           intentId: intent.id,
           orderId: order.orderId,
         });
@@ -500,7 +491,10 @@ function matchIntents(
     const [only] = found;
     if (only !== undefined && found.length === 1 && claimants.get(only.orderId) === 1) {
       matches.set(intent, only);
-      log(ctx, "info", "reconcile.fallback_match", { intentId: intent.id, orderId: only.orderId });
+      logEvent(ctx, "info", "reconcile.fallback_match", {
+        intentId: intent.id,
+        orderId: only.orderId,
+      });
     } else if (found.length > 0) {
       // Several orders fit, or several intents want the same one: never guess.
       logOnce(ctx, intent.id, "error", "reconcile.ambiguous", {
@@ -528,7 +522,7 @@ function resolveUnmatched(ctx: ReconcileContext, intent: IntentRow): void {
       settleReservation(ctx, intent, { consumed: false });
     }
     if (!isEntryIntent(intent)) settleStep(ctx.sql, intent.id, "REJECTED", 0);
-    log(ctx, "warn", "reconcile.armed_never_sent", { intentId: intent.id });
+    logEvent(ctx, "warn", "reconcile.armed_never_sent", { intentId: intent.id });
     return;
   }
   if (intent.state === "SENT") {
@@ -539,7 +533,7 @@ function resolveUnmatched(ctx: ReconcileContext, intent: IntentRow): void {
       ctx.now,
       intent.id,
     );
-    log(ctx, "warn", "reconcile.sent_stale", { intentId: intent.id });
+    logEvent(ctx, "warn", "reconcile.sent_stale", { intentId: intent.id });
   }
   // Not found yet, and possibly never placed: keep the reservations and wait for a human.
   logOnce(ctx, intent.id, "error", "reconcile.unresolved", { intentId: intent.id });
@@ -609,7 +603,7 @@ function adoptOrders(
       order.openedAt,
       ctx.now,
     );
-    log(ctx, "info", "reconcile.order_adopted", { intentId: id, orderId: order.orderId });
+    logEvent(ctx, "info", "reconcile.order_adopted", { intentId: id, orderId: order.orderId });
   }
 }
 
@@ -656,7 +650,7 @@ function adoptPositions(
       source: "external",
       openedOn: sessionDate(new Date(ctx.now)),
     });
-    log(ctx, "info", "reconcile.position_adopted", {
+    logEvent(ctx, "info", "reconcile.position_adopted", {
       positionId: id,
       symbol: held.symbol,
       quantity: held.quantity,
