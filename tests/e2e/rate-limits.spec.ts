@@ -1,7 +1,13 @@
 import { expect, test } from "./test.ts";
 
-// The local D1 keeps counters between runs, so every test gets an address of its own.
-const freshIp = () => `198.51.100.${1 + Math.floor(Math.random() * 250)}`;
+// The local D1 keeps counters between runs when playwright is started by hand (ports.ts stateDir),
+// and a counter lasts 10 minutes. Math.random() addresses could therefore collide with a leftover
+// counter and fail at random. Instead the address is derived from a per-process salt (the start
+// time, so two runs differ) and a sequence number (so two calls in a run differ): no collisions,
+// and a failure is reproducible from its address.
+const runSalt = Math.floor(Date.now() / 1000) % 65_536;
+let sequence = 0;
+const freshIp = () => `10.${runSalt >> 8}.${runSalt & 255}.${1 + (sequence++ % 250)}`;
 
 // Better Auth keys the counters by `cf-connecting-ip` and path, so a made-up address per test
 // keeps these runs apart from each other and from the rest of the suite.
