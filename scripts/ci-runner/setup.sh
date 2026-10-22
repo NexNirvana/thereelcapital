@@ -18,6 +18,8 @@ COUNT=4
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "${here}/lib.sh"
+# Only fetch_runner_token may use the owner's token (lib.sh keeps it in OWNER_GH_TOKEN).
+unset GH_TOKEN
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,7 +36,7 @@ esac
 check_prerequisites() {
   command -v pacman >/dev/null || { log "pacman not found; skipping the library check"; return; }
   local missing
-  missing="$(pacman -T git curl tar icu openssl krb5 zlib nss nspr atk at-spi2-core cups \
+  missing="$(pacman -T git jq curl tar icu openssl krb5 zlib nss nspr atk at-spi2-core cups \
     libdrm libxkbcommon libxcomposite libxdamage libxrandr mesa pango cairo alsa-lib \
     libx11 libxext libxfixes libxcb dbus glib2 | tr '\n' ' ')" || true
   if [ -n "$missing" ]; then

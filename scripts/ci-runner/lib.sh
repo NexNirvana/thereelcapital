@@ -57,6 +57,10 @@ require_root_via_sudo() {
 
 # Fetches a short-lived runner token ("registration" or "remove") as the invoking
 # user, so the runner user never holds a GitHub admin token.
+# The owner's gh token, if given as GH_TOKEN. setup.sh and uninstall.sh then unset GH_TOKEN, so
+# nothing they spawn (config.sh runs as ghrunner) inherits it; toggle.sh keeps it for its own gh calls.
+OWNER_GH_TOKEN="${GH_TOKEN:-}"
+
 fetch_runner_token() {
   local kind="$1"
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -64,5 +68,13 @@ fetch_runner_token() {
     printf 'DRY-RUN-TOKEN'
     return
   fi
-  sudo -u "$SUDO_USER" -H gh api -X POST "repos/${REPO}/actions/runners/${kind}-token" --jq .token
+  # gh keeps its token in the desktop keyring for many owners, and `sudo -u` has no session bus to
+  # reach it; the owner can pass it as GH_TOKEN. setup.sh and uninstall.sh removed it from the
+  # environment, so only this gh call sees it, and never on a command line.
+  if [ -n "$OWNER_GH_TOKEN" ]; then
+    GH_TOKEN="$OWNER_GH_TOKEN" sudo -u "$SUDO_USER" -H --preserve-env=GH_TOKEN \
+      gh api -X POST "repos/${REPO}/actions/runners/${kind}-token" --jq .token
+  else
+    sudo -u "$SUDO_USER" -H gh api -X POST "repos/${REPO}/actions/runners/${kind}-token" --jq .token
+  fi
 }

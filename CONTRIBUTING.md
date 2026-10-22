@@ -87,6 +87,8 @@ scripts/ci-runner/toggle.test.sh              # test toggle.sh with a fake gh (a
 sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
 ```
 
+If gh keeps its token in the desktop keyring (`gh auth status` says `(keyring)`), `sudo` can't reach it and GitHub answers 401: pass it explicitly with `sudo GH_TOKEN="$(gh auth token)" scripts/ci-runner/setup.sh` (and the same for `uninstall.sh`). The token is removed from the environment at once and handed only to the `gh` call that fetches the short-lived runner token (through `sudo --preserve-env`, never on a command line), so the runner user never inherits it.
+
 Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N`, logging to `/var/log/gh-runner-N.log`. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
 
 ### Verification and screenshots
