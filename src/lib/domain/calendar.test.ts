@@ -28,8 +28,8 @@ const NYSE_HOLIDAYS = [
 ];
 const NYSE_EARLY_CLOSES = ["2026-11-27", "2026-12-24", "2027-11-26"];
 
-const equity = { kind: "equity" };
-const option = { kind: "option" };
+const equity = { kind: "equity" } as const;
+const option = { kind: "option" } as const;
 const at = (iso: string): Date => new Date(iso);
 
 describe("sessionDate", () => {
@@ -97,11 +97,6 @@ describe("isRegularSession", () => {
     expect(sessionDate(at("2026-03-08T07:00:00Z"))).toBe("2026-03-08"); // 03:00 EDT
     expect(sessionDate(at("2026-11-01T05:30:00Z"))).toBe("2026-11-01"); // 01:30 EDT
     expect(sessionDate(at("2026-11-01T06:30:00Z"))).toBe("2026-11-01"); // 01:30 EST
-  });
-  test("rejects instruments without a calendar entry, with a reason", () => {
-    const result = isRegularSession({ kind: "future" }, at("2026-06-10T15:00:00Z"));
-    expect(result.open).toBe(false);
-    if (!result.open) expect(result.reason).toContain("future");
   });
 });
 

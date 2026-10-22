@@ -7,10 +7,15 @@ import { getCalendar } from "market-calendar";
 
 export type InstrumentKind = "equity" | "option";
 
-export type Instrument = { readonly kind: string };
+export type Instrument = { readonly kind: InstrumentKind };
 
 export type SessionCheck =
-  { readonly open: true } | { readonly open: false; readonly reason: string };
+  { readonly open: true } | { readonly open: false; readonly reason: ClosedReason };
+
+export type ClosedReason =
+  | "Market closed: no session today"
+  | "Market closed: before the open"
+  | "Market closed: after the close";
 
 /** The exchange calendar that defines each instrument kind's regular session. */
 const EXCHANGE_CALENDAR: Readonly<Record<InstrumentKind, string>> = {
@@ -47,14 +52,7 @@ export function nextCalendarDay(day: string): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + 24 * HOUR_MS).toISOString().slice(0, 10);
 }
 
-function isKnownKind(kind: string): kind is InstrumentKind {
-  return Object.hasOwn(EXCHANGE_CALENDAR, kind);
-}
-
 export function isRegularSession(instrument: Instrument, now: Date): SessionCheck {
-  if (!isKnownKind(instrument.kind)) {
-    return { open: false, reason: `No market calendar for instrument kind "${instrument.kind}"` };
-  }
   const day = sessionDate(now);
   const [session] = getCalendar(EXCHANGE_CALENDAR[instrument.kind]).schedule(day, day);
   if (session === undefined) return { open: false, reason: "Market closed: no session today" };

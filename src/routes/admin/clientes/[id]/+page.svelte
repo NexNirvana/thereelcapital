@@ -252,7 +252,7 @@
           name="sizeUsd"
           type="number"
           inputmode="numeric"
-          min={client.settings.sizeUsd}
+          min={client.minSizeUsd}
           step="1"
           required
           aria-describedby="sizeUsd-hint"
