@@ -50,6 +50,9 @@ export const REFRESH_EXPIRY_WARNING_MS = 2 * 60 * 60 * 1000;
 /** Wait before the engine tries again after a refresh failed for a reason that may pass. */
 export const REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
+/** Wait before the sync loop tries again after a tick failed; decided equal to the refresh retry. */
+export const SYNC_RETRY_DELAY_MS = 60 * 1000;
+
 /** Pause between the attempts of one refresh request when TradeStation cannot be reached. */
 export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
 
