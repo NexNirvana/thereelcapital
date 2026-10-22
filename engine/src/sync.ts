@@ -33,7 +33,15 @@ import { logOnce } from "./reconcile.ts";
 
 export interface SyncContext extends ConnectionContext {
   readonly broker: BrokerAdapterShape;
+  /**
+   * The real wall clock, for the throttle and the settings cache. `now` can be pinned by TEST_NOW
+   * (clock.ts) and would then never age them. Defaults to `now`, which is the real clock in
+   * production and the one test clock elsewhere.
+   */
+  readonly wallNow?: () => number;
 }
+
+const wallNow = (ctx: SyncContext): number => ctx.wallNow?.() ?? ctx.now;
 
 export interface SyncResult {
   /** True when no reconciliation is pending after this call: a pass completed, or a recent one still stands (throttled). */
@@ -67,10 +75,10 @@ export function syncWanted(storage: DurableObjectStorage): boolean {
 }
 
 /** A pass completed within the minimum interval and nothing has asked for a new one since. */
-function recentlySynced(ctx: ConnectionContext): boolean {
+function recentlySynced(ctx: SyncContext): boolean {
   const lastOkAt = ctx.storage.kv.get<number>(LAST_OK_KEY);
   if (lastOkAt === undefined || reconciliationPending(ctx.storage)) return false;
-  const age = ctx.now - lastOkAt;
+  const age = wallNow(ctx) - lastOkAt;
   return age >= 0 && age < SYNC_MIN_INTERVAL_MS;
 }
 
@@ -122,7 +130,7 @@ export async function runSync(
     logEvent(ctx, "info", "sync.recovered");
   }
   pruneEvents(ctx.sql, ctx.now, "SIM");
-  ctx.storage.kv.put(LAST_OK_KEY, ctx.now);
+  ctx.storage.kv.put(LAST_OK_KEY, wallNow(ctx));
   if (summary.unknownLeft > 0) {
     // A stuck intent waits for a human: log when the count changes, not on every tick.
     logOnce(
@@ -197,12 +205,12 @@ async function protectionSettings(ctx: SyncContext): Promise<ProtectionSettings>
   const cached = settingsCache.get(ctx.storage);
   if (
     cached !== undefined &&
-    ctx.now - cached.readAt >= 0 &&
-    ctx.now - cached.readAt < PROTECTION_SETTINGS_TTL_MS
+    wallNow(ctx) - cached.readAt >= 0 &&
+    wallNow(ctx) - cached.readAt < PROTECTION_SETTINGS_TTL_MS
   ) {
     return cached.settings;
   }
-  const readAt = ctx.now;
+  const readAt = wallNow(ctx);
   const row = await ctx.db
     .prepare("SELECT stop_pct, trailing_unlock_pct FROM client_settings WHERE user_id = ?")
     .bind(ctx.userId)
