@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { RECOVERY_CODE_COUNT } from "../../src/lib/domain/config.ts";
 import { d1, seedSignedInUser, origin } from "./support.ts";
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type APIResponse, type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
+import { type APIResponse, type Page } from "@playwright/test";
 import {
   count,
   d1,

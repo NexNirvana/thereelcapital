@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { count, d1, registerPasskey, seedSignedInUser, virtualAuthenticator } from "./support.ts";
 import type { BrowserContext, Page } from "@playwright/test";
 

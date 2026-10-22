@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
+import { type Page } from "@playwright/test";
 import { seedTradingClient, origin } from "./support.ts";
 
 // The engine runs the local simulation (tests/e2e/engine.env). Its dev MSFT chain has two

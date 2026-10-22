@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { d1, seedSignedInUser, seedTradingClient, origin } from "./support.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session

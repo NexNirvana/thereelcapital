@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type APIResponse, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test } from "./test.ts";
+import { type APIResponse, type BrowserContext, type Page } from "@playwright/test";
 import { hashToken } from "../../src/lib/server/token-hash.ts";
 import { newRecoveryCode, normalizeRecoveryCode } from "../../src/lib/server/recovery-codes.ts";
 import {
