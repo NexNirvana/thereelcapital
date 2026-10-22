@@ -5,6 +5,7 @@ import {
   count,
   d1,
   registerPasskey,
+  resendDroppedPosts,
   seedPendingClient,
   virtualAuthenticator,
   origin,
@@ -212,6 +213,7 @@ test("opening the link in another browser ends the earlier session", async ({ br
     baseURL: origin,
     extraHTTPHeaders: { "cf-connecting-ip": "10.2.250.250", origin: origin },
   });
+  await resendDroppedPosts(other);
   const otherPage = await other.newPage();
   expect((await open(otherPage, token)).status()).toBe(200);
   expect(await sessionOf(page)).toBeNull();
