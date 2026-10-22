@@ -242,6 +242,15 @@ export interface SeededPosition {
   readonly soldQty?: number;
   readonly protectionState?: string;
   readonly account?: string;
+  /** An option position, as the engine stores it (strike in micro-dollars). */
+  readonly option?: {
+    readonly underlying: string;
+    readonly expiry: string;
+    readonly strike: number;
+    readonly right: "call" | "put";
+  };
+  /** The seven step states; `available` for all when omitted. */
+  readonly steps?: readonly string[];
 }
 
 // Open positions and the day's entry count as the engine would have stored them (no order UI yet).
@@ -251,8 +260,8 @@ function seedEnginePositions(file: string, positions: readonly SeededPosition[],
     db.exec("PRAGMA busy_timeout = 5000");
     const insert = db.prepare(
       `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
-         trailing_unlock_pct, protection_state, status, opened_on)
-       VALUES (?, 'SIM', ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04')`,
+         trailing_unlock_pct, protection_state, status, opened_on, underlying, expiry, strike, right)
+       VALUES (?, 'SIM', ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04', ?, ?, ?, ?)`,
     );
     for (const p of positions) {
       insert.run(
@@ -262,7 +271,17 @@ function seedEnginePositions(file: string, positions: readonly SeededPosition[],
         p.qty,
         p.soldQty ?? 0,
         p.protectionState ?? "none",
+        p.option?.underlying ?? null,
+        p.option?.expiry ?? null,
+        p.option?.strike ?? null,
+        p.option?.right ?? null,
       );
+    }
+    const step = db.prepare(
+      "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, 'SIM', ?, ?)",
+    );
+    for (const p of positions) {
+      for (let idx = 0; idx < 7; idx++) step.run(p.id, idx, p.steps?.[idx] ?? "available");
     }
     if (entries > 0) {
       db.prepare(

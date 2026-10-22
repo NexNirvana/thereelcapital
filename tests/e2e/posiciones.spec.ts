@@ -1,0 +1,268 @@
+import { expect, test, type Page } from "@playwright/test";
+import { seedTradingClient } from "./support.ts";
+
+// The engine runs the local simulation with its clock pinned inside a regular session
+// (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares:
+// MSFT fills at once, SLOW is acknowledged and fills 8 s later. Positions only come from a filled
+// entry, so each test buys first and then manages the position the engine opened.
+// Set SCREENSHOT_DIR to also write desktop and mobile screenshots of each state.
+const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
+
+test.beforeEach(async ({ context, baseURL }) => {
+  const ip = `10.9.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
+  await context.setExtraHTTPHeaders({ "cf-connecting-ip": ip, origin: baseURL ?? "" });
+});
+
+async function shoot(page: Page, name: string) {
+  if (!SCREENSHOT_DIR) return;
+  for (const [width, height, label] of [
+    [1440, 900, "desktop"],
+    [390, 844, "mobile"],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-${label}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+}
+
+/** Buys through the UI and waits for the engine to open the position. */
+async function openPosition(page: Page, symbol: string, shares: string) {
+  await page.goto(`/operar?simbolo=${symbol}`);
+  await page.getByRole("link", { name: /Revisar orden/ }).click();
+  await page.getByRole("button", { name: "Enviar orden" }).click();
+  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
+  await page.goto("/posiciones");
+  await expect(page.getByText(`${shares} restantes`, { exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+}
+
+const step = (page: Page, n: number) =>
+  page.getByRole("button", { name: new RegExp(`^Paso ${n},`) });
+
+test("shows the position, its seven steps and sells the step's quantity", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, page);
+  await openPosition(page, "MSFT", "198 acciones");
+  await expect(page.getByRole("heading", { name: "MSFT" })).toBeVisible();
+  await expect(page.getByText("198 iniciales · 0 vendidos")).toBeVisible();
+  await expect(page.getByText("1 de 2 posiciones")).toBeVisible();
+  await expect(page.getByText("Sin segunda posición")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Paso \d,/ })).toHaveCount(7);
+  // The browser has nothing to type a quantity or a price into.
+  await expect(page.locator("input:not([type=hidden]), textarea")).toHaveCount(0);
+  await shoot(page, "position");
+
+  // 30% of 198 is 59.4: the engine sells 59.
+  await step(page, 1).click();
+  await expect(page.getByText("139 acciones restantes", { exact: true })).toBeVisible({
+    timeout: 40_000,
+  });
+  await expect(page.getByText("198 iniciales · 59 vendidos")).toBeVisible();
+  await expect(step(page, 1)).toBeDisabled();
+  await expect(step(page, 1)).toHaveAccessibleName("Paso 1, 30%, vendido");
+  await expect(page.getByText("29% vendido")).toBeVisible();
+  await shoot(page, "after-step");
+});
+
+test("marks a step that rounds to zero and sends nothing for it", async ({ context, page }) => {
+  // SIZE US$202 buys 2 shares: 30% sells 1, and the 20% step lands on the same target.
+  await seedTradingClient(context, page, { sizeUsd: 202 });
+  await openPosition(page, "MSFT", "2 acciones");
+  await step(page, 1).click();
+  await expect(page.getByText("1 acción restante", { exact: true })).toBeVisible({
+    timeout: 40_000,
+  });
+
+  await step(page, 2).click();
+  await expect(page.getByText("Paso 2 (20%): 0 acciones por redondeo")).toBeVisible();
+  await expect(step(page, 2)).toBeDisabled();
+  await expect(page.getByText("1 acción restante", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sin órdenes pendientes.")).toBeVisible();
+  await shoot(page, "rounded-to-zero");
+
+  // Only the entry and the first step were ever sent.
+  await page.goto("/historial");
+  await expect(page.getByRole("cell", { name: "Salida" })).toHaveCount(1);
+});
+
+test("sends one order when a step is double-clicked", async ({ context, page }) => {
+  await seedTradingClient(context, page);
+  await openPosition(page, "MSFT", "198 acciones");
+  let posts = 0;
+  await page.route("**/posiciones?/salir*", async (route) => {
+    posts += 1;
+    await route.continue();
+  });
+  await step(page, 1).dblclick();
+  await expect(page.getByText("139 acciones restantes", { exact: true })).toBeVisible({
+    timeout: 40_000,
+  });
+  expect(posts).toBe(1);
+  await page.goto("/historial");
+  await expect(page.getByRole("cell", { name: "Salida" })).toHaveCount(1);
+});
+
+test("closes the position with ALL OUT only after a confirmation", async ({ context, page }) => {
+  await seedTradingClient(context, page);
+  await openPosition(page, "MSFT", "198 acciones");
+  await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeVisible();
+
+  await page.getByRole("button", { name: "Cerrar posición" }).click();
+  await expect(page.getByText("¿Cerrar la posición?")).toBeVisible();
+  await shoot(page, "confirm-all-out");
+  // Backing out sends nothing.
+  await page.getByRole("button", { name: "Volver" }).click();
+  await expect(page.getByText("¿Cerrar la posición?")).toHaveCount(0);
+  await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Cerrar posición" }).click();
+  await page.getByRole("button", { name: "Confirmar cierre" }).click();
+  await expect(page.getByText("No tienes posiciones abiertas.")).toBeVisible({ timeout: 40_000 });
+});
+
+test("cancels a working exit and gives the step back", async ({ context, page }) => {
+  await seedTradingClient(context, page);
+  await openPosition(page, "SLOW", "198 acciones");
+  await step(page, 1).click();
+  const pending = page.getByRole("region", { name: "Órdenes pendientes" });
+  await expect(pending).toContainText("Recibida");
+  await expect(step(page, 1)).toBeDisabled();
+  await shoot(page, "pending-order");
+
+  await pending.getByRole("button", { name: "Cancelar" }).click();
+  await expect(pending).toContainText(/Cancelando|Sin órdenes pendientes/);
+  await expect(pending).toContainText("Sin órdenes pendientes.", { timeout: 40_000 });
+  await expect(step(page, 1)).toBeEnabled();
+  await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible();
+});
+
+test("says «Activo» only for a stop the engine verified", async ({ context, page }) => {
+  await seedTradingClient(context, page, {
+    accounts: ["SIM-1"],
+    positions: [
+      { id: "pos-verified", symbol: "AAA", qty: 10, protectionState: "verified" },
+      { id: "pos-unverified", symbol: "BBB", qty: 10, protectionState: "unverified" },
+    ],
+  });
+  await page.goto("/posiciones?p=pos-unverified");
+  const protection = page.getByRole("region", { name: "Protección y cierre" });
+  await expect(protection).toContainText("Sin verificar");
+  await expect(protection).not.toContainText("Activo");
+  await expect(protection.getByRole("button", { name: "Activar" })).toBeDisabled();
+  await expect(protection.getByRole("combobox")).toBeDisabled();
+  await shoot(page, "unverified");
+
+  await page.goto("/posiciones?p=pos-verified");
+  await expect(protection).toContainText("Activo");
+  await page.getByRole("link", { name: "BBB" }).click();
+  await expect(protection).not.toContainText("Activo");
+});
+
+test("shows an option with the underlying apart from the contract", async ({ context, page }) => {
+  await seedTradingClient(context, page, {
+    positions: [
+      {
+        id: "pos-spy",
+        symbol: "SPY 261120C600",
+        qty: 50,
+        soldQty: 35,
+        protectionState: "verified",
+        option: { underlying: "SPY", expiry: "2026-11-20", strike: 600_000_000, right: "call" },
+        steps: ["done", "done", "done_zero", "done", "available", "available", "available"],
+      },
+    ],
+  });
+  await page.goto("/posiciones");
+  await expect(page.getByRole("heading", { name: "SPY" })).toBeVisible();
+  await expect(page.getByText("Call 600 · 20 nov 2026")).toBeVisible();
+  await expect(page.getByRole("link", { name: "SPY · Call 600" })).toBeVisible();
+  await expect(page.getByText("15 contratos restantes", { exact: true })).toBeVisible();
+  await expect(page.getByText("50 iniciales · 35 vendidos")).toBeVisible();
+  await expect(page.getByText("70% vendido", { exact: true })).toBeVisible();
+  await expect(page.getByText("Porcentajes sobre los 50 contratos iniciales")).toBeVisible();
+  await expect(page.getByText("ALL OUT · Cierra los 15 contratos restantes")).toBeVisible();
+  const done = page.getByRole("button", { name: /vendido$/ });
+  await expect(page.getByText("Paso 3 (10%): 0 contratos por redondeo")).toBeVisible();
+  await expect(done).toHaveCount(3);
+  await expect(done.first()).toBeDisabled();
+  await expect(step(page, 5)).toBeEnabled();
+  await shoot(page, "option");
+});
+
+test("switches between two positions", async ({ context, page }) => {
+  await seedTradingClient(context, page, {
+    positions: [
+      { id: "pos-a", symbol: "AAA", qty: 10 },
+      { id: "pos-b", symbol: "BBB", qty: 20, soldQty: 5 },
+    ],
+  });
+  await page.goto("/posiciones");
+  await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
+  await expect(page.getByText("2 de 2 posiciones")).toBeVisible();
+  await expect(page.getByText("Sin segunda posición")).toHaveCount(0);
+  await page.getByRole("link", { name: "BBB" }).click();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await expect(page.getByText("15 acciones restantes", { exact: true })).toBeVisible();
+  // An unknown id falls back to the first open position.
+  await page.goto("/posiciones?p=nope");
+  await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
+});
+
+test("keeps the selected position after acting on it", async ({ context, page }) => {
+  await seedTradingClient(context, page, {
+    positions: [
+      { id: "pos-a", symbol: "AAA", qty: 10 },
+      { id: "pos-b", symbol: "BBB", qty: 20 },
+    ],
+  });
+  await page.goto("/posiciones?p=pos-b");
+  await step(page, 1).click();
+  // The simulation does not know BBB, so the order is refused; either way the view stays on BBB.
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await expect(page).toHaveURL(/p=pos-b/);
+});
+
+test("wraps the seven steps 4 + 3 on a narrow screen", async ({ context, page }) => {
+  await seedTradingClient(context, page, {
+    positions: [{ id: "pos-a", symbol: "AAA", qty: 10 }],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/posiciones");
+  const tops = await page
+    .getByRole("button", { name: /^Paso \d,/ })
+    .evaluateAll((buttons) => buttons.map((b) => Math.round(b.getBoundingClientRect().top)));
+  expect(tops).toHaveLength(7);
+  expect(new Set(tops.slice(0, 4)).size).toBe(1);
+  expect(new Set(tops.slice(4)).size).toBe(1);
+  expect(tops[4]).toBeGreaterThan(tops[0] ?? 0);
+});
+
+test("ignores quantity and price the browser adds and rejects a bad step", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, page, {
+    positions: [{ id: "pos-a", symbol: "AAA", qty: 10 }],
+  });
+  const send = (form: Record<string, string>) =>
+    page.request.post("/posiciones?/salir", {
+      form,
+      headers: { origin: baseURL ?? "", accept: "application/json" },
+    });
+  const bad = await send({ positionId: "pos-a", step: "9" });
+  expect(await bad.text()).toContain("Los datos enviados no son válidos.");
+  // The engine would sell its own quantity, whatever the request says; here AAA is unknown to the
+  // simulation, so the order is refused, never sent with 999.
+  const tampered = await send({ positionId: "pos-a", step: "0", qty: "999", price: "1" });
+  expect(await tampered.text()).not.toContain("999");
+});
+
+test("needs a signed-in client", async ({ page }) => {
+  const response = await page.goto("/posiciones");
+  expect(response?.url()).toContain("/acceso");
+});
