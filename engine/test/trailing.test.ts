@@ -60,6 +60,24 @@ async function scenario(body: (ctx: EntryContext, sim: LocalSim, clock: Clock) =
 }
 
 describe("trailing activation", { timeout: 30_000 }, () => {
+  it("does not see another client's position id", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const owner = await newClient();
+    const other = await newClient();
+    const id = await inClient(owner, clock, sim.adapter, async (ctx) => {
+      const positionId = await openPosition(ctx, sim, 10);
+      await sellUnlockShare(ctx, positionId);
+      return positionId;
+    });
+    await inClient(other, clock, newSim(clock).adapter, async (ctx) => {
+      expect(reasons(await activate(ctx, id))).toEqual(["POSITION_NOT_FOUND"]);
+    });
+    await inClient(owner, clock, sim.adapter, async (ctx) => {
+      expect(trailingRow(ctx, id).trailing_pct).toBeNull();
+    });
+  });
+
   it("is refused before the unlock share is sold", async () => {
     await scenario(async (ctx, sim) => {
       const id = await openPosition(ctx, sim, 10);

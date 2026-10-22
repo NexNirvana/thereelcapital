@@ -111,6 +111,15 @@ describe("ClientCoordinator RPC surface", () => {
     }
   });
 
+  it("rejects quantity, price, level and url on exit, cancel and trailing", async () => {
+    const stub = stubFor("exit-untrusted-fields");
+    for (const extra of [{ qty: 5 }, { price: 1 }, { level: 1 }, { url: "https://x" }]) {
+      for (const [method, args] of calls) {
+        expect(await stub[method]({ ...args, ...extra })).toMatchObject({ code: "INVALID_INPUT" });
+      }
+    }
+  });
+
   it("rejects out-of-range scale-out steps and trailing percentages", async () => {
     const stub = stubFor("ranges");
     expect(await stub.exit({ mode: "SIM", positionId: "p", step: 7 })).toMatchObject({
