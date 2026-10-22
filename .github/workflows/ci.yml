@@ -120,6 +120,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - run: bun run build
+      # Secret names and token shapes must not reach the browser (docs/auth-and-security.md#secrets).
+      - run: bun scripts/check-client-bundle.ts
       # The web Worker's generated types reference the build output, so this runs after it.
       - run: bun run types:check
       # Prove both Workers bundle, without credentials.
