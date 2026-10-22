@@ -38,7 +38,9 @@ async function enter(ctx: EntryContext, symbol: string): Promise<string> {
 const events = (ctx: EntryContext, type: string) =>
   ctx.sql.exec("SELECT level, data_json FROM events WHERE type = ?", type).toArray();
 const protection = (ctx: EntryContext) =>
-  ctx.sql.exec("SELECT protection_state AS p FROM positions WHERE status != 'CLOSED'").toArray();
+  ctx.sql
+    .exec("SELECT protection_state AS p FROM positions WHERE status != 'CLOSED' ORDER BY symbol")
+    .toArray();
 const blockedReasons = async (ctx: EntryContext, symbol: string) => {
   const result = await prepareEntry(ctx, target(symbol));
   return result.ok && result.value.status === "BLOCKED" ? result.value.reasons : "ready";
@@ -278,6 +280,10 @@ describe("syncWanted", () => {
 });
 
 describe("the alarm loop", () => {
+  // The tick is due (alarm_due:sync) but the real alarm is parked an hour away, so workerd never
+  // fires it on its own while runDurableObjectAlarm runs the tick: two concurrent ticks would race.
+  const PARKED_ALARM = () => Date.now() + 3_600_000;
+
   /** A Durable Object whose broker is the client's own local simulation, driven by the real alarm. */
   async function loopClient() {
     const client = await newClient();
@@ -332,7 +338,7 @@ describe("the alarm loop", () => {
       );
     await runInDurableObject(client.stub, (_i, state) => {
       state.storage.kv.put("alarm_due:sync", Date.now());
-      return state.storage.setAlarm(Date.now());
+      return state.storage.setAlarm(PARKED_ALARM());
     });
 
     // Tick 1: the fill is applied, the position is open, so the loop goes on.
@@ -357,7 +363,7 @@ describe("the alarm loop", () => {
     );
     await runInDurableObject(client.stub, (_i, state) => {
       state.storage.kv.put("alarm_due:sync", Date.now());
-      return state.storage.setAlarm(Date.now());
+      return state.storage.setAlarm(PARKED_ALARM());
     });
     await runDurableObjectAlarm(client.stub);
 
@@ -415,7 +421,7 @@ describe("the alarm loop", () => {
       // The refresh is due far away; the sync is due now. The alarm is for the sync.
       state.storage.kv.put("alarm_due:refresh", later);
       state.storage.kv.put("alarm_due:sync", Date.now());
-      await state.storage.setAlarm(Date.now());
+      await state.storage.setAlarm(PARKED_ALARM());
     });
 
     await runDurableObjectAlarm(client.stub);

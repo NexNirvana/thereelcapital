@@ -45,7 +45,7 @@ const intent = (ctx: EntryContext, id: string) =>
 const positions = (ctx: EntryContext) =>
   ctx.sql
     .exec(
-      "SELECT symbol, original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, status, source FROM positions",
+      "SELECT symbol, original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, status, source FROM positions ORDER BY symbol",
     )
     .toArray();
 
