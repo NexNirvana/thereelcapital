@@ -44,6 +44,7 @@ D15–D17 were never assigned; numbering continues from D18.
 | D30 | ETF options are allowed, but every option's regular session is treated as ending at 16:00 ET, like stock options; the 16:00–16:15 window of ETF options is not offered (owner, 2026-10-21) | — |
 | D31 | A locked-out admin is recovered by another admin through admin-run recovery (fresh session, audited, never one's own account); the last admin is recovered with `bun run admin:recover <email> --remote` from the owner's machine (owner, 2026-10-21; #109) | — |
 | D32 | Activation-link tokens (32 random bytes) are stored as a plain SHA-256 of `activation-link:<token>`, not an HMAC keyed with `BETTER_AUTH_SECRET`, so `admin:create` and `admin:recover` never need the secret on the owner's machine and rotating the secret no longer invalidates pending links. Recovery codes keep the keyed HMAC (owner, 2026-10-21; #109). Links issued before this change stop working on deploy | — |
+| D33 | Timings are decided as set in `src/lib/domain/config.ts`: warn 2 h before a known refresh-token expiry; renew the access token 5 min before it expires; an option chain snapshot is out of date after 30 s; sync-loop tick 5 s; an unanswered SENT order becomes UNKNOWN after 60 s; 60 s clock-skew allowance when matching a broker order to an intent; admin fan-out waits 4 s per client (owner, 2026-10-22). Revisit only if the SIM spike shows different broker behavior | — |
 
 ### Delegated decisions of 2026-10-21
 
