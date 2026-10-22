@@ -4,7 +4,8 @@ import { SETTLE_MS, seedTradingClient } from "./support.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares:
-// MSFT fills at once, SLOW is acknowledged and fills 8 s later. Positions only come from a filled
+// MSFT fills at once, SLOW is acknowledged and fills 8 s later, HOLD buys at once and its exits stay
+// working until canceled. Positions only come from a filled
 // entry, so each test buys first and then manages the position the engine opened.
 // Set SCREENSHOT_DIR to also write desktop and mobile screenshots of each state.
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
@@ -151,7 +152,7 @@ test("closes the position with ALL OUT only after a confirmation", async ({ cont
 
 test("cancels a working exit and gives the step back", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openPosition(page, "SLOW", "198 acciones");
+  await openPosition(page, "HOLD", "198 acciones");
   await sell(page, step(page, 1));
   const pending = page.getByRole("region", { name: "Órdenes pendientes" });
   await expect(pending).toContainText("Recibida", { timeout: SETTLE_MS });

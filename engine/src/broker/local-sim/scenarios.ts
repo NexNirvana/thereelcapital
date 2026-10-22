@@ -5,7 +5,7 @@
 
 import { Effect } from "effect";
 import type { BrokerAdapterShape } from "../adapter.ts";
-import type { LocalSim, SimSymbol } from "./sim.ts";
+import { isEntry, type LocalSim, type SimSymbol } from "./sim.ts";
 
 const usd = (dollars: number) => dollars * 1_000_000;
 
@@ -21,6 +21,8 @@ const scripted = (symbol: string): SimSymbol => ({
 export const SCENARIO_SYMBOLS = {
   /** Acknowledged now, filled in full a few seconds later. */
   SLOW: "delayed fill",
+  /** The entry fills at once; an exit stays working until it is canceled, so a spec can cancel it without racing a fill. */
+  HOLD: "exit never fills",
   /** 50 shares fill, the rest stays open. */
   PART: "partial fill",
   /** Acknowledged, then rejected by the broker. */
@@ -42,6 +44,10 @@ export function withScenarios(sim: LocalSim): BrokerAdapterShape {
         switch (request.symbol) {
           case "SLOW":
             sim.setFill({ kind: "delayed", afterMs: 8_000 });
+            break;
+          case "HOLD":
+            // Nothing ever fills: the order stays open until it is canceled.
+            if (!isEntry(request.tradeAction)) sim.setFill({ kind: "partial", qty: 0 });
             break;
           case "PART":
             // Always short of the order, so it cannot fill in full whatever the quantity.
