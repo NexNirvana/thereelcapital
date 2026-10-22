@@ -7,13 +7,16 @@ import {
   type HistoryReader,
 } from "#lib/server/admin-history.ts";
 import { decode } from "#lib/server/decode.ts";
+import { engineForClient } from "#lib/server/engine.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
 
 // The admin addresses each client's engine by that client's id, as the guard allows only admins
 // to; the arguments are the same filters the client's own history takes (never SIZE or prices).
-const readClientHistory: HistoryReader = (clientId, args) =>
-  env.ENGINE.getByName(clientId).history(args);
+const readClientHistory =
+  (event: Parameters<typeof requireAdmin>[0]): HistoryReader =>
+  (clientId, args) =>
+    engineForClient(env.ENGINE, event, clientId).history(args);
 
 export const load: PageServerLoad = async (event) => {
   requireAdmin(event);
@@ -23,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
   const query = decode(AdminHistoryQuery, Object.fromEntries(event.url.searchParams));
   const filters = filtersOf(query);
   const clients = await listClients(env.DB);
-  const page = await readAdminHistory(clients, filters, query.despues, readClientHistory);
+  const page = await readAdminHistory(clients, filters, query.despues, readClientHistory(event));
   const next = new URLSearchParams(
     Object.entries({ ...filters, despues: page.nextCursor ?? "" }).filter(
       ([, value]) => value !== "",
