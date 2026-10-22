@@ -24,6 +24,7 @@ import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./b
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { logEvent } from "./events.ts";
+import { placeOnce } from "./placement.ts";
 import { newIntentId } from "./ids.ts";
 import { reconciliationPending } from "./refresh.ts";
 import {
@@ -411,33 +412,10 @@ function reserve(ctx: ConnectionContext, intentId: string, sized: Sized): Reserv
 }
 
 /** Frees the daily reservation of an entry that never reached the market. The slot frees by itself: it is derived from the state. */
-function release(ctx: ConnectionContext, intentId: string): void {
-  ctx.storage.transactionSync(() => {
-    const moved = ctx.sql.exec(
-      "UPDATE intents SET state = 'REJECTED', updated_at = ? WHERE id = ? AND state = 'SENT' AND filled_qty = 0",
-      ctx.now,
-      intentId,
-    );
-    if (moved.rowsWritten === 0) return;
-    ctx.sql.exec(
-      "UPDATE entry_counters SET reserved = reserved - 1 WHERE mode = 'SIM' AND session_date = ? AND reserved > 0",
-      sessionDate(new Date(ctx.now)),
-    );
-  });
-}
-
-function settle(
-  ctx: ConnectionContext,
-  intentId: string,
-  state: "ACKNOWLEDGED" | "UNKNOWN",
-  orderId: string | null,
-): void {
+function releaseReservation(ctx: ConnectionContext): void {
   ctx.sql.exec(
-    "UPDATE intents SET state = ?, broker_order_id = ?, updated_at = ? WHERE id = ? AND state = 'SENT'",
-    state,
-    orderId,
-    ctx.now,
-    intentId,
+    "UPDATE entry_counters SET reserved = reserved - 1 WHERE mode = 'SIM' AND session_date = ? AND reserved > 0",
+    sessionDate(new Date(ctx.now)),
   );
 }
 
@@ -469,12 +447,7 @@ export async function sendEntry(
     return success({ status: "BLOCKED", reasons: reservation.reasons });
   }
 
-  // Persisted above; from here the request is out of our hands, so SENT is written first.
-  ctx.sql.exec(
-    "UPDATE intents SET state = 'SENT', updated_at = ? WHERE id = ? AND state = 'ARMED'",
-    ctx.now,
-    args.intentId,
-  );
+  // Persisted above; placeOnce writes SENT before the request can leave.
   const request: OrderRequest = {
     accountId: sized.accountId,
     symbol: sized.symbol,
@@ -483,42 +456,12 @@ export async function sendEntry(
     quantity: sized.qty,
     orderConfirmId: args.intentId,
   };
-  let state: string;
-  try {
-    // Exactly one attempt. No retry here or in the adapter: after a timeout the order may exist.
-    const placed = await attempt(ctx.broker.placeOrder(request));
-    if (placed.ok) {
-      settle(ctx, args.intentId, "ACKNOWLEDGED", placed.value.orderId);
-      state = "ACKNOWLEDGED";
-    } else if (
-      placed.error._tag === "Rejected" ||
-      placed.error._tag === "AuthExpired" ||
-      placed.error._tag === "RateLimited"
-    ) {
-      // The broker answered that it did not take the order, so nothing exists to reconcile.
-      release(ctx, args.intentId);
-      logEvent(ctx, "warn", "entry.rejected", {
-        intentId: args.intentId,
-        failure: placed.error._tag,
-        ...(placed.error._tag === "Rejected"
-          ? { code: placed.error.code, reason: placed.error.reason }
-          : {}),
-      });
-      state = "REJECTED";
-    } else {
-      settle(ctx, args.intentId, "UNKNOWN", null);
-      logEvent(ctx, "warn", "entry.unknown", {
-        intentId: args.intentId,
-        failure: placed.error._tag,
-      });
-      state = "UNKNOWN";
-    }
-  } catch {
-    // An unexpected failure while the request may have left: same as a timeout.
-    settle(ctx, args.intentId, "UNKNOWN", null);
-    logEvent(ctx, "error", "entry.unknown", { intentId: args.intentId, failure: "defect" });
-    state = "UNKNOWN";
-  }
+  const state = await placeOnce(ctx, ctx.broker, {
+    intentId: args.intentId,
+    request,
+    eventPrefix: "entry",
+    giveBack: () => releaseReservation(ctx),
+  });
   return success({
     status: "PLACED",
     intentId: args.intentId,
