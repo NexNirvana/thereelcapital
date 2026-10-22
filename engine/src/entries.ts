@@ -23,7 +23,7 @@ import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/doma
 import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { newIntentId } from "./ids.ts";
 import { reconciliationPending } from "./refresh.ts";
 import {
@@ -108,15 +108,6 @@ interface Sized {
 type Evaluation =
   | { readonly kind: "blocked"; readonly reasons: readonly EntryBlockCode[] }
   | { readonly kind: "ready"; readonly sized: Sized };
-
-function log(
-  ctx: ConnectionContext,
-  level: "info" | "warn" | "error",
-  type: string,
-  data?: Record<string, unknown>,
-): void {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
 
 function askOf(quote: Quote | undefined): EntryAsk | null {
   if (quote === undefined) return null;
@@ -253,10 +244,10 @@ async function evaluate(
   const details = await attempt(ctx.broker.symbolDetails(args.symbol));
   if (!details.ok) {
     if (details.error._tag === "Rejected") {
-      log(ctx, "info", "entry.symbol_rejected", { code: details.error.code });
+      logEvent(ctx, "info", "entry.symbol_rejected", { code: details.error.code });
       return blocked("SYMBOL_DETAILS_MISSING");
     }
-    log(ctx, "warn", "entry.details_failed", { failure: details.error._tag });
+    logEvent(ctx, "warn", "entry.details_failed", { failure: details.error._tag });
     return failure("BROKER_UNAVAILABLE");
   }
   const instrument: SymbolDetails = details.value;
@@ -264,7 +255,7 @@ async function evaluate(
 
   const quotes = await attempt(ctx.broker.quotes([instrument.symbol]));
   if (!quotes.ok) {
-    log(ctx, "warn", "entry.quote_failed", { failure: quotes.error._tag });
+    logEvent(ctx, "warn", "entry.quote_failed", { failure: quotes.error._tag });
     return failure("BROKER_UNAVAILABLE");
   }
   const quote = quotes.value.find((candidate) => candidate.symbol === instrument.symbol);
@@ -506,7 +497,7 @@ export async function sendEntry(
     ) {
       // The broker answered that it did not take the order, so nothing exists to reconcile.
       release(ctx, args.intentId);
-      log(ctx, "warn", "entry.rejected", {
+      logEvent(ctx, "warn", "entry.rejected", {
         intentId: args.intentId,
         failure: placed.error._tag,
         ...(placed.error._tag === "Rejected"
@@ -516,13 +507,16 @@ export async function sendEntry(
       state = "REJECTED";
     } else {
       settle(ctx, args.intentId, "UNKNOWN", null);
-      log(ctx, "warn", "entry.unknown", { intentId: args.intentId, failure: placed.error._tag });
+      logEvent(ctx, "warn", "entry.unknown", {
+        intentId: args.intentId,
+        failure: placed.error._tag,
+      });
       state = "UNKNOWN";
     }
   } catch {
     // An unexpected failure while the request may have left: same as a timeout.
     settle(ctx, args.intentId, "UNKNOWN", null);
-    log(ctx, "error", "entry.unknown", { intentId: args.intentId, failure: "defect" });
+    logEvent(ctx, "error", "entry.unknown", { intentId: args.intentId, failure: "defect" });
     state = "UNKNOWN";
   }
   return success({

@@ -28,7 +28,7 @@ import {
   reconciliationTicket,
 } from "./refresh.ts";
 import { monitorProtection } from "./protection.ts";
-import { pruneEvents, writeEvent, type EventLevel } from "./events.ts";
+import { logEvent, pruneEvents, type EventLevel } from "./events.ts";
 import { logOnce } from "./reconcile.ts";
 
 export interface SyncContext extends ConnectionContext {
@@ -44,15 +44,6 @@ export interface SyncResult {
 
 const DEGRADED_KEY = "sync_degraded";
 export const LAST_OK_KEY = "sync_last_ok_at";
-
-function log(
-  ctx: ConnectionContext,
-  level: EventLevel,
-  type: string,
-  data?: Record<string, unknown>,
-) {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
-}
 
 /**
  * Whether anything needs watching: a connection with accounts, and a position, an unfinished
@@ -128,7 +119,7 @@ export async function runSync(
   await monitorProtection(ctx);
   if (ctx.storage.kv.get(DEGRADED_KEY) !== undefined) {
     ctx.storage.kv.delete(DEGRADED_KEY);
-    log(ctx, "info", "sync.recovered");
+    logEvent(ctx, "info", "sync.recovered");
   }
   pruneEvents(ctx.sql, ctx.now, "SIM");
   ctx.storage.kv.put(LAST_OK_KEY, ctx.now);
@@ -253,7 +244,7 @@ async function degrade(ctx: SyncContext, error: BrokerError): Promise<SyncResult
   // One event per change of condition, not one per tick.
   if (ctx.storage.kv.get<string>(DEGRADED_KEY) !== type) {
     ctx.storage.kv.put(DEGRADED_KEY, type);
-    log(ctx, level, type, { operation: error.operation, failure: error._tag });
+    logEvent(ctx, level, type, { operation: error.operation, failure: error._tag });
   }
   if (error._tag === "AuthExpired") {
     // A token that cannot be renewed waits for the client to reconnect, which restarts the loop.

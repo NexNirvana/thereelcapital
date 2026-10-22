@@ -8,7 +8,7 @@ import { isRegularSession } from "#lib/domain/calendar.ts";
 import { nextTrailing, shouldExit, stopLevel, type TrailingState } from "#lib/domain/stop.ts";
 import { attempt } from "./broker/attempt.ts";
 import type { Quote } from "./broker/adapter.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import { stopExit, type ExitContext } from "./exits.ts";
 import { committedQty } from "./ledger.ts";
 import { reconciliationPending } from "./refresh.ts";
@@ -45,15 +45,6 @@ function setState(ctx: ExitContext, positionId: string, state: "verified" | "unv
     positionId,
     state,
   );
-}
-
-function log(
-  ctx: ExitContext,
-  level: "info" | "warn",
-  type: string,
-  data?: Record<string, unknown>,
-): void {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
 }
 
 /**
@@ -120,7 +111,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     for (const row of watched) setState(ctx, row.id, "unverified");
     if (ctx.storage.kv.get(QUOTES_DEGRADED_KEY) !== quotes.error._tag) {
       ctx.storage.kv.put(QUOTES_DEGRADED_KEY, quotes.error._tag);
-      log(ctx, "warn", "protection.quotes_unavailable", { failure: quotes.error._tag });
+      logEvent(ctx, "warn", "protection.quotes_unavailable", { failure: quotes.error._tag });
     }
     return;
   }
@@ -159,7 +150,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     const key = `protection_outcome:${row.id}`;
     if (ctx.storage.kv.get(key) !== outcome) {
       ctx.storage.kv.put(key, outcome);
-      log(ctx, "info", `protection.${kind}_triggered`, { positionId: row.id, bid, outcome });
+      logEvent(ctx, "info", `protection.${kind}_triggered`, { positionId: row.id, bid, outcome });
     }
   }
 }

@@ -11,7 +11,7 @@ import {
 } from "#lib/domain/connection.ts";
 import { holdForReconciliation, reconciliationPending, type TokenRefresher } from "./refresh.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
-import { writeEvent } from "./events.ts";
+import { logEvent } from "./events.ts";
 import type { Mode } from "./mode.ts";
 import { listTradableAccounts, type BrokerAccount } from "./tradestation/accounts.ts";
 import { authorizeUrl, exchangeCode, revokeRefreshToken } from "./tradestation/auth.ts";
@@ -50,16 +50,6 @@ export type ConnectionView =
 const secretContext = (userId: string) => `${userId}:client_secret`;
 const refreshContext = (userId: string) => `${userId}:refresh_token`;
 
-function log(
-  { sql, now }: ConnectionContext,
-  level: "info" | "warn" | "error",
-  type: string,
-  data?: Record<string, unknown>,
-): void {
-  // `data` is limited to counts and statuses by the callers; the writer also scrubs secret-like keys.
-  writeEvent(sql, now, { mode: "SIM", level, type, message: type, data });
-}
-
 const FAILURE_CODES = {
   REJECTED: "TOKEN_EXCHANGE_FAILED",
   UNAVAILABLE: "BROKER_UNAVAILABLE",
@@ -91,7 +81,7 @@ export async function beginConnection(
       ctx.now + ATTEMPT_TTL_MS,
     );
   });
-  log(ctx, "info", "broker.authorize_started");
+  logEvent(ctx, "info", "broker.authorize_started");
   return success({
     authorizeUrl: authorizeUrl({
       clientId: args.clientId,
@@ -125,7 +115,7 @@ export async function completeConnection(
     return row;
   });
   if (attempt === undefined || attempt.expires_at <= ctx.now) {
-    log(ctx, "warn", "broker.state_rejected");
+    logEvent(ctx, "warn", "broker.state_rejected");
     return failure("STATE_INVALID");
   }
 
@@ -144,7 +134,7 @@ export async function completeConnection(
     redirectUri: args.redirectUri,
   });
   if (!exchanged.ok) {
-    log(ctx, "warn", "broker.token_exchange_failed", {
+    logEvent(ctx, "warn", "broker.token_exchange_failed", {
       failure: exchanged.failure,
       status: exchanged.status,
     });
@@ -169,7 +159,10 @@ export async function completeConnection(
         .run();
       if (dead.meta.changes > 0) ctx.sql.exec("DELETE FROM broker_accounts");
     }
-    log(ctx, "warn", "broker.accounts_failed", { failure: listed.failure, status: listed.status });
+    logEvent(ctx, "warn", "broker.accounts_failed", {
+      failure: listed.failure,
+      status: listed.status,
+    });
     return failure(FAILURE_CODES[listed.failure]);
   }
 
@@ -243,7 +236,7 @@ export async function completeConnection(
   });
   // Kept in memory only; the refresher renews it before it runs out.
   ctx.tokens.seed(tokens.accessToken, tokens.expiresInSeconds);
-  log(ctx, "info", "broker.connected", { accounts: listed.value.length });
+  logEvent(ctx, "info", "broker.connected", { accounts: listed.value.length });
   return success({
     mode: "SIM",
     status: "CONNECTED",
@@ -350,6 +343,6 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
     // entries stay blocked until a later connection has been reconciled.
     holdForReconciliation(ctx.storage);
   });
-  log(ctx, revoked || row === null ? "info" : "warn", "broker.disconnected", { revoked });
+  logEvent(ctx, revoked || row === null ? "info" : "warn", "broker.disconnected", { revoked });
   return { revoked };
 }
