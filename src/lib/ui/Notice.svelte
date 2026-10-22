@@ -11,7 +11,7 @@
 
 <div class="notice" {role}>
   <strong>{title}</strong>
-  {#if children}<p>{@render children()}</p>{/if}
+  {#if children}<div class="body">{@render children()}</div>{/if}
 </div>
 
 <style>
@@ -20,7 +20,7 @@
     border: 1px solid var(--rule-strong);
     overflow-wrap: anywhere;
   }
-  p {
+  .body {
     margin: 0.25rem 0 0;
     color: var(--text-muted);
   }
