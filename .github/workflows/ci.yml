@@ -13,12 +13,14 @@ permissions:
   contents: read
 
 # Jobs run on GitHub-hosted runners (free and unlimited for this public repo).
-# Set the repository variable CI_RUNNER (e.g. a Blacksmith label) to move them.
+# The repository variable CI_RUNNER holds a JSON runner label, e.g. ["self-hosted","reel-local"],
+# and moves every job except `deploy` there. Fork pull requests always use GitHub-hosted runners,
+# and `deploy` (the only job with secrets) always runs on ubuntu-24.04.
 
 jobs:
   check:
     name: check
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -26,7 +28,7 @@ jobs:
 
   lint:
     name: lint
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -34,7 +36,7 @@ jobs:
 
   unit:
     name: unit
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -42,7 +44,7 @@ jobs:
 
   engine:
     name: engine
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -52,7 +54,7 @@ jobs:
   # shard never contends for the database lock.
   e2e-shard:
     name: e2e-shard (${{ matrix.shard }}/3)
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     strategy:
       fail-fast: false
       matrix:
@@ -66,8 +68,12 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      # Browsers come from the cache when present; the system packages are always installed.
-      - run: bunx playwright install --with-deps chromium
+      # Browsers come from the cache when present. GitHub-hosted runners also need the system
+      # packages; a self-hosted runner has them installed already (and no sudo).
+      - if: runner.environment == 'github-hosted'
+        run: bunx playwright install --with-deps chromium
+      - if: runner.environment != 'github-hosted'
+        run: bunx playwright install chromium
       - run: bun run test:e2e --shard=${{ matrix.shard }}/3
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -75,13 +81,16 @@ jobs:
           name: blob-report-${{ matrix.shard }}
           path: blob-report/
           retention-days: 1
+      # A reused runner must not keep local D1 state or reports from this run.
+      - if: ${{ always() }}
+        run: rm -rf .wrangler blob-report test-results playwright-report
 
   # The required status check: one `e2e` result for the whole sharded run.
   e2e:
     name: e2e
     needs: [e2e-shard]
     if: ${{ !cancelled() }}
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: ${{ !cancelled() }}
@@ -106,7 +115,7 @@ jobs:
 
   build:
     name: build
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER || '"ubuntu-24.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -121,7 +130,7 @@ jobs:
     name: deploy
     needs: [check, lint, unit, engine, e2e, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     environment: production
     concurrency:
       group: deploy-production
