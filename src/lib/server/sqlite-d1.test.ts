@@ -30,9 +30,11 @@ export function sqliteD1() {
     prepare,
     batch: async (statements: Statement[]) => {
       return sqlite.transaction(() =>
-        statements.map((statement) => ({
-          meta: { changes: sqlite.query(statement.sql).run(...statement.bindings).changes },
-        })),
+        statements.map((statement) => {
+          const results = sqlite.query(statement.sql).all(...statement.bindings);
+          const changes = sqlite.query<{ n: number }, []>("SELECT changes() AS n").get()?.n ?? 0;
+          return { results, meta: { changes } };
+        }),
       )();
     },
   };
