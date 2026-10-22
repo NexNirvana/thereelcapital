@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { isHttpError } from "@sveltejs/kit";
 import { Schema } from "effect";
 import { decode } from "./decode";
-import { engineFor } from "./engine";
+import { engineFor, engineForClient } from "./engine";
 import { freshSessionMaxAgeMs, requireAdmin, requireFreshSession, requireUser } from "./guards";
 
 const now = new Date("2026-10-21T15:00:00Z");
@@ -123,5 +123,21 @@ describe("engineFor", () => {
 
   it("refuses without a session", () => {
     expect(failureOf(() => engineFor(namespace, signedOut)).status).toBe(401);
+  });
+});
+
+describe("engineForClient", () => {
+  const namespace = { getByName: (name: string) => ({ name }) };
+
+  it("gives an admin the stub of the named client", () => {
+    expect(engineForClient(namespace, eventFor("admin"), "client-9")).toEqual({ name: "client-9" });
+  });
+
+  it("refuses a client (403), a banned admin (403) and no session (401)", () => {
+    expect(failureOf(() => engineForClient(namespace, eventFor("client"), "u1")).status).toBe(403);
+    expect(
+      failureOf(() => engineForClient(namespace, eventFor("admin", { banned: true }), "x")).status,
+    ).toBe(403);
+    expect(failureOf(() => engineForClient(namespace, signedOut, "x")).status).toBe(401);
   });
 });

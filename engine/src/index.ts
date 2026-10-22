@@ -37,6 +37,7 @@ import {
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
+import { readOverview } from "./overview.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
 import { migrate } from "./schema.ts";
 import {
@@ -57,6 +58,7 @@ import {
   success,
   type EngineResult,
 } from "./rpc.ts";
+import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { Schema } from "effect";
 import type { Mode } from "./mode.ts";
 
@@ -213,6 +215,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   connection(input: unknown): Promise<EngineResult<ConnectionView>> {
     return this.enterWithConnection("connection", ModeOnlyArgs, input, async (ctx) =>
       success(await readConnection(ctx)),
+    );
+  }
+
+  /** Connection, open positions, unfinished orders and the day's counts, for the admin. Read-only. */
+  overview(input: unknown): Promise<EngineResult<ClientOverview>> {
+    return this.enterWithConnection("overview", ModeOnlyArgs, input, async (ctx) =>
+      success(await readOverview(ctx)),
     );
   }
 
