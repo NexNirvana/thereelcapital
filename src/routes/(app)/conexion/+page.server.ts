@@ -2,12 +2,21 @@ import { fail, isHttpError, redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { Schema } from "effect";
-import { connectionErrorFor } from "#lib/server/connection-errors.ts";
+import { CONNECT_REDIRECT_MODE } from "#lib/domain/config.ts";
+import { connectRedirectUri, parsePastedRedirect } from "#lib/domain/connect-redirect.ts";
+import {
+  connectionErrorFor,
+  connectionErrors,
+  isConnectionErrorCode,
+  type ConnectionErrorCode,
+} from "#lib/server/connection-errors.ts";
 import { engineFor } from "#lib/server/engine.ts";
-import { guardErrors, requireFreshSession } from "#lib/server/guards.ts";
+import { guardErrors, requireFreshSession, requireUser } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
-const callbackUrl = () => `${new URL(env.APP_ORIGIN).origin}/conexion/callback`;
+/** Shown only when the client must register our callback on their key (decision D35). */
+const callbackUrl = () =>
+  CONNECT_REDIRECT_MODE === "registered" ? connectRedirectUri(env.APP_ORIGIN) : null;
 
 const expiry = new Intl.DateTimeFormat("es", {
   dateStyle: "medium",
@@ -96,7 +105,7 @@ export const actions: Actions = {
         mode: "SIM",
         clientId: input.success.clientId.trim(),
         clientSecret: input.success.clientSecret.trim(),
-        origin: new URL(env.APP_ORIGIN).origin,
+        redirectUri: connectRedirectUri(env.APP_ORIGIN),
       })
       .catch(() => null);
     if (result === null) return unavailable();
@@ -106,7 +115,53 @@ export const actions: Actions = {
         : fail(502, { code: result.code, message: result.message });
     }
     // The engine builds this URL; the allowlist keeps any other destination from ever being followed.
-    redirect(303, result.value.authorizeUrl, { external: ["https://signin.tradestation.com"] });
+    const authorizeUrl = result.value.authorizeUrl;
+    if (CONNECT_REDIRECT_MODE === "registered") {
+      redirect(303, authorizeUrl, { external: ["https://signin.tradestation.com"] });
+    }
+    // Paste mode: the page opens TradeStation in a new tab and waits for the pasted address.
+    return { authorizeUrl };
+  },
+
+  // The pasted address holds the one-time code: it is parsed here and never echoed, stored,
+  // logged or audited. A failure returns a code and a Spanish message, nothing the client typed.
+  paste: async (event) => {
+    requireUser(event);
+    const form = await event.request.formData();
+    const pasted = form.get("redirect");
+    const fail400 = (code: ConnectionErrorCode) =>
+      fail(400, { code, message: connectionErrors[code], awaitingPaste: true });
+    const parsed = parsePastedRedirect(typeof pasted === "string" ? pasted : "");
+    if (!parsed.ok) {
+      return fail400(
+        parsed.reason === "DENIED"
+          ? "AUTHORIZATION_DENIED"
+          : parsed.reason === "MALFORMED" || parsed.reason === "MISSING_CODE"
+            ? "PASTE_INVALID"
+            : "STATE_INVALID",
+      );
+    }
+
+    // The state is consumed in the engine before anything else; a rejection must not become a 500.
+    const result = await engineFor(env.ENGINE, event)
+      .completeConnection({
+        mode: "SIM",
+        code: parsed.code,
+        state: parsed.state,
+        redirectUri: connectRedirectUri(env.APP_ORIGIN),
+      })
+      .catch(() => null);
+    if (result === null) return fail400("BROKER_UNAVAILABLE");
+    if (!result.ok) {
+      return fail400(
+        result.code === "INVALID_INPUT"
+          ? "STATE_INVALID"
+          : isConnectionErrorCode(result.code)
+            ? result.code
+            : "BROKER_UNAVAILABLE",
+      );
+    }
+    redirect(303, resolve("/(app)/conexion"));
   },
 
   disconnect: async (event) => {

@@ -73,3 +73,14 @@ export const CHAIN_STALE_AFTER_MS = 30 * 1000;
 
 /** Undecided (docs/open-questions.md): how long the admin overview waits for one client's Durable Object. */
 export const ADMIN_FANOUT_TIMEOUT_MS = 4 * 1000;
+
+/**
+ * How a client's browser comes back from TradeStation (decision D35). "paste": the redirect goes
+ * to a bare localhost URL that every key allows by default, which does not load, and the client
+ * pastes that address into /conexion. "registered": the client registered our callback URL on
+ * their key and TradeStation redirects to it.
+ */
+export const CONNECT_REDIRECT_MODE: "paste" | "registered" = "paste";
+
+/** The `redirect_uri` of paste mode: one of TradeStation's default allowed callbacks, no path. */
+export const PASTE_REDIRECT_URI = "http://localhost:3000";
