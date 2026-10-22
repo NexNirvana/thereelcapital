@@ -1,6 +1,7 @@
 // The time the engine acts at. Always the real clock, except where the local simulation is
 // allowed (selectBroker): there TEST_NOW (an ISO instant) pins it, so a spec can run inside a
-// regular session at any hour. Production can never take the override, whatever vars are set.
+// regular session at any hour. It never moves alarm due times or retries: the alarm runs on real
+// time and a pinned instant never advances, so those use the coordinator's real #now(). Production can never take the override, whatever vars are set.
 import { selectBroker, type BrokerSettings } from "./broker/select.ts";
 
 export interface ClockSettings extends BrokerSettings {

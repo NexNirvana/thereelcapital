@@ -117,7 +117,7 @@ async function connect(client: Client) {
 // are about the connection, not the loop (sync.test.ts covers it), so the loop is switched off.
 const stopSyncLoop = (client: Client) =>
   runInDurableObject(client.stub, (_i, state) =>
-    new AlarmScheduler(state.storage).schedule("sync", null),
+    new AlarmScheduler(state.storage, Date.now).schedule("sync", null),
   );
 
 const events = (client: Client) =>
