@@ -10,7 +10,7 @@ Browser ──HTTPS──► web Worker (SvelteKit, adapter-cloudflare 8)
                      │  RPC via DO binding (script_name = reel-engine)
                      ▼
                    engine Worker
-                     └─ ClientCoordinator DO  ── one per client ──►  TradeStation API (SIM now, LIVE later)
+                     └─ ClientCoordinator DO  ── one per client ──►  TradeStation API (SIM only)
                           SQLite: intents, positions, counters, events
                           alarms: order/position sync, stop/trailing checks
                    D1 (shared): auth tables, client settings, broker connection, invitations, recovery codes, audit
@@ -37,7 +37,7 @@ One DO per **client** rather than per (client, mode): one connection serves both
 
 ```
 client_settings    user_id PK, size_usd, stop_pct, trailing_unlock_pct, updated_at
-invitations        id, user_id, token_hash, expires_at, used_at, created_by   -- activation links, shared by the admin
+invitations        id, user_id, token_hash, expires_at, used_at, revoked_at, created_by   -- activation links, shared by the admin
 recovery_codes     id, user_id, code_hash, used_at
 broker_connection  user_id PK, client_id, client_secret_enc, refresh_token_enc, key_id,
                    refresh_expires_at (connect time + 24 h until #21 verifies; NULL = unknown), status, last_ok_at
@@ -64,7 +64,7 @@ The schema is built by append-only, versioned migrations (`schema_migrations`) t
 
 **Entry RPCs** (`engine/src/entries.ts`): `prepareEntry({ mode, accountId, symbol, assetType })` returns a preview (quantity, ask, SIZE, estimated cost, a fresh `intentId`) or `BLOCKED` with reasons, and writes nothing. `sendEntry({ ...same, intentId, confirmedQty })` returns `BLOCKED`, `RECONFIRM` (the server's quantity differs from `confirmedQty`; nothing reserved) or `PLACED` with the intent state. The engine reads SIZE from `client_settings` in D1 and the ask from the broker; `confirmedQty` is only compared, never sent. See [order-lifecycle.md](order-lifecycle.md#entries).
 
-**RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `limits` (read-only: the counts behind «x/2 posiciones · y/3 entradas hoy»), `history`, `positions` (read-only: open positions with their seven steps, protection state and working exits, plus `maxPositions`), `connection`, `sync`, and the read-only chain reads `optionExpirations`, `optionChain` (every listed strike with its CALL and PUT bid/ask, a side without a market is `null`) and `optionContract` (what an option symbol stands for). Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (`INVALID_INPUT`, `MODE_NOT_SIM`, `BROKER_UNAVAILABLE`, `NOT_FOUND`, `NOT_IMPLEMENTED`). Rejections and not-implemented calls go to `events` (never the input).
+**RPC surface** (`engine/src/rpc.ts`): `prepareEntry`, `sendEntry`, `exit`, `cancel`, `activateTrailing`, `state`, `limits` (read-only: the counts behind «x/2 posiciones · y/3 entradas hoy»), `history`, `positions` (read-only: open positions with their seven steps, protection state and working exits, plus `maxPositions`), `connection`, `sync`, and the read-only chain reads `optionExpirations`, `optionChain` (every listed strike with its CALL and PUT bid/ask, a side without a market is `null`) and `optionContract` (what an option symbol stands for). Each takes one `unknown` argument, decodes it with Effect `Schema` (unknown fields rejected, no client id, SIZE, quantity, price or broker URL) and rejects any `mode` other than `SIM` with `MODE_NOT_SIM` before touching storage. Methods return `{ ok: true, value }` or `{ ok: false, code, message }` with a stable `code` (the `EngineErrorCode` union in `engine/src/rpc.ts`, each with its Spanish message). Rejections go to `events` (never the input).
 
 **Invariants the store enforces** (migration 3): `CHECK (sold_qty <= original_qty)` on `positions`, and a unique partial index `positions_one_open_per_symbol` on `(mode, symbol) WHERE status != 'CLOSED'`, so a second open position on a symbol cannot exist whatever the code does ([domain-rules.md §5](domain-rules.md#5-order-guards)). The guard still rejects first, with a clear reason; the index is the backstop for a race or a bug.
 
@@ -97,10 +97,29 @@ src/
   routes/              # (public) acceso/invitación/recuperación · (app) operar/posiciones/historial/conexion · admin
   hooks.server.ts
 engine/
-  src/index.ts         # export class ClientCoordinator; default fetch → 404
-  src/coordinator/     # DO implementation, SQLite migrations, sync loop
-  src/broker/          # BrokerAdapter service + typed errors, select.ts, tradestation/, local-sim/ (test-plan.md#local-sim-broker)
-  src/crypto.ts        # AES-GCM for credentials
+  src/index.ts         # export class ClientCoordinator (the DO: RPC entry points, alarm); default fetch → 404
+  src/rpc.ts           # RPC argument decoding, EngineResult and EngineErrorCode
+  src/schema.ts        # DO SQLite schema and versioned migrations
+  src/entries.ts       # prepare and send entry orders
+  src/exits.ts         # scale-out steps, ALL OUT and cancels
+  src/placement.ts     # the single-attempt place flow shared by entries and exits
+  src/ledger.ts        # sell ledger and scale-out steps (synchronous)
+  src/sync.ts          # order and position sync tick
+  src/reconcile.ts     # applies broker state to intents and positions
+  src/scheduler.ts     # the shared alarm: one due time per job
+  src/refresh.ts       # access-token refresh
+  src/protection.ts    # engine-held stop checks
+  src/trailing.ts      # trailing stop activation and levels
+  src/connection.ts    # connect, link, accounts, disconnect
+  src/chain.ts         # option expirations, chain and contract reads
+  src/history.ts       # history reads (cursor decoded with a schema)
+  src/positions-view.ts, overview.ts  # read-only views for Posiciones and the admin
+  src/events.ts        # logEvent, the operational event log writer
+  src/clock.ts         # business-rule clock (TEST_NOW pins it outside production)
+  src/ids.ts, mode.ts, crypto.ts  # intent ids, mode, AES-GCM for credentials
+  src/test-seed.ts     # test-only seeding for the e2e specs
+  src/broker/          # BrokerAdapter service + typed errors, provider.ts, select.ts, attempt.ts (one attempt, no retry), local-sim/ (test-plan.md#local-sim-broker)
+  src/tradestation/    # the TradeStation SIM adapter: auth, http, accounts, market, orders, trading
   wrangler.jsonc
 migrations/            # D1 SQL (Better Auth generated + app)
 static/fonts/          # IBM Plex Mono WOFF2 + OFL
@@ -132,6 +151,7 @@ Versions are pinned through `packageManager: "bun@<version>"` in `package.json`,
 - web `wrangler.jsonc`: `main: ".svelte-kit/cloudflare/_worker.js"`, `assets` binding, D1 `DB`, DO binding `ENGINE` → `ClientCoordinator` with `script_name: "reel-engine"`, route `thereelcapital.com` with `custom_domain: true`.
 - engine `wrangler.jsonc`: name `reel-engine`, D1 `DB` (same database), DO class declared as SQLite storage, `workers_dev: false`, no routes.
 - Secrets (`wrangler secret put`, never in Git; `BETTER_AUTH_SECRET` is also listed under `secrets.required` so `wrangler types` types it): `BETTER_AUTH_SECRET` (web), `CREDENTIALS_KEY` (engine only, declared under `secrets.required` in `engine/wrangler.jsonc`; base64 of 32 random bytes, `openssl rand -base64 32`; the web Worker never gets it because encryption happens inside the engine), no email key: the app sends no email. Local values in git-ignored `.dev.vars` (`engine/.dev.vars` for `CREDENTIALS_KEY`; the e2e run does not read it: its engine variables, with a throwaway key, come from `tests/e2e/engine.env`). `APP_ORIGIN` (public, a `vars` entry in `wrangler.jsonc`) is the origin passkeys are bound to; `.dev.vars` overrides it locally. Under `wrangler dev` the custom-domain route would make requests look like `thereelcapital.com`, so the dev scripts pass `--local-upstream localhost:<port>`; without it the auth handler would not match the request.
+- Engine `vars` (`engine/wrangler.jsonc`): `BROKER` (`tradestation`; `local-sim` only with `ENVIRONMENT` `development` or `test`), `ENVIRONMENT` (`production` by default), and the test-only `TEST_NOW` and `TEST_SYNC_MS` (empty in production; see [test-plan.md](test-plan.md#local-sim-broker)).
 - Local dev: `wrangler dev -c wrangler.jsonc -c engine/wrangler.jsonc` after a build; `vite dev` for UI work with the engine running in its own `wrangler dev`.
 - CI/CD (GitHub Actions on GitHub-hosted runners: free and unlimited for this public repo. The repository variable `CI_RUNNER` (a JSON label such as `["self-hosted","reel-local"]`) moves the `ci.yml` jobs except `deploy` without code changes (setup and toggle scripts: [CONTRIBUTING.md](../CONTRIBUTING.md#self-hosted-runner)); fork PRs always stay GitHub-hosted, and `deploy` and `guards` are pinned to `ubuntu-24.04`. The e2e job is three Playwright shards (`e2e-shard`, own local state each) plus the required `e2e` job that merges their reports. `oven-sh/setup-bun@v2` + `actions/setup-node`, `bun ci`): on PRs, typecheck, lint, unit, engine and e2e tests. On `main`, the `deploy` job (needs every check, `environment: production`, group `deploy-production` never cancelled) runs `bunx wrangler d1 migrations apply DB --remote` (web config, which holds `migrations_dir`) → deploy engine → build → deploy web → smoke check of `https://thereelcapital.com/acceso`. It authenticates with the `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable; configs never hold the account id.
 - Cloudflare Web Analytics is on for the production zone (D26 in [decisions.md](decisions.md)); Cloudflare injects its beacon at the edge, so nothing in the repo loads it and local and e2e runs make no external requests. The beacon is the only off-origin request in production.
@@ -146,7 +166,7 @@ The pilot budget is US$0/month (D22): everything runs on free plans.
 | Workers (Free) | 100,000 requests/day; 10 ms CPU per request | a few clients; SSR, auth and RPC calls |
 | Durable Objects (SQLite, Free) | 100,000 requests/day; 100,000 rows written/day; 5 GB | one object per client; the sync loop runs only while something is open |
 | D1 (Free) | 5M rows read and 100,000 written per day; 5 GB | identity, settings, audit |
-| Blacksmith, CodeRabbit | free tiers | CI and first review |
+| GitHub Actions, CodeRabbit | free for this public repo | CI (GitHub-hosted, optional self-hosted runners) and review (CodeRabbit plus the local reviewer) |
 
 Move to Workers Paid (US$5/month) when any of these happen: daily Durable Object requests or rows written pass 70% of the free limit on a normal trading day; requests fail with CPU-limit errors; or the sync loop needs a shorter interval than the free limits allow. Check usage in the Cloudflare dashboard weekly during the pilot.
 

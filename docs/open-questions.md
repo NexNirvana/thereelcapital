@@ -8,7 +8,7 @@ None open. Questions 1–5 and 13 were decided on 2026-10-21 (trailing set and b
 
 ## TradeStation (SIM spike)
 
-6. Exact error at absolute refresh-token expiry, and whether the 24 h lifetime counts from authorization or from the first rotation. Not observable in one session. (Answered by the spike of 2026-10-22: the key does not rotate, and a refused refresh is 403 `invalid_grant`.)
+6. Exact error at absolute refresh-token expiry, and whether the 24 h lifetime counts from authorization or from the first rotation. Partly answered by the spike of 2026-10-22 (see below); the absolute expiry is not observable in one session and stays open.
 8. Option quotes through the snapshot endpoint, or stream only.
 9. Option `PointValue` (expected 100) and `TradeAction` casing for options.
 10. StopMarket and trailing StopMarket on options in regular session. T13 is decided (engine-held, D36); the answer would only enable a later broker-held improvement.
@@ -23,3 +23,10 @@ Answered by the spike of 2026-10-22 ([tradestation-integration.md](tradestation-
 - 12: 320 requests per 300 s per resource on SIM, reported in `x-ratelimit-*` headers (`rate-limits/`).
 
 Timing values are decided: D33 in [decisions.md](decisions.md).
+
+## Config values to confirm
+
+Both are marked undecided in `src/lib/domain/config.ts`.
+
+14. `SYNC_MIN_INTERVAL_MS` (2 s): a `sync` request (page load or poll) skips the broker read when the last good pass is younger than this.
+15. `PROTECTION_SETTINGS_TTL_MS` (5 s, one sync tick): how long the engine reuses the protection settings it read from D1.
