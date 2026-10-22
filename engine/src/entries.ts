@@ -99,6 +99,8 @@ interface Sized {
   readonly accountType: string;
   readonly symbol: string;
   readonly assetType: "equity" | "option";
+  /** Long-only: a buy to open, derived once and used by the guard, the intent row and the order. */
+  readonly tradeAction: "BUY" | "BUYTOOPEN";
   readonly qty: number;
   readonly sizeMicros: number;
   readonly quote: Quote;
@@ -140,7 +142,7 @@ function guardEntry(ctx: ConnectionContext, sized: Sized): RejectionReason | nul
           ? { kind: "equity", symbol: sized.symbol }
           : { kind: "option", symbol: sized.symbol, legs: 1 },
       orderType: "Market",
-      tradeAction: sized.assetType === "equity" ? "BUY" : "BUYTOOPEN",
+      tradeAction: sized.tradeAction,
       quantity: sized.qty,
     },
     {
@@ -277,6 +279,7 @@ async function evaluate(
     accountType: account.accountType,
     symbol: instrument.symbol,
     assetType: args.assetType,
+    tradeAction: args.assetType === "equity" ? "BUY" : "BUYTOOPEN",
     qty: qty.qty,
     sizeMicros,
     quote,
@@ -392,7 +395,7 @@ function reserve(ctx: ConnectionContext, intentId: string, sized: Sized): Reserv
       sized.accountId,
       sized.symbol,
       sized.assetType,
-      sized.assetType === "equity" ? "BUY" : "BUYTOOPEN",
+      sized.tradeAction,
       sized.qty,
       sized.sizeMicros,
       JSON.stringify({
@@ -452,7 +455,7 @@ export async function sendEntry(
     accountId: sized.accountId,
     symbol: sized.symbol,
     assetType: sized.assetType,
-    tradeAction: sized.assetType === "equity" ? "BUY" : "BUYTOOPEN",
+    tradeAction: sized.tradeAction,
     quantity: sized.qty,
     orderConfirmId: args.intentId,
   };
