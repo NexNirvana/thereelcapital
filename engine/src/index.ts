@@ -18,7 +18,7 @@ import { AlarmScheduler, type AlarmTask } from "./scheduler.ts";
 import { runSync, syncWanted, type SyncContext, type SyncResult } from "./sync.ts";
 import { resolveBroker } from "./broker/provider.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
-import { engineNow } from "./clock.ts";
+import { engineNow, syncDelayMs } from "./clock.ts";
 import {
   entryLimits,
   prepareEntry,
@@ -111,7 +111,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const result = await sendEntry(ctx, args);
       // A placed entry is something to watch: start the loop if it is not running.
       if (result.ok && result.value.status === "PLACED") {
-        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+        await this.#alarms.scheduleNoLater(
+          "sync",
+          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+        );
       }
       return result;
     });
@@ -123,7 +126,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const result = await this.syncOnce(ctx);
       // Work this pass found or left keeps the loop going even if it had stopped.
       if (result.nextInMs !== null) {
-        await this.#alarms.scheduleNoLater("sync", Date.now() + result.nextInMs);
+        await this.#alarms.scheduleNoLater(
+          "sync",
+          Date.now() + syncDelayMs(this.env, result.nextInMs),
+        );
       }
       return success({ reconciled: result.reconciled });
     });
@@ -170,7 +176,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const result = await exitPosition(ctx, args);
       if (result.ok && result.value.status === "PLACED") {
         // The loop watches the fill; it must be running while an exit is pending.
-        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+        await this.#alarms.scheduleNoLater(
+          "sync",
+          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+        );
       }
       return result;
     });
@@ -181,7 +190,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     return this.enterWithBroker("cancel", CancelArgs, input, async (ctx, args) => {
       const result = await cancelIntent(ctx, args);
       if (result.ok && result.value.status === "REQUESTED") {
-        await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+        await this.#alarms.scheduleNoLater(
+          "sync",
+          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+        );
       }
       return result;
     });
@@ -260,7 +272,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
           // Orders may have moved while we were not connected: reconcile before anything else.
           // One tick from now, so the first read does not race the connection settling.
-          await this.#alarms.scheduleNoLater("sync", Date.now() + SYNC_INTERVAL_MS);
+          await this.#alarms.scheduleNoLater(
+            "sync",
+            Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+          );
         }
         return result;
       },
@@ -309,7 +324,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         const result = await this.syncOnce({ ...ctx, broker });
         await this.#alarms.schedule(
           "sync",
-          result.nextInMs === null ? null : Date.now() + result.nextInMs,
+          result.nextInMs === null ? null : Date.now() + syncDelayMs(this.env, result.nextInMs),
         );
         return;
       }

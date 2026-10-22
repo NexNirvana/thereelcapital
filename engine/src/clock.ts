@@ -5,6 +5,7 @@ import { selectBroker, type BrokerSettings } from "./broker/select.ts";
 
 export interface ClockSettings extends BrokerSettings {
   readonly TEST_NOW?: string | undefined;
+  readonly TEST_SYNC_MS?: string | undefined;
 }
 
 export function engineNow(settings: ClockSettings, realNow: number = Date.now()): number {
@@ -13,4 +14,16 @@ export function engineNow(settings: ClockSettings, realNow: number = Date.now())
   if (!choice.ok || choice.broker !== "local-sim") return realNow;
   const pinned = Date.parse(settings.TEST_NOW);
   return Number.isNaN(pinned) ? realNow : pinned;
+}
+
+// The pause before the next sync tick. The local simulation may shorten it with TEST_SYNC_MS so
+// e2e specs need not wait out the production tick; production can never take the override.
+export function syncDelayMs(settings: ClockSettings, productionMs: number): number {
+  if (settings.TEST_SYNC_MS === undefined) return productionMs;
+  const choice = selectBroker(settings);
+  if (!choice.ok || choice.broker !== "local-sim") return productionMs;
+  const shortened = Number(settings.TEST_SYNC_MS);
+  return Number.isInteger(shortened) && shortened > 0
+    ? Math.min(shortened, productionMs)
+    : productionMs;
 }
