@@ -17,7 +17,9 @@ export function d1(sql: string): unknown[] {
     try {
       return runD1(sql);
     } catch (error) {
-      if (attempt === 5 || !String(error).includes("SQLITE_BUSY")) throw error;
+      // execFileSync's message only names the command; the lock is reported on stderr.
+      const output = `${String(error)} ${error instanceof Error && "stderr" in error ? String(error.stderr) : ""}`;
+      if (attempt === 5 || !output.includes("SQLITE_BUSY")) throw error;
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300 * attempt);
     }
   }
