@@ -72,9 +72,9 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
     eventParams.push(end);
   }
   if (args.cursor !== undefined) {
-    const [createdAt = "0", id = ""] = args.cursor.split(":");
+    const [createdAt, , id] = args.cursor;
     intentWhere.push("(created_at, id) < (?, ?)");
-    intentParams.push(Number(createdAt), id);
+    intentParams.push(createdAt, id);
   }
 
   const rows = sql

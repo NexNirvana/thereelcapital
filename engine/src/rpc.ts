@@ -2,7 +2,7 @@
 // return. Arguments never carry a client id (the DO is the client), SIZE, quantity, price or a
 // broker URL (CLAUDE.md, never-break rule 3).
 
-import { Schema } from "effect";
+import { Schema, SchemaTransformation } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
 import { ORDER_STATES } from "#lib/domain/order-states.ts";
@@ -81,6 +81,15 @@ const Day = Schema.String.check(
   Schema.makeFilter(isCalendarDay),
 );
 
+/** `<created_at>:<intent id>` of the last order of a page, decoded to its two parts. */
+const HistoryCursor = Schema.TemplateLiteralParser([
+  Schema.String.check(Schema.isPattern(/^\d{1,16}$/)).pipe(
+    Schema.decodeTo(Schema.Number, SchemaTransformation.numberFromString),
+  ),
+  ":",
+  Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/)),
+]);
+
 /**
  * One page of the client's orders. `cursor` is the opaque `nextCursor` of the previous page;
  * filters narrow what is listed and never widen it past this client's own rows.
@@ -95,9 +104,7 @@ export const HistoryArgs = Schema.Struct({
   level: Schema.optionalKey(Schema.Literal("error")),
   from: Schema.optionalKey(Day),
   to: Schema.optionalKey(Day),
-  cursor: Schema.optionalKey(
-    Schema.String.check(Schema.isPattern(/^\d{1,16}:[A-Za-z0-9_-]{1,64}$/)),
-  ),
+  cursor: Schema.optionalKey(HistoryCursor),
 });
 export type HistoryArgs = typeof HistoryArgs.Type;
 

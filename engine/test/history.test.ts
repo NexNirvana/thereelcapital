@@ -181,6 +181,12 @@ describe("history", () => {
       { to: "9999-12-31" },
       { from: "yesterday" },
       { cursor: "1;DROP TABLE intents" },
+      { cursor: "abc:r" },
+      { cursor: "1.5:r" },
+      { cursor: "-1:r" },
+      { cursor: "1e3:r" },
+      { cursor: "5:" },
+      { cursor: ":r" },
       { clientId: "other" },
       { limit: 5000 },
     ]) {
