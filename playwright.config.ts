@@ -7,9 +7,9 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["blob"]] : "list",
   // The specs share one local database, so they run one at a time.
   workers: 1,
-  // Tests wait on the engine for up to SETTLE_MS several times (tests/e2e/support.ts), so the
-  // 30 s default would cut them off before those waits can expire.
-  timeout: 300_000,
+  // The slowest test takes about 25 s. A wait on the engine may last up to SETTLE_MS
+  // (tests/e2e/support.ts), so allow two of them; a hang then fails in 90 s, not 5 minutes.
+  timeout: 90_000,
   use: { baseURL: origin },
   // Always builds and serves a fresh copy of both Workers on this run's own ports and state
   // directory (tests/e2e/ports.ts), so tests never meet a stale `bun run dev` on 8787 or another run.

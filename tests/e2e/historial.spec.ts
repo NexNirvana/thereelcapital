@@ -156,7 +156,8 @@ test("pages through older orders with a cursor", async ({ context, page }) => {
 
 test("keeps the history after signing out and in again", async ({ context, page }) => {
   const userId = await seedTradingClient(context, { orders });
-  await page.goto("/historial");
+  // The sign-out button does nothing until the page hydrates, so wait for that before clicking.
+  await page.goto("/historial", { waitUntil: "networkidle" });
   await expect(page.getByRole("table", { name: /Órdenes/ }).getByRole("row")).toHaveCount(6);
 
   await page

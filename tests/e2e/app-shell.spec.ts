@@ -112,7 +112,8 @@ test("a stale session is asked to confirm with the passkey before generating cod
 
 test("signing out from the shell returns to the access screen", async ({ context, page }) => {
   seedCodes(await seedSignedInUser(context), 8);
-  await page.goto("/operar");
+  // The button does nothing until the page hydrates, so wait for that before clicking.
+  await page.goto("/operar", { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
   await expect(page).toHaveURL(/\/acceso$/);
   const response = await page.request.post("/api/recovery-codes");
@@ -124,7 +125,7 @@ test("signing out from the admin header returns to the access screen", async ({
   page,
 }) => {
   await seedSignedInUser(context, { role: "admin" });
-  await page.goto("/admin");
+  await page.goto("/admin", { waitUntil: "networkidle" });
   const header = page.getByRole("banner");
   await expect(header.getByText("SIM")).toBeVisible();
   await snapshot(page, "admin-header");
