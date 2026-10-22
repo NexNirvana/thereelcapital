@@ -44,7 +44,7 @@ export const ACCESS_TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 /** Absolute lifetime of a rotating refresh token (docs/tradestation-integration.md#token-lifetime). */
 export const ROTATING_REFRESH_LIFETIME_MS = 24 * 60 * 60 * 1000;
 
-/** Undecided (docs/open-questions.md): how long before a known refresh expiry the client is warned. */
+/** Decided (D33): how long before a known refresh expiry the client is warned. */
 export const REFRESH_EXPIRY_WARNING_MS = 2 * 60 * 60 * 1000;
 
 /** Wait before the engine tries again after a refresh failed for a reason that may pass. */
@@ -56,7 +56,7 @@ export const SYNC_RETRY_DELAY_MS = 60 * 1000;
 /** Pause between the attempts of one refresh request when TradeStation cannot be reached. */
 export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
 
-/** Undecided (docs/open-questions.md): pause between sync-loop ticks while anything is open or pending. */
+/** Decided (D33): pause between sync-loop ticks while anything is open or pending. */
 export const SYNC_INTERVAL_MS = 5 * 1000;
 
 /**
@@ -79,21 +79,21 @@ export const EVENT_RETENTION_MS = 6 * 365 * 24 * 60 * 60 * 1000;
 export const STOP_REJECTED_COOLDOWN_MS = 30 * 1000;
 
 /**
- * Undecided: a SENT intent younger than this may still have its place request in flight, so the
+ * Decided (D33): a SENT intent younger than this may still have its place request in flight, so the
  * sync loop leaves it alone; an older one with no order at the broker becomes UNKNOWN.
  */
 export const SEND_GRACE_MS = 60 * 1000;
 
-/** Undecided: clock difference tolerated when matching a broker order's open time to an intent. */
+/** Decided (D33): clock difference tolerated when matching a broker order's open time to an intent. */
 export const ORDER_MATCH_SKEW_MS = 60 * 1000;
 
 /**
- * Undecided (docs/open-questions.md): how old an option chain snapshot may get before the screen
+ * Decided (D33): how old an option chain snapshot may get before the screen
  * calls its prices out of date. The chain is read on demand, never polled.
  */
 export const CHAIN_STALE_AFTER_MS = 30 * 1000;
 
-/** Undecided (docs/open-questions.md): how long the admin overview waits for one client's Durable Object. */
+/** Decided (D33): how long the admin overview waits for one client's Durable Object. */
 export const ADMIN_FANOUT_TIMEOUT_MS = 4 * 1000;
 
 /**
