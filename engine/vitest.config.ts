@@ -23,6 +23,11 @@ export default defineConfig({
     }),
   ],
   test: {
+    // Every file runs its own workerd in parallel and each test makes several Durable Object and D1
+    // round trips. A busy machine stretches a 0.3 s test past the 5 s default (a failure that moves
+    // between tests from run to run), so the budget is for a loaded run, not a quiet one.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // market-calendar is CommonJS and requires luxon; the pool's module shim loses luxon's exports
     // unless both are pre-bundled.
     deps: { optimizer: { ssr: { enabled: true, include: ["market-calendar", "luxon"] } } },
