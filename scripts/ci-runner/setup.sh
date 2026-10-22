@@ -105,6 +105,9 @@ start_pre() {
   if [ -f "\${output_log}" ]; then
     tail -n 1000 "\${output_log}" >"\${output_log}.tmp" && mv "\${output_log}.tmp" "\${output_log}"
   fi
+  # The service opens its log as the runner user, which can't create or write a root-owned file in the
+  # log dir; make it exist and belong to that user (also after the cap above replaced it).
+  checkpath -f -o ${RUNNER_USER}:${RUNNER_USER} -m 0640 "\${output_log}"
 }
 SERVICE
 }
