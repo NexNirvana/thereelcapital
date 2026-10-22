@@ -1,5 +1,6 @@
 // Authorization Code login through a local callback server, then in-memory token handling.
 // Tokens are never written anywhere. Request shapes reuse the adapter's authorizeUrl.
+import { parsePastedRedirect } from "#lib/domain/connect-redirect.ts";
 import { authorizeUrl } from "../../engine/src/tradestation/auth.ts";
 import { SpikeAbort, field, type Clock, type Reply, type SimClient } from "./client.ts";
 import type { Redactor } from "./redact.ts";
@@ -22,6 +23,22 @@ export function readCallback(url: URL, expectedState: string): CallbackResult {
     return { ok: false, reason: "state mismatch" };
   const code = url.searchParams.get("code");
   return code === null || code === "" ? { ok: false, reason: "no code" } : { ok: true, code };
+}
+
+/**
+ * Pure check of a redirect address pasted by hand (the page at the callback does not load when
+ * the account holder logs in on another computer). Uses the app's own paste rules.
+ */
+export function readPasted(
+  text: string,
+  redirectUri: string,
+  expectedState: string,
+): CallbackResult {
+  const pasted = parsePastedRedirect(text, redirectUri);
+  if (!pasted.ok) return { ok: false, reason: pasted.reason };
+  return pasted.state === expectedState
+    ? { ok: true, code: pasted.code }
+    : { ok: false, reason: "state mismatch" };
 }
 
 /** Starts the callback server and resolves with the authorization code once the owner logs in. */
@@ -50,6 +67,12 @@ export function waitForCode(
       reject(new SpikeAbort("Timed out waiting for the login callback."));
     }, timeoutMs);
   });
+}
+
+/** The first line typed or piped on stdin. */
+async function readLine(): Promise<string> {
+  for await (const line of console) return line;
+  return "";
 }
 
 export function openBrowser(url: string): void {
@@ -137,17 +160,30 @@ export class TokenSession {
 
   async login(args: {
     port: number;
+    paste: boolean;
     client: SimClient;
     log: (line: string) => void;
   }): Promise<void> {
     const state = crypto.randomUUID();
     const redirectUri = callbackUrl(args.port);
     const url = authorizeUrl({ clientId: this.credentials.clientId, redirectUri, state });
-    args.log(`Open this URL if the browser does not open (callback ${redirectUri}):`);
-    args.log(url);
-    const codePromise = waitForCode(args.port, state, 5 * 60_000);
-    openBrowser(url);
-    const code = await codePromise;
+    let code: string;
+    if (args.paste) {
+      args.log(
+        "Send this URL to the account holder to open and log in (callback " + redirectUri + "):",
+      );
+      args.log(url);
+      args.log("The page after login will not load. Paste its whole address here and press Enter:");
+      const result = readPasted(await readLine(), redirectUri, state);
+      if (!result.ok) throw new SpikeAbort(`Pasted address rejected: ${result.reason}.`);
+      code = result.code;
+    } else {
+      args.log(`Open this URL if the browser does not open (callback ${redirectUri}):`);
+      args.log(url);
+      const codePromise = waitForCode(args.port, state, 5 * 60_000);
+      openBrowser(url);
+      code = await codePromise;
+    }
     this.redactor.addSecret(code);
     const reply = await args.client.token("auth", "code-exchange", {
       grant_type: "authorization_code",
