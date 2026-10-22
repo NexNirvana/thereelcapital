@@ -42,6 +42,10 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 - Behavior changes update the relevant `docs/` file in the same PR.
 - Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
 
+### CI runners
+
+Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` always runs on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
+
 ### Branch rulesets
 
 GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
