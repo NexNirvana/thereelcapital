@@ -5,6 +5,7 @@ import {
   formatExpiration,
   formatUnits,
   allOutHint,
+  allOutShortHint,
   cancelOutcome,
   exitOutcome,
   sellableQty,
@@ -55,7 +56,9 @@ describe("positions screen wording", () => {
   it("says what remains and what ALL OUT closes", () => {
     expect(remainingLine(call)).toBe("15 contratos restantes");
     expect(allOutHint(call, 15)).toBe("ALL OUT · Cierra los 15 contratos restantes");
+    expect(allOutShortHint(call, 15)).toBe("ALL OUT · 15 contratos");
     const shares = { ...call, option: null, originalQty: 198, soldQty: 0 };
+    expect(allOutShortHint(shares, 1)).toBe("ALL OUT · 1 acción");
     expect(allOutHint(shares, 198)).toBe("ALL OUT · Cierra las 198 acciones restantes");
     expect(remainingLine({ ...shares, soldQty: 197 })).toBe("1 acción restante");
     expect(allOutHint(shares, 1)).toBe("ALL OUT · Cierra la acción restante");

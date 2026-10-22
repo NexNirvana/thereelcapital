@@ -8,6 +8,7 @@
   import ProgressBar from "#lib/ui/ProgressBar.svelte";
   import {
     allOutHint,
+    allOutShortHint,
     countsLine,
     formatUnits,
     headline,
@@ -95,9 +96,9 @@
 <div class="page">
   <header>
     <div class="title">
-      <h1>Posiciones</h1>
+      <h1><span class="wide">Posiciones</span><span class="narrow">Posición</span></h1>
       {#if data.view}
-        <p class="count">{positions.length} de {data.view.maxPositions} posiciones</p>
+        <p class="count wide">{positions.length} de {data.view.maxPositions} posiciones</p>
       {/if}
     </div>
     <p class="lead">Gestiona tus posiciones abiertas.</p>
@@ -264,7 +265,8 @@
               Cerrar posición
             </Button>
           {/if}
-          <p class="hint">{allOutHint(position, sellable)}</p>
+          <p class="hint wide">{allOutHint(position, sellable)}</p>
+          <p class="hint narrow">{allOutShortHint(position, sellable)}</p>
         </div>
       </section>
     </div>
@@ -532,7 +534,16 @@
   }
 
   /* Mobile / iPad: one column, the seven steps wrap 4 + 3. */
+  .narrow {
+    display: none;
+  }
   @media (max-width: 900px) {
+    .wide {
+      display: none;
+    }
+    .narrow {
+      display: block;
+    }
     .detail {
       grid-template-columns: 1fr;
     }

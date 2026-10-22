@@ -110,6 +110,21 @@ test("a stale session is asked to confirm with the passkey before generating cod
   await expect(page.getByRole("button", { name: "Confirmar con passkey" })).toBeVisible();
 });
 
+test("keeps three tabs on mobile with Admin and sign-out below the content", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { role: "admin" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/operar");
+  const tabbar = page.locator("nav.tabbar");
+  await expect(tabbar.getByRole("link")).toHaveText(["Operar", "Posiciones", "Historial"]);
+  await expect(tabbar.getByRole("button")).toHaveCount(0);
+  const extras = page.locator("footer.extras");
+  await expect(extras.getByRole("link", { name: "Admin" })).toBeVisible();
+  await expect(extras.getByRole("button", { name: "Cerrar sesión" })).toBeVisible();
+});
+
 test("signing out from the shell returns to the access screen", async ({ context, page }) => {
   seedCodes(await seedSignedInUser(context), 8);
   // The button does nothing until the page hydrates, so wait for that before clicking.

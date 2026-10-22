@@ -127,6 +127,13 @@ test("closes the position with ALL OUT only after a confirmation", async ({ cont
   await openPosition(page, "MSFT", "198 acciones");
   await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeVisible();
 
+  // The mobile design says «Posición» and the short caption.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "Posición", exact: true })).toBeVisible();
+  await expect(page.getByText("ALL OUT · 198 acciones", { exact: true })).toBeVisible();
+  await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   await page.getByRole("button", { name: "Cerrar posición" }).click();
   await expect(page.getByText("¿Cerrar la posición?")).toBeVisible();
   await shoot(page, "confirm-all-out");
