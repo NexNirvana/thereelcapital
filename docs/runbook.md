@@ -49,14 +49,37 @@ Set with `wrangler secret put`, which prompts for the value so it never appears 
 | --- | --- | --- |
 | `BETTER_AUTH_SECRET` | `reel-web` | `bunx wrangler secret put BETTER_AUTH_SECRET -c wrangler.jsonc` |
 | `CREDENTIALS_KEY` | `reel-engine` only | `bunx wrangler secret put CREDENTIALS_KEY -c engine/wrangler.jsonc` |
+| `CREDENTIALS_KEY_PREVIOUS` | `reel-engine` only, only during a rotation | `bunx wrangler secret put CREDENTIALS_KEY_PREVIOUS -c engine/wrangler.jsonc` |
 
 Generate a value with `openssl rand -base64 32` (the format `CREDENTIALS_KEY` requires). CI also holds `CLOUDFLARE_API_TOKEN` (secret) and `CLOUDFLARE_ACCOUNT_ID` (variable) for the `deploy` job; rotate the token in Cloudflare and update the GitHub secret.
 
 **Rotating `BETTER_AUTH_SECRET`.** Every pending recovery code stops working, because codes and audit IP hashes are keyed with it. Activation links and passkeys are unaffected. Session signing also depends on it; treat all sessions as ended (**not verified**). Clients then need their recovery codes re-issued, so rotate only for a suspected leak, and warn the pilot clients first. See [auth-and-security.md](auth-and-security.md#flows).
 
-**Rotating `CREDENTIALS_KEY`.** Each stored credential carries a `key_id` (a fingerprint of the key that encrypted it). The engine holds one key at a time and has **no code to read credentials encrypted under the previous key**. After a rotation, the refresh of every stored connection fails to decrypt, entries are blocked and open positions show `unverified` (`broker.refresh_failed`). Each client must press «Reconectar con TradeStation», which stores new credentials under the new `key_id`. A client who reconnects is blocked until the next good sync (below). So: announce it, rotate, ask the clients to reconnect. Exits and cancels are never blocked by this. See [tradestation-integration.md](tradestation-integration.md#token-lifetime) and [auth-and-security.md](auth-and-security.md#secrets).
+**Rotating `CREDENTIALS_KEY`.** Each stored credential carries a `key_id` (a fingerprint of the key that sealed it). During a rotation the engine also accepts `CREDENTIALS_KEY_PREVIOUS`: it decrypts a row with whichever of the two keys its `key_id` names, always encrypts with `CREDENTIALS_KEY`, and re-encrypts a row still on the previous key at its next token refresh. Clients stay connected and nobody presses «Reconectar con TradeStation». A secret cannot be read back from Cloudflare, so the old value must come from wherever you stored it when you created it.
 
-Losing `CREDENTIALS_KEY` without a backup has the same effect as a rotation.
+1. In one shell session, keeping the values out of the terminal output and shell history (`set +o history`), with the old value in `OLD_KEY` (read from your password manager) and a new one generated:
+
+   ```sh
+   NEW_KEY=$(openssl rand -base64 32)     # store it in the password manager now
+   printf %s "$OLD_KEY" | bunx wrangler secret put CREDENTIALS_KEY_PREVIOUS -c engine/wrangler.jsonc
+   printf %s "$NEW_KEY" | bunx wrangler secret put CREDENTIALS_KEY -c engine/wrangler.jsonc
+   unset OLD_KEY NEW_KEY
+   ```
+
+   Set PREVIOUS first so there is no moment where rows are unreadable. Each `secret put` deploys a new engine version. Both values must be base64 of 32 bytes, and `wrangler` does not check that. If refreshes start failing for every client (`CREDENTIALS`, or `CREDENTIALS_UNAVAILABLE` on connect) right after the change, a value is malformed: correct or delete `CREDENTIALS_KEY_PREVIOUS`. Reconnecting does not help in that case.
+2. Wait until every row is on the new key. Count them by `key_id`; the new key's id is the one that grows, and only an empty old group means done:
+
+   ```sh
+   bunx wrangler d1 execute DB --remote -c wrangler.jsonc \
+     --command "SELECT key_id, COUNT(*) AS connections FROM broker_connection GROUP BY key_id"
+   ```
+
+   A client's row moves on its next successful token refresh. A client with a stale or expired connection stays on the old id until it reconnects, which stores the new one.
+3. Delete the old key: `bunx wrangler secret delete CREDENTIALS_KEY_PREVIOUS -c engine/wrangler.jsonc`.
+
+If a row's `key_id` matches neither key (for example PREVIOUS was deleted too early or set wrong), the refresh records `broker.refresh_failed` with reason `KEY_UNKNOWN`, the connection shows as expired, entries are blocked and open positions show `unverified`; that client must press «Reconectar con TradeStation». Exits and cancels are never blocked by this. See [tradestation-integration.md](tradestation-integration.md#token-lifetime) and [auth-and-security.md](auth-and-security.md#secrets).
+
+Losing `CREDENTIALS_KEY` without a backup forces every client to reconnect (as above, for all rows).
 
 ## Deploys
 
