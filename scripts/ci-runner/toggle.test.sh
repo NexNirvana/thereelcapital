@@ -24,7 +24,17 @@ case "$*" in
     printf '%s' "${FAKE_GH_VALUE:-}" ;;
 esac
 FAKE
-chmod +x "${work}/gh"
+# The fake pgrep prints one pid per line: FAKE_LISTENERS_<N> of them for runner N.
+cat >"${work}/pgrep" <<'FAKE'
+#!/usr/bin/env bash
+args="$*"
+case "$args" in -u\ ghrunner\ -f\ runners/*/bin/Runner.Listener) ;; *) exit 1 ;; esac
+n="${args##*runners/}"; n="${n%%/*}"
+var="FAKE_LISTENERS_${n}"
+for _ in $(seq 1 "${!var:-0}"); do echo 123; done
+[ "${!var:-0}" -gt 0 ]
+FAKE
+chmod +x "${work}/gh" "${work}/pgrep"
 export PATH="${work}:${PATH}" SET_LOG="${work}/set.log" FIXTURE="${work}/runners.json"
 
 fail=0
@@ -47,6 +57,17 @@ expect "offline reel-local only: refuses" refuse 0
 
 echo '{"runners":[{"name":"reel-local-1","status":"offline","busy":false,"labels":[{"name":"reel-local"}]},{"name":"reel-local-2","status":"online","busy":true,"labels":[{"name":"reel-local"}]}]}' >"$FIXTURE"
 expect "one online: sets the variable" ok 1
+
+export FAKE_LISTENERS_2=2
+expect "duplicate listeners: refuses" refuse 0
+grep -q 'runner 2 has duplicate processes: run sudo scripts/ci-runner/setup.sh' "${work}/out" ||
+  { echo "FAIL duplicate message"; fail=1; }
+out="$("${here}/toggle.sh" status)"
+grep -q '^  runner 2: 2$' <<<"$out" && grep -q '^  runner 1: unknown$' <<<"$out" ||
+  { echo "FAIL status prints listener counts"; fail=1; }
+export FAKE_LISTENERS_2=1
+expect "one listener each: sets the variable" ok 1
+unset FAKE_LISTENERS_2
 
 out="$("${here}/toggle.sh" status)"
 grep -q '^  online'$'\t''reel-local-2'$'\t''busy=true' <<<"$out" || { echo "FAIL status"; fail=1; }

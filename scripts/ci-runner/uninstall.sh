@@ -24,10 +24,7 @@ for dir in "${RUNNERS_DIR}"/*/; do
   dir="${dir%/}"
   n="${dir##*/}"
   log "removing runner reel-local-${n}"
-  if ! run rc-service "gh-runner-${n}" stop; then
-    # An already-stopped service is fine; a live runner process is not.
-    ! pgrep -u "$RUNNER_USER" -f "${dir}/" >/dev/null || die "runner ${n} is still running; stop it and retry"
-  fi
+  stop_runner "$n"
   run rc-update del "gh-runner-${n}" default || true
   if [ -f "${dir}/.runner" ]; then
     if token="$(fetch_runner_token remove)"; then

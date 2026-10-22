@@ -84,6 +84,7 @@ scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the mach
 scripts/ci-runner/toggle.sh status            # CI_RUNNER value and each reel-local runner's status
 scripts/ci-runner/toggle.sh off               # deletes CI_RUNNER: CI uses GitHub-hosted runners
 scripts/ci-runner/toggle.test.sh              # test toggle.sh with a fake gh (also part of bun run test:unit)
+scripts/ci-runner/setup.test.sh               # check the service setup.sh would install, via --dry-run (also part of bun run test:unit)
 sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
 ```
 
@@ -91,7 +92,7 @@ If gh keeps its token in the desktop keyring (`gh auth status` says `(keyring)`)
 
 While `CI_RUNNER` is on, the machine is running CI: run browser tests locally only for specific specs with `--workers=2` at most, never the full suite (that runs in CI). Overloading the machine makes `wrangler dev` drop requests and slows every shard.
 
-Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N`, logging to `/var/log/gh-runner-N.log`. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
+Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N` running the runner's own `bin/runsvc.sh` under `supervise-daemon`, logging to `/var/log/gh-runner-N.log`. If a service was stopped while its listener lived on (jobs failing with `Missing file at path: .../_work/_temp/...`, or `toggle.sh status` showing more than one listener for a runner), run `sudo scripts/ci-runner/setup.sh`: it stops each service, ends leftover processes of that runner (found by working directory) and starts it again; `toggle.sh on` refuses until there is one listener per runner. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
 
 ### Verification and screenshots
 

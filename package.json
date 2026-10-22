@@ -17,7 +17,7 @@
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",
     "test": "bun run test:unit && bun run test:engine && bun run test:e2e",
-    "test:unit": "bun test ./src/lib ./scripts && scripts/ci-runner/toggle.test.sh",
+    "test:unit": "bun test ./src/lib ./scripts && scripts/ci-runner/toggle.test.sh && scripts/ci-runner/setup.test.sh",
     "test:engine": "vitest run -c engine/vitest.config.ts",
     "test:e2e": "bun run scripts/e2e.ts",
     "review": "bun scripts/review-pr.ts",
