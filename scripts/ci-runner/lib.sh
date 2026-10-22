@@ -46,6 +46,45 @@ as_runner() {
   run env -C "$dir" runuser -u "$RUNNER_USER" -- env "HOME=${RUNNER_HOME}" "$@"
 }
 
+# PIDs of the runner user's processes whose working directory is inside runner N's dir. The service
+# host (node ./bin/RunnerService.js) and run-helper.sh are started with relative paths, so matching
+# on the command line would miss them; the working directory does not. (The listener itself shows
+# its absolute path in ps, which toggle.sh relies on; it needs no root.)
+runner_pids() {
+  local pid cwd
+  for pid in $(pgrep -u "$RUNNER_USER" 2>/dev/null || true); do
+    cwd="$(readlink "/proc/${pid}/cwd" 2>/dev/null)" || continue
+    case "$cwd" in
+      "${RUNNERS_DIR}/${1}" | "${RUNNERS_DIR}/${1}/"*) echo "$pid" ;;
+    esac
+  done
+}
+
+# Sends a signal to every process of runner N at once, so the service host cannot restart a listener
+# that was just stopped.
+signal_runner() {
+  local sig="$1" n="$2" pids
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] kill -%s <processes of runner %s>\n' "$sig" "$n"
+    return
+  fi
+  pids="$(runner_pids "$n")"
+  # shellcheck disable=SC2086 # one word per pid
+  [ -z "$pids" ] || kill "-${sig}" $pids 2>/dev/null || true
+}
+
+# Stops the service, then ends any process of that runner the service manager lost track of (an
+# orphaned run-helper.sh or Runner.Listener keeps its registration and takes jobs).
+stop_runner() {
+  local n="$1"
+  run rc-service "gh-runner-${n}" stop || true
+  signal_runner TERM "$n"
+  run sleep 3
+  signal_runner KILL "$n"
+  run sleep 1
+  [ "$DRY_RUN" -eq 1 ] || [ -z "$(runner_pids "$n")" ] || die "runner ${n} still has processes after SIGKILL; stop them by hand"
+}
+
 require_root_via_sudo() {
   if [ "$DRY_RUN" -eq 1 ]; then
     return

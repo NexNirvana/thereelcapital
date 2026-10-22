@@ -18,8 +18,26 @@ list_runners() {
     --jq '.runners[] | select(any(.labels[]; .name == "reel-local")) | "\(.status)\t\(.name)\tbusy=\(.busy)"'
 }
 
+# The N of every registered reel-local-N runner.
+runner_numbers() {
+  list_runners | awk -F'\t' '{ sub(/.*-/, "", $2); print $2 }'
+}
+
+# Number of Runner.Listener processes of runner N, or "unknown" when none is visible (ps needs no
+# sudo; an unknown user or a stopped runner reads the same).
+listener_count() {
+  local count
+  count="$(pgrep -u "$RUNNER_USER" -f "runners/${1}/bin/Runner.Listener" 2>/dev/null | grep -c . || true)"
+  if [ "$count" -eq 0 ]; then echo unknown; else echo "$count"; fi
+}
+
 case "${1:-}" in
   on)
+    for n in $(runner_numbers); do
+      count="$(listener_count "$n")"
+      [ "$count" = unknown ] || [ "$count" -le 1 ] ||
+        die "runner ${n} has duplicate processes: run sudo scripts/ci-runner/setup.sh"
+    done
     runners="$(list_runners)"
     online="$(grep -c '^online'$'\t' <<<"$runners" || true)"
     if [ "$online" -lt 1 ]; then
@@ -43,6 +61,10 @@ case "${1:-}" in
     echo "${current:-CI_RUNNER is not set (GitHub-hosted runners)}"
     echo "reel-local runners:"
     list_runners | sed 's/^/  /'
+    echo "listener processes:"
+    for n in $(runner_numbers); do
+      echo "  runner ${n}: $(listener_count "$n")"
+    done
     ;;
   off)
     # Only an absent variable is fine; any other failure must surface.

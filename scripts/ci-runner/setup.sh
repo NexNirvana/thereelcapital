@@ -85,7 +85,9 @@ install_service() {
 #!/usr/bin/openrc-run
 description="GitHub Actions runner reel-local-${n}"
 supervisor=supervise-daemon
-command="${dir}/run.sh"
+# runsvc.sh is the entrypoint actions/runner ships for service managers: it turns TERM into INT so
+# the listener stops with the service, and it handles the self-update restart itself.
+command="${dir}/bin/runsvc.sh"
 command_user="${RUNNER_USER}"
 directory="${dir}"
 respawn_delay=5
@@ -99,8 +101,6 @@ depend() {
 }
 
 start_pre() {
-  # Each start gets a clean workspace.
-  find "${dir}/_work" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
   # Cap the log: keep the last 1000 lines.
   if [ -f "\${output_log}" ]; then
     tail -n 1000 "\${output_log}" >"\${output_log}.tmp" && mv "\${output_log}.tmp" "\${output_log}"
@@ -130,7 +130,9 @@ setup_instance() {
   # The || return 1 guards matter: the caller runs this in an || context, where set -e is off.
   install_service "$n" "$dir" || return 1
   run rc-update add "gh-runner-${n}" default || return 1
-  run rc-service "gh-runner-${n}" restart || return 1
+  # Repairs a runner whose old processes outlived their service before starting it again.
+  stop_runner "$n"
+  run rc-service "gh-runner-${n}" start || return 1
 }
 
 require_root_via_sudo
