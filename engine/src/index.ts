@@ -363,7 +363,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     ctx: SyncContext,
     options?: { readonly throttle?: boolean },
   ): Promise<SyncResult> {
-    this.#syncing ??= runSync(ctx, options).finally(() => {
+    this.#syncing ??= runSync({ ...ctx, wallNow: () => this.#now() }, options).finally(() => {
       this.#syncing = null;
     });
     return this.#syncing;

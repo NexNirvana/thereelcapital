@@ -105,6 +105,29 @@ describe("sync throttle and settings cache", () => {
     });
   });
 
+  it("ages the throttle with the wall clock when the engine clock is pinned", async () => {
+    // TEST_NOW pins ctx.now for ever; a throttle measured on it would skip every later request.
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const spy = counted(sim.adapter);
+    await inClient(client, clock, spy.broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      let wall = IN_SESSION;
+      const pinned = { ...ctx, wallNow: () => wall };
+      await runSync(pinned, { throttle: true });
+      expect(spy.calls.orders).toBe(1);
+
+      wall += SYNC_MIN_INTERVAL_MS - 1;
+      await runSync(pinned, { throttle: true });
+      expect(spy.calls.orders).toBe(1);
+
+      wall += 1;
+      await runSync(pinned, { throttle: true });
+      expect(spy.calls.orders).toBe(2);
+    });
+  });
+
   it("the loop tick is never throttled, and a pending reconciliation is never skipped", async () => {
     const clock: Clock = { now: IN_SESSION };
     const sim = newSim(clock);
