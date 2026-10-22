@@ -27,6 +27,7 @@ import {
 } from "./review/context.ts";
 import { commentableLines, splitDiffByFile } from "./review/diff.ts";
 import { parsePiStream } from "./review/pi-stream.ts";
+import { rerunFailedGates } from "./review/rerun.ts";
 import {
   buildReviewPayload,
   dedupeFindings,
@@ -683,6 +684,15 @@ async function main() {
         stdin: JSON.stringify(payload),
       }),
     ) as { html_url: string };
+    // Best effort: the review is posted either way, and a failed re-run only needs a manual one. It runs before the thread
+    // replies so a failing reply cannot skip it (a second run skips the already reviewed head).
+    const rerun = await rerunFailedGates(sh, data.repo, data.sha).catch((cause: unknown) => {
+      console.error(
+        `could not re-run review-gate: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+      return [];
+    });
+    if (rerun.length > 0) console.error(`re-ran review-gate runs: ${rerun.join(", ")}`);
     const actions = planThreadActions(verdicts, threadInfos);
     for (const reply of actions.replies) {
       await sh([
