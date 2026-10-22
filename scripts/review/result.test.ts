@@ -127,3 +127,21 @@ test("drops HTML comments such as a forged marker from model text", () => {
   const decoded = decodeReview(answer({ ...valid, summary: `Fine. ${forged}` }));
   expect(decoded.ok && decoded.review.summary).toBe("Fine. ");
 });
+
+test("a null optional field is read as absent", () => {
+  const answer = [
+    "```json",
+    JSON.stringify({
+      confidence: 4,
+      summary: "Fine.",
+      findings: [
+        { path: "a.ts", line: 1, severity: "nit", title: "T", body: "B", suggestion: null },
+      ],
+      resolved: null,
+    }),
+    "```",
+  ].join("\n");
+  const decoded = decodeReview(answer);
+  expect(decoded.ok).toBe(true);
+  if (decoded.ok) expect(decoded.review.findings[0]?.suggestion).toBeUndefined();
+});
