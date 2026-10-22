@@ -111,7 +111,7 @@ feat(domain): mark zero-quantity steps as done without an order
 
 ### CI runners
 
-Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` and `guards` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` and `guards` always run on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
+Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy`, `guards` and the browser-test shards (`e2e-shard`, `e2e`) to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` and `guards` always run on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
 
 ### Branch rulesets
 
@@ -133,7 +133,7 @@ bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
 
 ### Self-hosted runner
 
-CI can optionally run on the owner's machine (`scripts/ci-runner/`) to speed up pull requests. `.github/workflows/ci.yml` picks the runner from the repository variable `CI_RUNNER` (a JSON label array); unset, everything runs on GitHub-hosted runners.
+CI can optionally run on the owner's machine (`scripts/ci-runner/`) to speed up pull requests. `.github/workflows/ci.yml` picks the runner from the repository variable `CI_RUNNER` (a JSON label array); unset, everything runs on GitHub-hosted runners. The browser-test shards always stay on GitHub-hosted runners: each starts its own `wrangler dev` + workerd stack, and several concurrent runs overloaded the one machine (dropped connections, unrelated test failures). So `toggle.sh` affects only the quick jobs (check, lint, unit, engine, build).
 
 Safety model:
 
