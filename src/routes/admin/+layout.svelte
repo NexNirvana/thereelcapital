@@ -1,10 +1,25 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
+  import { page } from "$app/state";
   import Badge from "#lib/ui/Badge.svelte";
   import SignOutButton from "#lib/ui/SignOutButton.svelte";
   import type { LayoutProps } from "./$types";
 
   let { children }: LayoutProps = $props();
+
+  // Clientes also covers the client and admin detail pages under /admin.
+  const sections = [resolve("/admin/historial"), resolve("/admin/auditoria")];
+  function current(href: string) {
+    const path = page.url.pathname;
+    const inSection = sections.some((section) => path.startsWith(section));
+    return href === resolve("/admin")
+      ? inSection
+        ? undefined
+        : "page"
+      : path.startsWith(href)
+        ? "page"
+        : undefined;
+  }
 </script>
 
 <div class="admin">
@@ -13,7 +28,13 @@
     <Badge label="Admin" />
     <Badge label="SIM" />
     <nav aria-label="Administración">
-      <a href={resolve("/admin")} aria-current="page">Clientes</a>
+      <a href={resolve("/admin")} aria-current={current(resolve("/admin"))}>Clientes</a>
+      <a href={resolve("/admin/historial")} aria-current={current(resolve("/admin/historial"))}>
+        Historial
+      </a>
+      <a href={resolve("/admin/auditoria")} aria-current={current(resolve("/admin/auditoria"))}>
+        Auditoría
+      </a>
     </nav>
     <a class="back" href={resolve("/(app)/operar")}>Operar</a>
     <span class="signout"><SignOutButton /></span>
