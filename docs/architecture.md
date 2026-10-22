@@ -57,7 +57,7 @@ positions          id, mode, account_id, symbol, underlying, expiry, strike, rig
 scaleout_steps     position_id, mode, idx (0–6), state (available|pending|done|done_zero), intent_id
 oauth_attempts     state PK, mode, client_id, client_secret_enc, key_id, expires_at   -- one in flight, single use
 broker_accounts    mode, account_id, account_type (Cash|Margin)           PK(mode, account_id)
-events             id, at, mode, level, type, message, data_json   -- operational log and errors, no P&L
+events             id, at, mode, level, type, message, data_json   -- operational log and errors, no P&L; indexed by (mode, at); the sync tick deletes rows older than 6 years (D22)
 ```
 
 The schema is built by append-only, versioned migrations (`schema_migrations`) that the DO constructor applies inside `blockConcurrencyWhile`, so every RPC sees the full schema. Prices are integer micro-dollars. `scaleout_steps` carries `mode` as well so that every table can be scoped by it.
