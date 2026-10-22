@@ -2,18 +2,15 @@ name: Review gate
 
 # Enforces the review gate of CONTRIBUTING.md#review-gate as a required check. It reads only
 # API data (the PR, its files and its reviews) and never checks out or runs PR code. The token
-# is the default GITHUB_TOKEN with read permissions. pull_request_review re-runs it when the
-# local reviewer posts, so the posted review turns the check green without a push.
+# is the default GITHUB_TOKEN with read permissions. Runs before the local review fail and stay
+# as failed check runs on the head, so `bun run review` re-runs them after it posts (a re-run
+# re-reads the live PR state); there is deliberately no pull_request_review trigger.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted, dismissed]
 
-# Every event re-reads the live PR state, so only the newest run matters.
-concurrency:
-  group: review-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No concurrency group: every run re-reads the live PR state, and the reviewer re-runs several
+# failed runs of one head at once, which a shared cancel-in-progress group would cancel.
 
 permissions:
   contents: read
