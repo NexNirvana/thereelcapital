@@ -474,6 +474,34 @@ describe("sendEntry", () => {
     expect(retry).toMatchObject({ value: { status: "PLACED", state: "ACKNOWLEDGED" } });
   });
 
+  it("releases only the rejected reservation when a rejected and an accepted entry race", async () => {
+    const client = await newClient();
+    const sim = makeLocalSim({
+      now: () => IN_SESSION,
+      seed: "race",
+      accounts: [{ accountId: "SIM-1" }],
+      symbols: [
+        { symbol: "AAPL", assetType: "equity", bid: usd(199), ask: usd(200) },
+        { symbol: "MSFT", assetType: "equity", bid: usd(199), ask: usd(200) },
+      ],
+    });
+    const { results, rows } = await inClient(
+      client,
+      async (ctx, state) => {
+        // SIM-2 is unknown to this broker: that order is refused while the other is accepted.
+        const results = await Promise.all([
+          send(ctx, "AAPL", { accountId: "SIM-2" }),
+          send(ctx, "MSFT", { accountId: "SIM-1" }),
+        ]);
+        return { results, rows: snapshot(state) };
+      },
+      { sim },
+    );
+    const states = results.map((r) => (r.ok && "state" in r.value ? r.value.state : "?"));
+    expect(states).toEqual(["REJECTED", "ACKNOWLEDGED"]);
+    expect(rows.counters).toEqual([{ consumed: 0, reserved: 1 }]);
+  });
+
   it("treats a rate-limited placement as not placed and releases it", async () => {
     const client = await newClient();
     const { sent, rows } = await inClient(client, async (ctx, state, sim) => {

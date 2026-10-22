@@ -18,6 +18,7 @@ import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import type { BrokerAccount } from "./tradestation/accounts.ts";
 import { logEvent } from "./events.ts";
+import { placeOnce } from "./placement.ts";
 import { newIntentId } from "./ids.ts";
 import { committedQty, settleStep, stepStates } from "./ledger.ts";
 import { failure, success, type CancelArgs, type EngineResult, type ExitArgs } from "./rpc.ts";
@@ -233,33 +234,6 @@ function reserve(
   });
 }
 
-/** The broker answered that it did not take the order: nothing exists, so the step is given back. */
-function release(ctx: ConnectionContext, intentId: string): void {
-  ctx.storage.transactionSync(() => {
-    const moved = ctx.sql.exec(
-      "UPDATE intents SET state = 'REJECTED', updated_at = ? WHERE id = ? AND state = 'SENT' AND filled_qty = 0",
-      ctx.now,
-      intentId,
-    );
-    if (moved.rowsWritten > 0) settleStep(ctx.sql, intentId, "REJECTED", 0);
-  });
-}
-
-function settle(
-  ctx: ConnectionContext,
-  intentId: string,
-  state: "ACKNOWLEDGED" | "UNKNOWN",
-  orderId: string | null,
-): void {
-  ctx.sql.exec(
-    "UPDATE intents SET state = ?, broker_order_id = ?, updated_at = ? WHERE id = ? AND state = 'SENT'",
-    state,
-    orderId,
-    ctx.now,
-    intentId,
-  );
-}
-
 /** A client's own exit, or the engine's stop (docs/domain-rules.md §7); both use this one path. */
 export type ExitKind = "exit" | "stop" | "trailing";
 
@@ -318,44 +292,14 @@ async function placeExit(
     return success({ status: "DONE_ZERO", step: reservation.step });
   }
 
-  // Persisted above; from here the request is out of our hands, so SENT is written first.
-  ctx.sql.exec(
-    "UPDATE intents SET state = 'SENT', updated_at = ? WHERE id = ? AND state = 'ARMED'",
-    ctx.now,
+  // Persisted above; placeOnce writes SENT before the request can leave. A rejected placement gives
+  // the step back: nothing exists at the broker.
+  const state = await placeOnce(ctx, ctx.broker, {
     intentId,
-  );
-  let state: string;
-  try {
-    // Exactly one attempt. No retry here or in the adapter: after a timeout the order may exist.
-    const placed = await attempt(ctx.broker.placeOrder(reservation.request));
-    if (placed.ok) {
-      settle(ctx, intentId, "ACKNOWLEDGED", placed.value.orderId);
-      state = "ACKNOWLEDGED";
-    } else if (
-      placed.error._tag === "Rejected" ||
-      placed.error._tag === "AuthExpired" ||
-      placed.error._tag === "RateLimited"
-    ) {
-      release(ctx, intentId);
-      logEvent(ctx, "warn", "exit.rejected", {
-        intentId,
-        failure: placed.error._tag,
-        ...(placed.error._tag === "Rejected"
-          ? { code: placed.error.code, reason: placed.error.reason }
-          : {}),
-      });
-      state = "REJECTED";
-    } else {
-      settle(ctx, intentId, "UNKNOWN", null);
-      logEvent(ctx, "warn", "exit.unknown", { intentId, failure: placed.error._tag });
-      state = "UNKNOWN";
-    }
-  } catch {
-    // An unexpected failure while the request may have left: same as a timeout.
-    settle(ctx, intentId, "UNKNOWN", null);
-    logEvent(ctx, "error", "exit.unknown", { intentId, failure: "defect" });
-    state = "UNKNOWN";
-  }
+    request: reservation.request,
+    eventPrefix: "exit",
+    giveBack: () => settleStep(ctx.sql, intentId, "REJECTED", 0),
+  });
   return success({ status: "PLACED", intentId, state, qty: reservation.qty });
 }
 
