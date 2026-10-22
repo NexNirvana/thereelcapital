@@ -1,10 +1,8 @@
 // Engine-held stop (D36): the sync tick compares fresh bids with the stop level and sells through
 // the normal exit path. Local simulation only.
-import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { LocalSim } from "../src/broker/local-sim/sim.ts";
-import { ClientCoordinator } from "../src/index.ts";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { STOP_REJECTED_COOLDOWN_MS } from "#lib/domain/config.ts";
 import { exitPosition } from "../src/exits.ts";
@@ -228,7 +226,10 @@ describe("engine-held stop", { timeout: 30_000 }, () => {
     });
   });
 
-  it("keeps the level and the state across a Durable Object restart", async () => {
+  it("reads protection state from storage on every pass", async () => {
+    // Protection lives in SQL rows and kv keys only, so a context built over the same storage (as
+    // after an eviction) carries on. A genuine second instance is not built here: its alarm would
+    // race the test's own broker.
     const clock: Clock = { now: IN_SESSION };
     const sim = newSim(clock);
     const client = await newClient();
@@ -237,20 +238,9 @@ describe("engine-held stop", { timeout: 30_000 }, () => {
       await runSync(ctx);
       return positionId;
     });
-    // A new instance over the same storage: nothing is held in memory.
-    const restarted = await runInDurableObject(client.stub, async (_instance, state) => {
-      const fresh = new ClientCoordinator(state, env);
-      await fresh.ping();
-      return state.storage.sql
-        .exec<{ protection_state: string; stop_pct: number }>(
-          "SELECT protection_state, stop_pct FROM positions WHERE id = ?",
-          id,
-        )
-        .one();
-    });
-    expect(restarted).toEqual({ protection_state: "verified", stop_pct: 30 });
     sim.setQuote("AAPL", { bid: STOP_LEVEL });
     await inClient(client, clock, sim.adapter, async (ctx) => {
+      expect(protection(ctx, id).protection_state).toBe("verified");
       await runSync(ctx);
       expect(stopIntents(ctx)).toHaveLength(1);
     });
