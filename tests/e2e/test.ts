@@ -1,5 +1,10 @@
 import { expect, test as base } from "@playwright/test";
-import { resendDroppedApiPosts, resendDroppedPosts } from "./support.ts";
+import {
+  MAX_RESENDS_PER_TEST,
+  resendDroppedApiPosts,
+  resendDroppedPosts,
+  takeResends,
+} from "./support.ts";
 
 // Every spec imports `test` from here, so a page that breaks the Content-Security-Policy (an
 // inline script or style the nonce does not cover, an off-origin load) fails the test that
@@ -8,7 +13,24 @@ export const test = base.extend<{
   cspViolations: void;
   resendDroppedPosts: void;
   resendDroppedRequests: void;
+  resendBudget: void;
 }>({
+  // Each resend is logged by support.ts; more than a few in one test is a real double-submit or
+  // proxy regression that the workaround must not hide.
+  resendBudget: [
+    // Playwright requires the destructuring pattern even when no fixture is used.
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      takeResends();
+      await use();
+      const resends = takeResends();
+      expect(
+        resends.length,
+        `POSTs resent in one test (${resends.join(", ")})`,
+      ).toBeLessThanOrEqual(MAX_RESENDS_PER_TEST);
+    },
+    { auto: true },
+  ],
   // wrangler dev's proxy drops some POSTs without delivering them (droppedByProxy in support.ts);
   // resendDroppedPosts resends them from the page and from page.request. A spec that opens its own
   // context with browser.newContext() calls it too.

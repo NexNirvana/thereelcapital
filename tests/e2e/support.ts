@@ -10,9 +10,23 @@ export { origin };
 
 /**
  * How long a screen may take to show what the engine did after an action. The engine, the poll and
- * the reload all share one busy machine, so the default 5 s bounds none of them.
+ * the reload all share one busy machine, so the default 5 s bounds none of them. The engine's sync
+ * tick is shortened to 1 s in engine.env (TEST_SYNC_MS), so this no longer has to cover 5 s ticks.
  */
-export const SETTLE_MS = 40_000;
+export const SETTLE_MS = 15_000;
+
+/**
+ * Resends the proxy-drop workaround made during the current test. A resend is safe because the app
+ * never saw the first attempt, but a double-submit bug would look the same, so test.ts fails a test
+ * that needs more than MAX_RESENDS_PER_TEST rather than let the resend hide it.
+ */
+export const MAX_RESENDS_PER_TEST = 3;
+const resendLog: string[] = [];
+export const noteResend = (what: string) => {
+  resendLog.push(what);
+  console.warn(`[e2e] resent a POST dropped by the proxy: ${what}`);
+};
+export const takeResends = () => resendLog.splice(0);
 
 // Same throwaway value playwright.config.ts passes to the dev server; not a credential.
 export const authSecret = "e2e-only-secret-0123456789-0123456789";
@@ -69,7 +83,10 @@ async function resendWhileDropped<T>(
   dropped: (reply: T) => boolean | Promise<boolean>,
 ) {
   let reply = await send();
-  for (let resend = 0; resend < 2 && (await dropped(reply)); resend++) reply = await send();
+  for (let resend = 0; resend < 2 && (await dropped(reply)); resend++) {
+    noteResend("node-side request");
+    reply = await send();
+  }
   return reply;
 }
 
@@ -94,6 +111,7 @@ export function resendDroppedApiPosts(request: APIRequestContext) {
  * so nothing runs twice. Wrapping fetch inside the page leaves cookies and redirects to the browser.
  */
 export async function resendDroppedPosts(context: BrowserContext) {
+  await context.exposeBinding("reelNoteResend", (_source, what: string) => noteResend(what));
   await context.addInitScript((dropMessage) => {
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (input, init) => {
@@ -107,6 +125,9 @@ export async function resendDroppedPosts(context: BrowserContext) {
       ) {
         if (response.status !== 500 || !(await response.clone().text()).includes(dropMessage))
           break;
+        (window as unknown as { reelNoteResend(what: string): void }).reelNoteResend(
+          `page fetch ${request.method} ${new URL(request.url).pathname}`,
+        );
         response = await nativeFetch(retryable.clone());
       }
       return response;
@@ -117,7 +138,10 @@ export async function resendDroppedPosts(context: BrowserContext) {
 
 function postSeed(body: unknown): SeedReply {
   let reply = postSeedSync(body);
-  for (let resend = 0; resend < 2 && droppedByProxy(reply); resend++) reply = postSeedSync(body);
+  for (let resend = 0; resend < 2 && droppedByProxy(reply); resend++) {
+    noteResend("seed");
+    reply = postSeedSync(body);
+  }
   return reply;
 }
 
