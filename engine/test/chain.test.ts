@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
-import { Timeout } from "../src/broker/errors.ts";
+import { Rejected, Timeout } from "../src/broker/errors.ts";
 import { optionChain } from "../src/chain.ts";
 import { makeLocalSim } from "../src/broker/local-sim/sim.ts";
 
@@ -83,6 +83,28 @@ describe("option chain", () => {
       optionChain({ ...ctx, stamp: () => NOW }, { underlying: "MSFT", expiration: "2026-11-20" }),
     );
     expect(down).toMatchObject({ ok: false, code: "BROKER_UNAVAILABLE" });
+  });
+
+  it("tells the client to reconnect when the token lacks the options scope", async () => {
+    const noScope: BrokerAdapterShape = {
+      ...sim.adapter,
+      chainSnapshot: () =>
+        Effect.fail(
+          new Rejected({
+            operation: "chainSnapshot",
+            code: "MISSING_SCOPE",
+            reason: "Missing required scope.",
+          }),
+        ),
+    };
+    const result = await inside(noScope, (ctx) =>
+      optionChain({ ...ctx, stamp: () => NOW }, { underlying: "MSFT", expiration: "2026-11-20" }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      code: "RECONNECT_REQUIRED",
+      message: expect.stringContaining("Reconectar"),
+    });
   });
 });
 

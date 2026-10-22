@@ -134,6 +134,24 @@ describe("transport requests", () => {
     expect(error._tag === "Rejected" && error.reason.length).toBe(200);
   });
 
+  it("maps the missing-scope 403 to a stable MISSING_SCOPE code", async () => {
+    const { fetch } = scriptedFetch(() =>
+      json({ Message: "Missing required scope.", StatusCode: 403, TraceID: "trace" }, 403),
+    );
+    expect(await failureOf(transportWith(fetch).get("optionExpirations", "/x"))).toMatchObject({
+      _tag: "Rejected",
+      code: "MISSING_SCOPE",
+      reason: "Missing required scope.",
+    });
+  });
+
+  it("keeps other 403 refusals under their own code", async () => {
+    const { fetch } = scriptedFetch(() => json({ Error: "Forbidden", Message: "no" }, 403));
+    expect(await failureOf(transportWith(fetch).get("quotes", "/x"))).toMatchObject({
+      code: "Forbidden",
+    });
+  });
+
   it("falls back to an HTTP code when the 4xx body is not the documented shape", async () => {
     const { fetch } = scriptedFetch(() => new Response("<html>", { status: 404 }));
     expect(await failureOf(transportWith(fetch).get("quotes", "/x"))).toMatchObject({

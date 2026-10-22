@@ -142,7 +142,7 @@ describe("beginConnection", () => {
       client_id: CLIENT_ID,
       audience: "https://api.tradestation.com",
       redirect_uri: REDIRECT_URI,
-      scope: "openid offline_access MarketData ReadAccount Trade",
+      scope: "openid offline_access MarketData ReadAccount Trade OptionSpreads",
       state,
     });
     expect(state).toMatch(/^[0-9a-f]{64}$/);

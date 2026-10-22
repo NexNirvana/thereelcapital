@@ -61,7 +61,7 @@ test("asks TradeStation to redirect to localhost without leaking the secret", as
     client_id: KEY,
     audience: "https://api.tradestation.com",
     redirect_uri: "http://localhost:3000",
-    scope: "openid offline_access MarketData ReadAccount Trade",
+    scope: "openid offline_access MarketData ReadAccount Trade OptionSpreads",
   });
   expect(authorizeUrl.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/);
   expect(authorizeUrl.toString()).not.toContain(SECRET);
