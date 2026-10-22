@@ -1,5 +1,6 @@
 // Engine-held stop (D36): the sync tick compares fresh bids with the stop level and sells through
 // the normal exit path. Local simulation only.
+import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { LocalSim } from "../src/broker/local-sim/sim.ts";
@@ -7,7 +8,17 @@ import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { STOP_REJECTED_COOLDOWN_MS } from "#lib/domain/config.ts";
 import { exitPosition } from "../src/exits.ts";
 import { runSync } from "../src/sync.ts";
-import { IN_SESSION, inClient, newClient, newSim, usd, type Clock } from "./sync-helpers.ts";
+import { localSimFor } from "../src/broker/provider.ts";
+import {
+  ACCOUNTS,
+  IN_SESSION,
+  inClient,
+  newClient,
+  newSim,
+  run,
+  usd,
+  type Clock,
+} from "./sync-helpers.ts";
 
 const ASK = 200;
 // stop_pct 30 on the test client: the stop level of a 200 entry is 140.
@@ -244,5 +255,65 @@ describe("engine-held stop", { timeout: 30_000 }, () => {
       await runSync(ctx);
       expect(stopIntents(ctx)).toHaveLength(1);
     });
+  });
+});
+
+// docs/test-plan.md: protections keep running after logout. Nothing here calls an RPC or carries a
+// session: the Durable Object's own alarm is the only caller, as when the client has closed the app.
+describe("protection without a web session", { timeout: 30_000 }, () => {
+  it("the alarm tick sells a position whose bid fell to the stop level", async () => {
+    const client = await newClient();
+    const sim = localSimFor(
+      client.userId,
+      {
+        now: () => IN_SESSION,
+        seed: client.userId,
+        accounts: ACCOUNTS.map((accountId) => ({ accountId })),
+        symbols: [{ symbol: "AAPL", assetType: "equity", bid: usd(199), ask: usd(200) }],
+      },
+      { reset: true },
+    );
+    // A position bought elsewhere that the tick adopts, with the stop of the client's settings.
+    await run(
+      sim.adapter.placeOrder({
+        accountId: "SIM-1",
+        symbol: "AAPL",
+        assetType: "equity",
+        tradeAction: "BUY",
+        quantity: 10,
+        orderConfirmId: "elsewhere-0000000030",
+      }),
+    );
+    sim.setQuote("AAPL", { bid: STOP_LEVEL - usd(5) });
+
+    // Pin the engine's market clock inside the session; the alarm times stay on the wall clock.
+    // The tick is due now and the real alarm is parked, so only runDurableObjectAlarm fires it.
+    await runInDurableObject(client.stub, (instance, state) => {
+      Object.assign(Reflect.get(instance, "env"), { TEST_NOW: new Date(IN_SESSION).toISOString() });
+      state.storage.kv.put("alarm_due:sync", Date.now());
+      return state.storage.setAlarm(Date.now() + 3_600_000);
+    });
+    const rows = () =>
+      runInDurableObject(client.stub, (_i, state) => ({
+        stops: state.storage.sql
+          .exec<{ qty: number }>("SELECT qty FROM intents WHERE kind = 'stop'")
+          .toArray(),
+        positions: state.storage.sql
+          .exec<{ status: string }>("SELECT status FROM positions")
+          .toArray(),
+      }));
+
+    // Tick 1 adopts the position and evaluates the stop; later ticks follow the stop order to its end.
+    for (let tick = 0; tick < 3; tick++) {
+      await runDurableObjectAlarm(client.stub);
+      await runInDurableObject(client.stub, (_i, state) => {
+        state.storage.kv.put("alarm_due:sync", Date.now());
+        return state.storage.setAlarm(Date.now() + 3_600_000);
+      });
+    }
+
+    const after = await rows();
+    expect(after.stops).toEqual([{ qty: 10 }]);
+    expect(after.positions).toEqual([{ status: "CLOSED" }]);
   });
 });
