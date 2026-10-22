@@ -64,7 +64,10 @@ export function decodeReview(answer: string): Decoded {
   let value: unknown;
   try {
     // HTML comments are dropped so that a marker echoed by the model is never mistaken for the real one.
-    value = JSON.parse(json.replace(/<!--[\s\S]*?-->/g, ""));
+    // A null property is read as an absent one: the model often writes `"suggestion": null`.
+    value = JSON.parse(json.replace(/<!--[\s\S]*?-->/g, ""), (_key, field: unknown) =>
+      field === null ? undefined : field,
+    );
   } catch (cause) {
     return { ok: false, error: `The JSON block does not parse: ${String(cause)}` };
   }
