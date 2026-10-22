@@ -66,7 +66,7 @@ Generate a value with `openssl rand -base64 32` (the format `CREDENTIALS_KEY` re
    unset OLD_KEY NEW_KEY
    ```
 
-   Set PREVIOUS first so there is no moment where rows are unreadable. Each `secret put` deploys a new engine version. Both values must be base64 of 32 bytes, and `wrangler` does not check that. If refreshes start failing for every client (`CREDENTIALS`, or `CREDENTIALS_UNAVAILABLE` on connect) right after the change, a value is malformed: correct or delete `CREDENTIALS_KEY_PREVIOUS`. Reconnecting does not help in that case.
+   Set PREVIOUS first so there is no moment where rows are unreadable. Each `secret put` deploys a new engine version. Both values must be base64 of 32 bytes, and `wrangler` does not check that. If refreshes start failing for every client (`CREDENTIALS`, or `CREDENTIALS_UNAVAILABLE` on connect) right after the change, a value is malformed, and either one can be at fault. Re-set `CREDENTIALS_KEY` first with the value it should have (the one you just generated, or the old key from the password manager; do not generate another one here, because rows already re-encrypted under the current key would be stranded), then `CREDENTIALS_KEY_PREVIOUS`. Keep `CREDENTIALS_KEY_PREVIOUS` set until the failure is understood: deleting it while rows still use it makes those rows fail (`KEY_UNKNOWN`, then `EXPIRED`) until the client presses «Reconectar con TradeStation». While a secret value is malformed, reconnecting does not help.
 2. Wait until every row is on the new key. Count them by `key_id`; the new key's id is the one that grows, and only an empty old group means done:
 
    ```sh
