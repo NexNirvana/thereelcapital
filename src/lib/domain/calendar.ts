@@ -30,6 +30,23 @@ export function sessionDate(now: Date): string {
   return newYorkDate.format(now);
 }
 
+const HOUR_MS = 3_600_000;
+
+/**
+ * Epoch ms of 00:00 in New York on `day` (YYYY-MM-DD). New York is 4 or 5 hours behind UTC, so
+ * midnight is one of two instants and `sessionDate` says which one lands on `day`.
+ */
+export function startOfSessionDay(day: string): number {
+  const utcMidnight = Date.parse(`${day}T00:00:00Z`);
+  const edt = utcMidnight + 4 * HOUR_MS;
+  return sessionDate(new Date(edt)) === day ? edt : utcMidnight + 5 * HOUR_MS;
+}
+
+/** The calendar day after `day` (YYYY-MM-DD). */
+export function nextCalendarDay(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + 24 * HOUR_MS).toISOString().slice(0, 10);
+}
+
 function isKnownKind(kind: string): kind is InstrumentKind {
   return Object.hasOwn(EXCHANGE_CALENDAR, kind);
 }

@@ -5,6 +5,7 @@
 import { Schema } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
+import { ORDER_STATES } from "#lib/domain/order-states.ts";
 import { Mode } from "./mode.ts";
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
@@ -88,6 +89,10 @@ export const HistoryArgs = Schema.Struct({
   mode: Mode,
   accountId: Schema.optionalKey(Id),
   symbol: Schema.optionalKey(Symbol),
+  /** Only orders in this lifecycle state. */
+  state: Schema.optionalKey(Schema.Literals(ORDER_STATES)),
+  /** Only events of this level (the admin's errors view); the client screen never sets it. */
+  level: Schema.optionalKey(Schema.Literal("error")),
   from: Schema.optionalKey(Day),
   to: Schema.optionalKey(Day),
   cursor: Schema.optionalKey(

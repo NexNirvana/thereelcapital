@@ -112,6 +112,25 @@ describe("history", () => {
     expect((await history(stub)).accounts).toEqual(["SIM1", "SIM2"]);
   });
 
+  it("narrows orders by state and events by level", async () => {
+    const stub = stubFor("hist-state-level");
+    await seed(stub, [
+      { id: "f", createdAt: 10, state: "FILLED" },
+      { id: "r", createdAt: 11, state: "REJECTED" },
+    ]);
+    await runInDurableObject(stub, (_i, state) => {
+      state.storage.sql.exec(
+        "INSERT INTO events (at, mode, level, type, message) VALUES (1, 'SIM', 'error', 'entry.rejected', 'x'), (2, 'SIM', 'info', 'broker.connected', 'x')",
+      );
+    });
+    expect((await history(stub, { state: "REJECTED" })).intents.map((r) => r.id)).toEqual(["r"]);
+    expect((await history(stub, { level: "error" })).events.map((e) => e.type)).toEqual([
+      "entry.rejected",
+    ]);
+    const bad = await stub.history({ mode: "SIM", state: "NOPE" });
+    expect(bad.ok).toBe(false);
+  });
+
   it("returns events narrowed by date, on the first page only, without internal detail", async () => {
     const stub = stubFor("hist-events");
     await seed(

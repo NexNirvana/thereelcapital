@@ -2,7 +2,7 @@
 // reads; it carries no P&L, balance or broker identifier, and the Durable Object is already the
 // client, so there is no client id to filter by.
 
-import { sessionDate } from "#lib/domain/calendar.ts";
+import { nextCalendarDay, startOfSessionDay } from "#lib/domain/calendar.ts";
 import type { HistoryArgs } from "./rpc.ts";
 
 export const HISTORY_PAGE_SIZE = 25;
@@ -35,22 +35,6 @@ export interface HistoryPage {
   readonly nextCursor: string | null;
 }
 
-const HOUR_MS = 3_600_000;
-
-/**
- * Epoch ms of 00:00 in New York on `day` (YYYY-MM-DD). New York is 4 or 5 hours behind UTC, so
- * midnight is one of two instants and the calendar module says which one lands on `day`.
- */
-function startOfDay(day: string): number {
-  const utcMidnight = Date.parse(`${day}T00:00:00Z`);
-  const edt = utcMidnight + 4 * HOUR_MS;
-  return sessionDate(new Date(edt)) === day ? edt : utcMidnight + 5 * HOUR_MS;
-}
-
-function nextDay(day: string): string {
-  return new Date(Date.parse(`${day}T00:00:00Z`) + 24 * HOUR_MS).toISOString().slice(0, 10);
-}
-
 export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
   const intentWhere = ["mode = ?"];
   const intentParams: (string | number)[] = [args.mode];
@@ -65,15 +49,23 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
     intentWhere.push("symbol = ?");
     intentParams.push(args.symbol.toUpperCase());
   }
+  if (args.state !== undefined) {
+    intentWhere.push("state = ?");
+    intentParams.push(args.state);
+  }
+  if (args.level !== undefined) {
+    eventWhere.push("level = ?");
+    eventParams.push(args.level);
+  }
   if (args.from !== undefined) {
-    const start = startOfDay(args.from);
+    const start = startOfSessionDay(args.from);
     intentWhere.push("created_at >= ?");
     intentParams.push(start);
     eventWhere.push("at >= ?");
     eventParams.push(start);
   }
   if (args.to !== undefined) {
-    const end = startOfDay(nextDay(args.to));
+    const end = startOfSessionDay(nextCalendarDay(args.to));
     intentWhere.push("created_at < ?");
     intentParams.push(end);
     eventWhere.push("at < ?");
