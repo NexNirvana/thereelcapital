@@ -70,3 +70,6 @@ export const ORDER_MATCH_SKEW_MS = 60 * 1000;
  * calls its prices out of date. The chain is read on demand, never polled.
  */
 export const CHAIN_STALE_AFTER_MS = 30 * 1000;
+
+/** Undecided (docs/open-questions.md): how long the admin overview waits for one client's Durable Object. */
+export const ADMIN_FANOUT_TIMEOUT_MS = 4 * 1000;
