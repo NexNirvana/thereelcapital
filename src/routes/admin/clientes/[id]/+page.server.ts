@@ -14,6 +14,8 @@ import {
   type Issued,
   type Outcome,
 } from "#lib/server/admin-client-access.ts";
+import { settled } from "#lib/server/admin-operations.ts";
+import { engineForClient } from "#lib/server/engine.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
@@ -23,7 +25,12 @@ import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 export const load: PageServerLoad = async (event) => {
   requireAdmin(event);
   event.setHeaders({ "cache-control": "no-store" });
-  return { client: await getClientDetail(env.DB, event.params.id) };
+  // Asked after the client is known to exist, so an arbitrary id never wakes a Durable Object.
+  const client = await getClientDetail(env.DB, event.params.id);
+  const operations = await settled(() =>
+    engineForClient(env.ENGINE, event, client.id).overview({ mode: "SIM" }),
+  );
+  return { client, operations };
 };
 
 const context = () => ({ db: env.DB });
