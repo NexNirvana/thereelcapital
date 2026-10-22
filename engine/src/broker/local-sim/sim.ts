@@ -145,7 +145,8 @@ export interface LocalSim {
   readonly clearFaults: () => void;
 }
 
-const isEntry = (action: OrderRequest["tradeAction"]) => action === "BUY" || action === "BUYTOOPEN";
+export const isEntry = (action: OrderRequest["tradeAction"]) =>
+  action === "BUY" || action === "BUYTOOPEN";
 
 /** Integer weighted average, half-up. */
 function weightedAvg(qtyA: number, avgA: number, qtyB: number, avgB: number): number {
