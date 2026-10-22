@@ -2,6 +2,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipher } from "../src/crypto";
+import { AlarmScheduler } from "../src/scheduler";
 import { holdForReconciliation, markReconciled, reconciliationPending } from "../src/refresh";
 
 const CLIENT_ID = "ts-client-id-0123456789abcdef";
@@ -92,8 +93,16 @@ async function begin(client: Client, clientId = CLIENT_ID) {
   return { url, state: url.searchParams.get("state") ?? "" };
 }
 
-const complete = (client: Client, state: string, code = "auth-code-1") =>
-  client.stub.completeConnection({ mode: "SIM", code, state, redirectUri: REDIRECT_URI });
+async function complete(client: Client, state: string, code = "auth-code-1") {
+  const result = await client.stub.completeConnection({
+    mode: "SIM",
+    code,
+    state,
+    redirectUri: REDIRECT_URI,
+  });
+  await stopSyncLoop(client);
+  return result;
+}
 
 async function connect(client: Client) {
   const { state } = await begin(client);
@@ -101,6 +110,15 @@ async function connect(client: Client) {
   if (!result.ok) throw new Error(`complete failed: ${result.code}`);
   return result;
 }
+
+// Connecting arms the sync loop SYNC_INTERVAL_MS (5 s) ahead. Left alone, that real tick reconciles
+// the client's Durable Object in the middle of a later test (lifting the reconciliation hold and
+// restoring protection) and interleaves with the alarms these tests drive by hand. These tests
+// are about the connection, not the loop (sync.test.ts covers it), so the loop is switched off.
+const stopSyncLoop = (client: Client) =>
+  runInDurableObject(client.stub, (_i, state) =>
+    new AlarmScheduler(state.storage).schedule("sync", null),
+  );
 
 const events = (client: Client) =>
   runInDurableObject(client.stub, (_i, state) =>
@@ -299,6 +317,8 @@ describe("alarm", () => {
       runInDurableObject(client.stub, async (instance, state) => {
         state.storage.kv.put("alarm_due:refresh", Date.now());
         await instance.alarm();
+        // alarm() arms the real alarm for the next renewal; the test reads that time, not a firing.
+        await state.storage.deleteAlarm();
       });
 
     await run();

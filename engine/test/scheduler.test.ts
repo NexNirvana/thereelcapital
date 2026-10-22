@@ -74,10 +74,25 @@ describe("AlarmScheduler", () => {
 
   it("arms an overdue job for now, not for the past", async () => {
     const before = Date.now();
-    const alarm = await withScheduler(async (scheduler, state) => {
-      await scheduler.schedule("sync", 1);
-      return state.storage.getAlarm();
+    // An alarm armed for now would fire at once and clear itself before it could be read back, so
+    // record the time the scheduler asks for and park the real alarm an hour away.
+    const armed: number[] = [];
+    await withScheduler(async (_scheduler, state) => {
+      const recording = new Proxy(state.storage, {
+        get(target, property) {
+          if (property === "setAlarm") {
+            return (at: number | Date) => {
+              armed.push(Number(at));
+              return target.setAlarm(FAR);
+            };
+          }
+          const value = Reflect.get(target, property);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      await new AlarmScheduler(recording).schedule("sync", 1);
     });
-    expect(alarm).toBeGreaterThanOrEqual(before);
+    expect(armed).toHaveLength(1);
+    expect(armed[0]).toBeGreaterThanOrEqual(before);
   });
 });
