@@ -41,6 +41,7 @@ import { readOverview } from "./overview.ts";
 import { readPositionsView } from "./positions-view.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
 import { migrate } from "./schema.ts";
+import { seedForTest, type SeedResult } from "./test-seed.ts";
 import {
   ActivateTrailingArgs,
   BeginConnectionArgs,
@@ -68,7 +69,8 @@ type Row = Record<string, SqlStorageValue>;
 
 /**
  * One instance per client, addressed by user id; it only ever knows its own client. Every public
- * method takes `unknown`, decodes it, and rejects anything but SIM before touching storage.
+ * method takes `unknown`, decodes it, and rejects anything but SIM before touching storage
+ * (`ping` and the test-only `seedForTest` excepted: the latter is refused outside development/test).
  */
 export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
@@ -90,6 +92,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   ping(): string {
     return "pong";
+  }
+
+  /** Test-only: writes fixture rows from inside the object. Refused outside development/test. */
+  seedForTest(statements: unknown): SeedResult {
+    return seedForTest(this.env.ENVIRONMENT, this.ctx.storage, statements);
   }
 
   /** A sized, guarded preview of an entry. Creates no intent and reserves nothing. */

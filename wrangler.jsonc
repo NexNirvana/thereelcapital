@@ -22,7 +22,8 @@
     },
   ],
   // Public, not a secret. Local runs override it: `.dev.vars` (see .dev.vars.example) or `--var`.
-  "vars": { "APP_ORIGIN": "https://thereelcapital.com" },
+  // ENVIRONMENT gates the test-only seeding route (/api/test/seed): only "development" or "test" opens it.
+  "vars": { "APP_ORIGIN": "https://thereelcapital.com", "ENVIRONMENT": "production" },
   "routes": [{ "pattern": "thereelcapital.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [
