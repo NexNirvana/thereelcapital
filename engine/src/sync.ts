@@ -1,6 +1,7 @@
 // The sync loop's pass: read the broker, reconcile, lift the hold. docs/order-lifecycle.md.
-// Everything here only READS from the broker (orders, positions, history, symbol details); it never
-// places, cancels or retries an order, whatever the broker answers.
+// Reading and reconciling only READ from the broker (orders, positions, history, symbol details); a
+// failed pass never places, cancels or retries anything. After a good pass the protection monitor
+// (protection.ts) may send one engine-held stop exit through the normal exit path.
 
 import {
   DEFAULT_STOP_PCT,
@@ -24,6 +25,7 @@ import {
   reconciliationPending,
   reconciliationTicket,
 } from "./refresh.ts";
+import { monitorProtection } from "./protection.ts";
 import { writeEvent, type EventLevel } from "./events.ts";
 import { logOnce } from "./reconcile.ts";
 
@@ -102,6 +104,8 @@ export async function runSync(ctx: SyncContext): Promise<SyncResult> {
     ticket,
   );
   if (reconciled) restoreProtection(ctx);
+  // After the hold is lifted: the monitor sets verified or unverified and fires the engine-held stop.
+  await monitorProtection(ctx);
   if (ctx.storage.kv.get(DEGRADED_KEY) !== undefined) {
     ctx.storage.kv.delete(DEGRADED_KEY);
     log(ctx, "info", "sync.recovered");
@@ -183,8 +187,8 @@ async function protectionSettings(ctx: SyncContext): Promise<ProtectionSettings>
 
 /**
  * The hold marked every open position `unverified`. Once reconciliation lifted it, a position that
- * no UNKNOWN intent touches goes back to what is true: nothing watches a stop yet (`none`); the
- * stop monitor sets `verified` itself. Does nothing if a new hold landed meanwhile.
+ * no UNKNOWN intent touches goes back to what is true: nothing watches it yet (`none`); the
+ * protection monitor (protection.ts) sets `verified` or `unverified` right after. Does nothing if a new hold landed meanwhile.
  */
 function restoreProtection(ctx: SyncContext): void {
   if (reconciliationPending(ctx.storage)) return;

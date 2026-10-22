@@ -132,7 +132,9 @@ What the engine does on its own is in [order-lifecycle.md](order-lifecycle.md#de
 
 Events are listed per client in `/historial` and across clients in `/admin/historial`. Server-side logs: `bunx wrangler tail reel-engine` (logs events, never secrets).
 
-**Not built or not verified:** stop and trailing protection (#28, #29), so `unverified` is shown but no server stop is monitored yet; the SIM spike (#21, `bun run spike`) has not produced results, so the refused-refresh answer, token lifetime counting and several order behaviors are unconfirmed ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
+**Protection:** stops are engine-held (D36): each sync tick compares fresh bids with the stop level and sells `available` at MARKET; a stale or failing quote or token shows `unverified`, and a rejected stop waits `STOP_REJECTED_COOLDOWN_MS` before a new one. Trailing (#29) is not built yet.
+
+**Not built or not verified:** the SIM spike (#21, `bun run spike`) has not produced results, so the refused-refresh answer, token lifetime counting and several order behaviors are unconfirmed ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
 
 ## CI incidents
 
