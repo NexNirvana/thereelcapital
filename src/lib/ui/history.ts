@@ -59,6 +59,8 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
   "sync.recovered": "Sincronización restablecida",
   "sync.unknown_pending": "Órdenes por verificar",
   "protection.stop_triggered": "Stop activado",
+  "protection.trailing_triggered": "Trailing alcanzado",
+  "protection.trailing_activated": "Trailing activado",
   "protection.quotes_unavailable": "Cotizaciones no disponibles para el stop",
 };
 

@@ -37,6 +37,7 @@ import {
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
+import { activateTrailing, type TrailingResult } from "./trailing.ts";
 import { readOverview } from "./overview.ts";
 import { readPositionsView } from "./positions-view.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
@@ -186,10 +187,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     });
   }
 
-  activateTrailing(input: unknown): EngineResult<never> {
-    return this.enter("activateTrailing", ActivateTrailingArgs, input, () =>
-      this.notImplemented("activateTrailing"),
-    );
+  /** Manual trailing activation; the monitor in the sync loop then follows the bid. */
+  activateTrailing(input: unknown): Promise<EngineResult<TrailingResult>> {
+    return this.enterWithBroker("activateTrailing", ActivateTrailingArgs, input, activateTrailing);
   }
 
   state(input: unknown): EngineResult<{ mode: Mode; positions: Row[]; activeIntents: Row[] }> {
@@ -463,11 +463,6 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   private async scheduleRefresh(at: number | null): Promise<void> {
     if (at !== null) await this.#alarms.schedule("refresh", at);
-  }
-
-  private notImplemented(method: string): EngineResult<never> {
-    this.log("info", "SIM", "rpc.not_implemented", method);
-    return failure("NOT_IMPLEMENTED");
   }
 
   private log(level: "info" | "warn" | "error", mode: Mode, type: string, method: string): void {
