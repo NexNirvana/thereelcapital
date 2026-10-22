@@ -92,16 +92,26 @@ test("filters by account, symbol and date", async ({ context, page }) => {
   await page.getByRole("button", { name: "Filtrar" }).click();
   await expect(page).toHaveURL(/simbolo=msft/i);
   await expect(table.getByRole("row")).toHaveCount(3);
+  // The submit is a native page load: let it hydrate before touching the form again.
+  await page.waitForLoadState("networkidle");
 
   await page.getByLabel("Cuenta").selectOption("SIM-2");
   await page.getByRole("button", { name: "Filtrar" }).click();
+  await expect(page).toHaveURL(/cuenta=SIM-2/);
   await expect(table.getByRole("row")).toHaveCount(2);
   await expect(table).toContainText("Parcial");
+  await page.waitForLoadState("networkidle");
   await shoot(page, "filtrado");
 
   await page.getByRole("link", { name: "Quitar filtros" }).click();
+  // Fill only once the unfiltered page has replaced the filtered one: the navigation resets the
+  // form, so a value typed earlier is lost and the submit would carry the old filters.
+  await expect(page).toHaveURL(/\/historial$/);
+  await expect(table.getByRole("row")).toHaveCount(orders.length + 1);
+  await page.waitForLoadState("networkidle");
   await page.getByLabel("Hasta").fill("2026-10-30");
   await page.getByRole("button", { name: "Filtrar" }).click();
+  await expect(page).toHaveURL(/hasta=2026-10-30/);
   await expect(table.getByRole("row")).toHaveCount(3);
   await expect(table).toContainText("NVDA");
   await expect(table).not.toContainText("MSFT");
