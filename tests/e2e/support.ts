@@ -8,6 +8,12 @@ import { origin } from "./ports.ts";
 
 export { origin };
 
+/**
+ * How long a screen may take to show what the engine did after an action. The engine, the poll and
+ * the reload all share one busy machine, so the default 5 s bounds none of them.
+ */
+export const SETTLE_MS = 40_000;
+
 // Same throwaway value playwright.config.ts passes to the dev server; not a credential.
 export const authSecret = "e2e-only-secret-0123456789-0123456789";
 
