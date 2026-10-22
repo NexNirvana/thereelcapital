@@ -311,6 +311,30 @@ async function seedEngine(clientId: string, statements: readonly EngineStatement
   if (reply.status !== 200) throw new Error(`engine seeding failed (${reply.status})`);
 }
 
+const tradingClients: string[] = [];
+
+/**
+ * Stops the sync loops the test's clients left running. The engine keeps watching a client with an
+ * open position for ever, and with the short test tick (engine.env) every finished test would add
+ * a loop that competes with the next test for the dev server. Without accounts a client has
+ * nothing to watch, so its loop ends at its next tick.
+ */
+export async function stopTradingClients() {
+  // Best effort, each client on its own: a failed request must neither fail the finished test nor
+  // keep the other clients' loops running. A client leaves the list only once its loop is stopped,
+  // so a later test retries the ones that failed.
+  await Promise.all(
+    [...tradingClients].map(async (clientId) => {
+      try {
+        await seedEngine(clientId, [{ sql: "DELETE FROM broker_accounts", params: [] }]);
+        tradingClients.splice(tradingClients.indexOf(clientId), 1);
+      } catch (error) {
+        console.warn(`could not stop a trading client: ${error}`);
+      }
+    }),
+  );
+}
+
 export interface SeededOrder {
   readonly id: string;
   readonly symbol: string;
@@ -440,6 +464,7 @@ export async function seedTradingClient(
      VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', ${refreshExpiresAt ?? "NULL"}, '${status}', ${ENGINE_NOW - 60_000});
      INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('${randomUUID()}', '${userId}', 'h-${randomUUID()}')`,
   );
+  tradingClients.push(userId);
   await seedEngine(userId, [
     { sql: "DELETE FROM broker_accounts", params: [] },
     ...accounts.map((accountId) => ({
