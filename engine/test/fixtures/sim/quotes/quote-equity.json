@@ -1,0 +1,54 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/quotes/F"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "500",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "499",
+      "x-ratelimit-reset": "2",
+      "x-ratelimit-resource": "quotes"
+    },
+    "body": {
+      "Quotes": [
+        {
+          "Symbol": "F",
+          "Open": "11.8",
+          "High": "12.05",
+          "Low": "11.785",
+          "PreviousClose": "11.9",
+          "Last": "11.92",
+          "Ask": "11.93",
+          "AskSize": "500",
+          "Bid": "11.92",
+          "BidSize": "5000",
+          "NetChange": "0.02",
+          "NetChangePct": "0.168067226890756",
+          "High52Week": "17.78",
+          "High52WeekTimestamp": "2026-05-29T00:00:00Z",
+          "Low52Week": "11.11",
+          "Low52WeekTimestamp": "2026-03-30T00:00:00Z",
+          "Volume": "37900354",
+          "PreviousVolume": "44408809",
+          "Close": "11.94",
+          "DailyOpenInterest": "0",
+          "Restrictions": [],
+          "TradeTime": "2026-10-22T21:16:05Z",
+          "TickSizeTier": "0",
+          "MarketFlags": {
+            "IsDelayed": false,
+            "IsHardToBorrow": false,
+            "IsBats": false,
+            "IsHalted": false
+          },
+          "LastSize": "365",
+          "LastVenue": "NASDAQ",
+          "VWAP": "11.947243543008"
+        }
+      ]
+    }
+  }
+}

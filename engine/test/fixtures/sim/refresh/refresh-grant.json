@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/oauth/token",
+    "body": {
+      "grant_type": "refresh_token",
+      "client_id": "[REDACTED]",
+      "client_secret": "[REDACTED]",
+      "refresh_token": "[REDACTED]"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "500",
+      "x-ratelimit-remaining": "488",
+      "x-ratelimit-reset": "1792703768"
+    },
+    "body": {
+      "access_token": "[REDACTED]",
+      "id_token": "[REDACTED]",
+      "scope": "openid MarketData ReadAccount Trade offline_access",
+      "expires_in": 1200,
+      "token_type": "Bearer"
+    }
+  }
+}

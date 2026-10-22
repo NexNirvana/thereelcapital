@@ -2,6 +2,8 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCipher } from "../src/crypto";
+import refreshGrantSample from "./fixtures/sim/refresh/refresh-grant.json";
+import refreshRefusedSample from "./fixtures/sim/refresh/refresh-refused.json";
 import { markReconciled, reconciliationPending, TokenRefresher } from "../src/refresh";
 
 const CLIENT_ID = "ts-client-id-0123456789abcdef";
@@ -544,5 +546,39 @@ describe("connection RPC", () => {
     expect(await client.stub.connection({ mode: "SIM" })).toMatchObject({
       value: { health: { status: "ok" }, refreshExpiresAt: null, entriesBlocked: false },
     });
+  });
+});
+
+// Bodies recorded from the SIM token endpoint (SIM spike of 2026-10-22, #21).
+describe("recorded SIM answers", () => {
+  it("treats the recorded 403 invalid_grant as revoked, once and for good", async () => {
+    const client = await newClient();
+    const { status, body } = refreshRefusedSample.response;
+    expect(status).toBe(403);
+    respond = () => json(body, status);
+    await withRefresher(client, async (tokens) => {
+      expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "REVOKED" });
+      expect(bodies).toHaveLength(1); // a refusal is never retried
+      expect(await tokens.accessToken()).toMatchObject({ ok: false });
+      expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "REVOKED" });
+      expect(bodies).toHaveLength(1); // and no later call reaches TradeStation
+    });
+    expect((await storedRow(client.userId))?.status).toBe("REVOKED");
+  });
+
+  it("reads the recorded grant: 1200 s access token and no rotated refresh token", async () => {
+    const client = await newClient();
+    const { status, body } = refreshGrantSample.response;
+    expect(body.expires_in).toBe(1200);
+    expect("refresh_token" in body).toBe(false);
+    respond = () => json(body, status);
+    const before = await storedRow(client.userId);
+    await withRefresher(client, async (tokens) => {
+      expect(await tokens.refresh()).toEqual({ kind: "ready", accessExpiresAt: T0 + 20 * MINUTE });
+      expect(tokens.nextRefreshAt()).toBe(T0 + 15 * MINUTE);
+    });
+    const after = await storedRow(client.userId);
+    expect(after?.refresh_token_enc).toBe(before?.refresh_token_enc);
+    expect(after?.refresh_expires_at).toBeNull();
   });
 });
