@@ -3,6 +3,7 @@ import {
   MAX_RESENDS_PER_TEST,
   resendDroppedApiPosts,
   resendDroppedPosts,
+  stopTradingClients,
   takeResends,
 } from "./support.ts";
 
@@ -14,7 +15,18 @@ export const test = base.extend<{
   resendDroppedPosts: void;
   resendDroppedRequests: void;
   resendBudget: void;
+  stopTradingClients: void;
 }>({
+  // Defined before resendBudget so its teardown runs after the budget check: a cleanup resend is
+  // not a double submit, and a cleanup problem never fails a finished test.
+  stopTradingClients: [
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
+      await use();
+      await stopTradingClients();
+    },
+    { auto: true },
+  ],
   // Each resend is logged by support.ts; more than a few in one test is a real double-submit or
   // proxy regression that the workaround must not hide.
   resendBudget: [
