@@ -181,6 +181,54 @@ test("says «Activo» only for a stop the engine verified", async ({ context, pa
   await expect(protection).not.toContainText("Activo");
 });
 
+test("activates trailing once enough is sold, and the engine then holds it", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, {
+    accounts: ["SIM-1"],
+    positions: [
+      {
+        id: "pos-trail",
+        symbol: "MSFT",
+        qty: 10,
+        soldQty: 7,
+        protectionState: "verified",
+        steps: ["done", "done", "done", "done", "available", "available", "available"],
+      },
+    ],
+  });
+  await page.goto("/posiciones", { waitUntil: "networkidle" });
+  const protection = page.getByRole("region", { name: "Protección y cierre" });
+  await expect(protection).toContainText("Disponible desde 70% vendido");
+  const activate = protection.getByRole("button", { name: "Activar" });
+  await expect(activate).toBeEnabled();
+  await shoot(page, "trailing-available");
+
+  const answered = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes("/trailing"),
+    { timeout: SETTLE_MS },
+  );
+  await activate.click();
+  await answered;
+  await expect(protection).toContainText("Trailing / 10%", { timeout: SETTLE_MS });
+  await expect(protection.getByRole("button", { name: "Activar" })).toHaveCount(0);
+  await shoot(page, "trailing-active");
+});
+
+test("keeps Activar disabled before the unlock share is sold", async ({ context, page }) => {
+  await seedTradingClient(context, {
+    accounts: ["SIM-1"],
+    positions: [
+      { id: "pos-early", symbol: "MSFT", qty: 10, soldQty: 3, protectionState: "verified" },
+    ],
+  });
+  await page.goto("/posiciones");
+  const protection = page.getByRole("region", { name: "Protección y cierre" });
+  await expect(protection.getByRole("button", { name: "Activar" })).toBeDisabled();
+  await expect(protection.getByRole("combobox")).toBeDisabled();
+});
+
 test("shows an option with the underlying apart from the contract", async ({ context, page }) => {
   await seedTradingClient(context, {
     positions: [
@@ -280,6 +328,29 @@ test("ignores quantity and price the browser adds and rejects a bad step", async
   // simulation, so the order is refused, never sent with 999.
   const tampered = await send({ positionId: "pos-a", step: "0", qty: "999", price: "1" });
   expect(await tampered.text()).not.toContain("999");
+});
+
+test("rejects a trailing percentage outside the allowed set and ignores extra fields", async ({
+  baseURL,
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, {
+    positions: [{ id: "pos-a", symbol: "AAA", qty: 10, soldQty: 7 }],
+  });
+  const send = (form: Record<string, string>) =>
+    page.request.post("/posiciones?/trailing", {
+      form,
+      headers: { origin: baseURL ?? "", accept: "application/json" },
+    });
+  const bad = await send({ positionId: "pos-a", trailingPct: "12" });
+  expect(await bad.text()).toContain("Los datos enviados no son válidos.");
+  const missing = await send({ trailingPct: "10" });
+  expect(await missing.text()).toContain("Los datos enviados no son válidos.");
+  // Extra fields change nothing: AAA is unknown to the simulation, so the engine has no bid and
+  // refuses; no level is ever taken from the request.
+  const tampered = await send({ positionId: "pos-a", trailingPct: "10", peak: "1", level: "1" });
+  expect(await tampered.text()).not.toContain("Trailing activado");
 });
 
 test("needs a signed-in client", async ({ page }) => {

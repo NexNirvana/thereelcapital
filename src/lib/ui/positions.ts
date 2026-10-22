@@ -2,6 +2,7 @@
 // only translates and formats. Nothing here computes a quantity to sell.
 
 import type { PendingExitView, PositionView } from "#lib/domain/positions-view.ts";
+import { trailingEligible } from "#lib/domain/stop.ts";
 import { SCALE_OUT_STEPS, type ScaleOutStepState } from "#lib/domain/scaleout.ts";
 import { kindLabel, stateLabel } from "./history.ts";
 import { formatPrice, formatQuantity } from "./new-entry.ts";
@@ -18,6 +19,10 @@ const BLOCK_MESSAGES: Readonly<Record<string, string>> = {
   OUTSIDE_REGULAR_SESSION: "El mercado está cerrado. Solo operas en la sesión regular.",
   INTENT_NOT_FOUND: "No encontramos esa orden.",
   NOT_CANCELABLE: "Esa orden ya no se puede cancelar.",
+  NOT_ELIGIBLE: "Todavía no vendiste lo suficiente para activar el trailing.",
+  EXIT_PENDING: "Hay una orden de salida en curso. Espera a que termine para activar el trailing.",
+  ALREADY_ACTIVE: "El trailing ya está activo en esta posición.",
+  QUOTE_UNAVAILABLE: "No hay un precio actual para activar el trailing. Inténtalo de nuevo.",
 };
 
 const GENERIC_BLOCK = "No pudimos enviar la orden ahora.";
@@ -142,6 +147,36 @@ export function stopStatus(protectionState: string): { label: string; active: bo
     default:
       return { label: "Inactivo", active: false };
   }
+}
+
+export interface TrailingStatus {
+  /** The engine holds a trailing level for this position. */
+  readonly active: boolean;
+  /** The Activar button may be enabled; the engine checks again on submit. */
+  readonly canActivate: boolean;
+}
+
+/**
+ * Whether Activar is offered. This only enables or disables the control: the engine decides
+ * (eligibility from confirmed sales, nothing pending, a live bid) and answers a reason if not.
+ */
+export function trailingStatus(
+  position: PositionView,
+  pending: readonly PendingExitView[],
+): TrailingStatus {
+  const active = position.trailingPct !== null;
+  const open = pending.some((order) => order.positionId === position.id);
+  return {
+    active,
+    canActivate:
+      !active &&
+      !open &&
+      trailingEligible({
+        originalQty: position.originalQty,
+        soldQty: position.soldQty,
+        trailingUnlockPct: position.trailingUnlockPct,
+      }),
+  };
 }
 
 /** Orders are worded as the history screen words them, so a state reads the same everywhere. */

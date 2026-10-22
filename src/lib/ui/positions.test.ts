@@ -18,6 +18,7 @@ import {
   stepViews,
   stopStatus,
   switcherLabel,
+  trailingStatus,
 } from "./positions.ts";
 
 const call: PositionView = {
@@ -125,5 +126,39 @@ describe("positions screen wording", () => {
   it("words block codes, with a fallback", () => {
     expect(exitBlockMessage(["UNKNOWN_INTENT_PENDING"])).toContain("verificación");
     expect(exitBlockMessage(["SOMETHING_NEW"])).toBe("No pudimos enviar la orden ahora.");
+  });
+});
+
+describe("trailing activation", () => {
+  const working = [
+    {
+      id: "o1",
+      positionId: "p1",
+      kind: "exit",
+      state: "ACKNOWLEDGED",
+      qty: 3,
+      filledQty: 0,
+      cancelable: true,
+    },
+  ];
+
+  it("offers Activar once enough is sold and nothing is working", () => {
+    expect(trailingStatus(call, [])).toEqual({ active: false, canActivate: true });
+  });
+
+  it("does not offer it before the unlock share, with an order working, or once active", () => {
+    expect(trailingStatus({ ...call, soldQty: 34 }, []).canActivate).toBe(false);
+    expect(trailingStatus(call, working).canActivate).toBe(false);
+    expect(trailingStatus({ ...call, trailingPct: 10 }, [])).toEqual({
+      active: true,
+      canActivate: false,
+    });
+  });
+
+  it("says why the engine refused", () => {
+    expect(exitBlockMessage(["NOT_ELIGIBLE"])).toContain("trailing");
+    expect(exitBlockMessage(["EXIT_PENDING"])).toContain("en curso");
+    expect(exitBlockMessage(["ALREADY_ACTIVE"])).toContain("ya está activo");
+    expect(exitBlockMessage(["QUOTE_UNAVAILABLE"])).toContain("precio");
   });
 });

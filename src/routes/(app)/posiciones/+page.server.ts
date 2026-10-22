@@ -6,6 +6,7 @@ import { decode } from "#lib/server/decode.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { INTENT_ID } from "#lib/server/entry-query.ts";
 import { requireUser } from "#lib/server/guards.ts";
+import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
 import { cancelOutcome, exitBlockMessage, exitOutcome } from "#lib/ui/positions.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -52,6 +53,13 @@ const Exit = Schema.Struct({
 const STEP_INDEX = { "0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6 } as const;
 
 const Cancel = Schema.Struct({ intentId: Schema.String.check(Schema.isPattern(INTENT_ID)) });
+
+// Trailing: a position id and one of the allowed percentages. The peak and the level are the
+// engine's: it reads a fresh bid itself.
+const Trailing = Schema.Struct({
+  positionId: Id,
+  trailingPct: Schema.String,
+});
 
 const fields = (form: FormData, names: readonly string[]) =>
   Object.fromEntries(names.map((name) => [name, form.get(name)]));
@@ -112,5 +120,40 @@ export const actions: Actions = {
     return outcome.ok
       ? { notice: outcome.message }
       : fail(409, { title: outcome.title, message: outcome.message });
+  },
+
+  trailing: async (event) => {
+    requireUser(event);
+    const form = await event.request.formData();
+    const parsed = Schema.decodeUnknownResult(Trailing)(
+      fields(form, ["positionId", "trailingPct"]),
+    );
+    if (parsed._tag === "Failure")
+      return fail(400, { message: "Los datos enviados no son válidos." });
+    const { positionId } = parsed.success;
+    const trailingPct = TRAILING_PCT_OPTIONS.find(
+      (pct) => String(pct) === parsed.success.trailingPct,
+    );
+    if (trailingPct === undefined) {
+      return fail(400, { message: "Los datos enviados no son válidos." });
+    }
+
+    const sent = await engineFor(env.ENGINE, event)
+      .activateTrailing({ mode: "SIM", positionId, trailingPct })
+      .catch(() => null);
+    if (sent === null) {
+      return fail(502, {
+        title: "No se pudo activar el trailing",
+        message: "No pudimos confirmar la activación. Revisa la posición e inténtalo de nuevo.",
+      });
+    }
+    if (!sent.ok) return fail(422, { message: sent.message });
+    if (sent.value.status === "BLOCKED") {
+      return fail(409, {
+        title: "No se activó el trailing",
+        message: exitBlockMessage(sent.value.reasons),
+      });
+    }
+    return { notice: `Trailing activado a ${sent.value.trailingPct}%.` };
   },
 };

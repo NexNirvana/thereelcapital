@@ -2,7 +2,7 @@
   import { enhance } from "$app/forms";
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
+  import { DEFAULT_TRAILING_PCT, TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
   import Button from "#lib/ui/Button.svelte";
   import Notice from "#lib/ui/Notice.svelte";
   import ProgressBar from "#lib/ui/ProgressBar.svelte";
@@ -23,6 +23,7 @@
     stepViews,
     stopStatus,
     switcherLabel,
+    trailingStatus,
   } from "#lib/ui/positions.ts";
   import type { PageProps } from "./$types";
 
@@ -60,6 +61,9 @@
   );
   const sellable = $derived(position ? sellableQty(position, pending) : 0);
   const stop = $derived(position ? stopStatus(position.protectionState) : null);
+  const trailing = $derived(
+    position ? trailingStatus(position, pending) : { active: false, canActivate: false },
+  );
   const failure = $derived(form !== null && "message" in form ? form.message : null);
   const failureTitle = $derived(
     form !== null && "title" in form && typeof form.title === "string"
@@ -181,22 +185,52 @@
             <dd data-active={stop?.active}>{stop?.label}</dd>
           </div>
           <div class="row trailing">
-            <dt><label for="trailing-pct">Trailing</label></dt>
-            <dd>
-              <!-- TODO(#29): activating trailing needs the activateTrailing RPC; read-only until then. -->
-              <select id="trailing-pct" disabled>
-                {#each TRAILING_PCT_OPTIONS as pct (pct)}
-                  <option value={pct} selected={pct === (position.trailingPct ?? 10)}>{pct}%</option
+            <dt>
+              {#if trailing.active}
+                Trailing / {position.trailingPct}%
+              {:else}
+                <label for="trailing-pct">Trailing</label>
+              {/if}
+            </dt>
+            <dd data-active={trailing.active ? stop?.active : undefined}>
+              {#if trailing.active}
+                {stop?.label}
+              {:else}
+                <form
+                  method="POST"
+                  action={`?/trailing&p=${encodeURIComponent(position.id)}`}
+                  use:enhance={submit}
+                >
+                  <input type="hidden" name="positionId" value={position.id} />
+                  <select
+                    id="trailing-pct"
+                    name="trailingPct"
+                    disabled={!trailing.canActivate || sending}
                   >
-                {/each}
-              </select>
-              <Button variant="outline" disabled>Activar</Button>
+                    {#each TRAILING_PCT_OPTIONS as pct (pct)}
+                      <option value={pct} selected={pct === DEFAULT_TRAILING_PCT}>{pct}%</option>
+                    {/each}
+                  </select>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={!trailing.canActivate || sending}
+                  >
+                    Activar<span class="wide"> trailing</span>
+                  </Button>
+                </form>
+              {/if}
             </dd>
           </div>
-          <p class="note">
-            Disponible desde {position.trailingUnlockPct}% vendido. Activar el trailing llegará con
-            la protección de posiciones.
-          </p>
+          {#if !trailing.active}
+            <p class="note">
+              {#if pending.length > 0}
+                Hay una orden de salida en curso: espera a que termine.
+              {:else}
+                Disponible desde {position.trailingUnlockPct}% vendido
+              {/if}
+            </p>
+          {/if}
         </dl>
 
         <div class="close">
@@ -439,6 +473,20 @@
   }
   .note {
     margin-top: 0.5rem;
+  }
+  .trailing form {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  /* The mobile design says «Activar»; the desktop one «Activar trailing». */
+  .wide {
+    display: none;
+  }
+  @media (min-width: 901px) {
+    .wide {
+      display: inline;
+    }
   }
   select {
     min-height: var(--target);
