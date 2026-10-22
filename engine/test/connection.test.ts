@@ -8,7 +8,8 @@ const CLIENT_ID = "ts-client-id-0123456789abcdef";
 const CLIENT_SECRET = "ts-client-secret-SHOULD-NEVER-LEAK";
 const ACCESS_TOKEN = "access-token-SHOULD-NEVER-LEAK";
 const REFRESH_TOKEN = "refresh-token-SHOULD-NEVER-LEAK";
-const ORIGIN = "https://thereelcapital.test";
+// Paste mode (D35); the registered callback URL is accepted too (engine/src/rpc.ts).
+const REDIRECT_URI = "http://localhost:3000";
 const SECRETS = [CLIENT_SECRET, ACCESS_TOKEN, REFRESH_TOKEN];
 
 interface Call {
@@ -84,7 +85,7 @@ async function begin(client: Client, clientId = CLIENT_ID) {
     mode: "SIM",
     clientId,
     clientSecret: CLIENT_SECRET,
-    origin: ORIGIN,
+    redirectUri: REDIRECT_URI,
   });
   if (!result.ok) throw new Error(`begin failed: ${result.code}`);
   const url = new URL(result.value.authorizeUrl);
@@ -92,7 +93,7 @@ async function begin(client: Client, clientId = CLIENT_ID) {
 }
 
 const complete = (client: Client, state: string, code = "auth-code-1") =>
-  client.stub.completeConnection({ mode: "SIM", code, state, origin: ORIGIN });
+  client.stub.completeConnection({ mode: "SIM", code, state, redirectUri: REDIRECT_URI });
 
 async function connect(client: Client) {
   const { state } = await begin(client);
@@ -122,7 +123,7 @@ describe("beginConnection", () => {
       response_type: "code",
       client_id: CLIENT_ID,
       audience: "https://api.tradestation.com",
-      redirect_uri: `${ORIGIN}/conexion/callback`,
+      redirect_uri: REDIRECT_URI,
       scope: "openid offline_access MarketData ReadAccount Trade",
       state,
     });
@@ -151,21 +152,26 @@ describe("beginConnection", () => {
       mode: "SIM",
       clientId: CLIENT_ID,
       clientSecret: CLIENT_SECRET,
-      origin: ORIGIN,
+      redirectUri: REDIRECT_URI,
     });
     expect(JSON.stringify(result)).not.toContain(CLIENT_SECRET);
     expectNoSecrets(await events(client));
   });
 
-  it("rejects malformed credentials and a malicious origin", async () => {
+  it("rejects malformed credentials and a malicious redirect URI", async () => {
     const client = await newClient();
-    const ok = { mode: "SIM", clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, origin: ORIGIN };
+    const ok = {
+      mode: "SIM",
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      redirectUri: REDIRECT_URI,
+    };
     for (const bad of [
       { clientId: "" },
       { clientId: "has space" },
       { clientSecret: "" },
-      { origin: "https://evil.test/path" },
-      { origin: "javascript:alert(1)" },
+      { redirectUri: "https://evil.test/path" },
+      { redirectUri: "javascript:alert(1)" },
       { userId: "someone-else" },
     ]) {
       expect(await client.stub.beginConnection({ ...ok, ...bad })).toMatchObject({
@@ -335,7 +341,7 @@ describe("completeConnection", () => {
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
       code: "auth-code-1",
-      redirect_uri: `${ORIGIN}/conexion/callback`,
+      redirect_uri: REDIRECT_URI,
     });
 
     const rows = (await storedConnections(client.userId)).results;
@@ -416,7 +422,12 @@ describe("completeConnection", () => {
     expect(await complete(client, "f".repeat(64))).toMatchObject({ code: "STATE_INVALID" });
     for (const state of ["", undefined, 5]) {
       expect(
-        await client.stub.completeConnection({ mode: "SIM", code: "c", state, origin: ORIGIN }),
+        await client.stub.completeConnection({
+          mode: "SIM",
+          code: "c",
+          state,
+          redirectUri: REDIRECT_URI,
+        }),
       ).toMatchObject({ code: "INVALID_INPUT" });
     }
     expect(calls).toEqual([]);
@@ -608,8 +619,11 @@ describe("mode", () => {
   it("rejects REAL for every connection method before any IO", async () => {
     const client = await newClient();
     for (const [method, args] of [
-      ["beginConnection", { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, origin: ORIGIN }],
-      ["completeConnection", { code: "c", state: "s", origin: ORIGIN }],
+      [
+        "beginConnection",
+        { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, redirectUri: REDIRECT_URI },
+      ],
+      ["completeConnection", { code: "c", state: "s", redirectUri: REDIRECT_URI }],
       ["disconnect", {}],
     ] as const) {
       expect(await client.stub[method]({ ...args, mode: "REAL" })).toMatchObject({

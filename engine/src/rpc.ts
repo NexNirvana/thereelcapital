@@ -106,15 +106,17 @@ export const ModeOnlyArgs = Schema.Struct({ mode: Mode });
 export type ModeOnlyArgs = typeof ModeOnlyArgs.Type;
 
 const token = (max: number) => Schema.String.check(Schema.isPattern(new RegExp(`^\\S{1,${max}}$`)));
-/** Where the web Worker is served; the engine derives the callback URL from it. */
-const Origin = Schema.String.check(Schema.isPattern(/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/));
+/** The `redirect_uri` for authorize and exchange; the web Worker is its one source (decision D35). */
+const RedirectUri = Schema.String.check(
+  Schema.isPattern(/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/conexion\/callback)?$/),
+);
 
 /** The only place the client's secret travels after the form: straight into the engine. */
 export const BeginConnectionArgs = Schema.Struct({
   mode: Mode,
   clientId: token(128),
   clientSecret: token(256),
-  origin: Origin,
+  redirectUri: RedirectUri,
 });
 export type BeginConnectionArgs = typeof BeginConnectionArgs.Type;
 
@@ -122,7 +124,7 @@ export const CompleteConnectionArgs = Schema.Struct({
   mode: Mode,
   code: token(2048),
   state: token(128),
-  origin: Origin,
+  redirectUri: RedirectUri,
 });
 export type CompleteConnectionArgs = typeof CompleteConnectionArgs.Type;
 

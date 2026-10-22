@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { authClient } from "#lib/auth-client.ts";
@@ -18,6 +19,16 @@
   const needsLogin = $derived(form !== null && "code" in form && form.code === "REAUTH_REQUIRED");
   const indicator = $derived(
     data.connection?.status === "CONNECTED" ? indicatorFor(data.connection.health) : null,
+  );
+  // Paste mode (D35): after the key is saved, TradeStation opens in a new tab and the client pastes back.
+  const authorizeUrl = $derived(
+    form !== null && "authorizeUrl" in form && typeof form.authorizeUrl === "string"
+      ? form.authorizeUrl
+      : null,
+  );
+  const awaitingPaste = $derived(
+    authorizeUrl !== null ||
+      (form !== null && "awaitingPaste" in form && form.awaitingPaste === true),
   );
   let reconnect = $state(false);
   let confirming = $state(false);
@@ -130,19 +141,43 @@
 {#if !connected || reconnect}
   <section aria-labelledby="registro">
     <h2 id="registro">Conecta tu API key</h2>
-    <ol>
-      <li>
-        Registra esta URL de callback en tu API key de TradeStation:
-        <code class="callback"
-          >{#each data.callbackUrl.split("/") as part, index (index)}{#if index > 0}/<wbr
-              />{/if}{part}{/each}</code
-        >
-      </li>
-      <li>Escribe tu API key y tu secreto. Se guardan cifrados y no vuelven a mostrarse.</li>
-      <li>Autoriza el acceso en TradeStation. Volverás aquí con tus cuentas SIM.</li>
-    </ol>
+    {#if data.callbackUrl}
+      <ol>
+        <li>
+          Registra esta URL de callback en tu API key de TradeStation:
+          <code class="callback"
+            >{#each data.callbackUrl.split("/") as part, index (index)}{#if index > 0}/<wbr
+                />{/if}{part}{/each}</code
+          >
+        </li>
+        <li>Escribe tu API key y tu secreto. Se guardan cifrados y no vuelven a mostrarse.</li>
+        <li>Autoriza el acceso en TradeStation. Volverás aquí con tus cuentas SIM.</li>
+      </ol>
+    {:else}
+      <p class="steps">
+        Escribe tu API key y tu secreto. Se guardan cifrados y no vuelven a mostrarse.
+      </p>
+    {/if}
 
-    <form method="POST" action="?/connect" autocomplete="off">
+    <form
+      method="POST"
+      action="?/connect"
+      autocomplete="off"
+      use:enhance={() =>
+        async ({ formElement, result, update }) => {
+          // Runs after the response, outside the click's task, so Safari may block the tab; the link below is the reliable path.
+          if (
+            result.type === "success" &&
+            typeof result.data?.authorizeUrl === "string" &&
+            result.data.authorizeUrl.startsWith("https://signin.tradestation.com/")
+          ) {
+            window.open(result.data.authorizeUrl, "_blank", "noopener,noreferrer");
+          }
+          // The secret never stays in the field, whether the save worked or not.
+          formElement.reset();
+          await update();
+        }}
+    >
       <label>
         API key (client ID)
         <input name="clientId" required spellcheck="false" autocapitalize="none" />
@@ -151,8 +186,46 @@
         Secreto
         <input name="clientSecret" type="password" required autocomplete="off" />
       </label>
-      <Button variant="primary" type="submit">Conectar con TradeStation</Button>
+      <Button variant={awaitingPaste ? "outline" : "primary"} type="submit"
+        >Conectar con TradeStation</Button
+      >
     </form>
+
+    {#if !data.callbackUrl && awaitingPaste}
+      <h2>Completa la conexión</h2>
+      <ol>
+        {#if authorizeUrl?.startsWith("https://signin.tradestation.com/")}
+          <li>
+            Inicia sesión en la pestaña de TradeStation y autoriza el acceso.
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external TradeStation URL built by the engine, checked above -->
+            <a href={authorizeUrl} target="_blank" rel="noopener noreferrer"
+              >Abrir TradeStation de nuevo</a
+            >
+          </li>
+        {:else}
+          <li>Inicia sesión en la pestaña de TradeStation y autoriza el acceso.</li>
+        {/if}
+        <li>
+          La página siguiente no va a cargar. Es lo esperado: copia la dirección completa de la
+          barra del navegador.
+        </li>
+        <li>Pégala aquí y completa la conexión.</li>
+      </ol>
+      <form method="POST" action="?/paste" autocomplete="off">
+        <label>
+          Dirección copiada
+          <textarea
+            name="redirect"
+            rows="3"
+            required
+            spellcheck="false"
+            autocapitalize="none"
+            autocomplete="off"
+            placeholder="http://localhost:3000/?code=…&state=…"></textarea>
+        </label>
+        <Button variant="primary" type="submit">Completar conexión</Button>
+      </form>
+    {/if}
   </section>
 {/if}
 
@@ -201,7 +274,7 @@
     margin-top: 2.5rem;
   }
   ol {
-    padding-left: 1.25rem;
+    padding-left: 1.5rem;
     color: var(--text-muted);
   }
   li {
@@ -228,6 +301,10 @@
     display: grid;
     gap: 0.5rem;
   }
+  .steps {
+    color: var(--text-muted);
+  }
+  textarea,
   input {
     min-height: var(--target);
     padding: 0 0.75rem;
@@ -237,6 +314,12 @@
     color: var(--text);
     font: inherit;
   }
+  textarea {
+    padding: 0.75rem;
+    overflow-wrap: anywhere;
+    resize: vertical;
+  }
+  textarea:focus-visible,
   input:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;

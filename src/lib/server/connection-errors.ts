@@ -5,7 +5,9 @@ export const connectionErrors = {
   AUTHORIZATION_DENIED: "No autorizaste el acceso en TradeStation. Puedes intentarlo de nuevo.",
   STATE_INVALID: "El enlace de autorización no es válido o venció. Vuelve a conectar.",
   TOKEN_EXCHANGE_FAILED:
-    "TradeStation rechazó la autorización. Revisa tu API key, tu secreto y la URL de callback.",
+    "TradeStation rechazó la autorización. Revisa tu API key y tu secreto, y vuelve a conectar.",
+  PASTE_INVALID:
+    "No reconocemos esa dirección. Copia la dirección completa de la barra del navegador, la que empieza con http://localhost:3000.",
   BROKER_UNAVAILABLE: "No pudimos comunicarnos con TradeStation. Inténtalo de nuevo.",
   INVALID_BROKER_RESPONSE: "TradeStation respondió algo inesperado. Inténtalo de nuevo.",
   CREDENTIALS_UNAVAILABLE: "No pudimos guardar tus credenciales. Avisa al administrador.",

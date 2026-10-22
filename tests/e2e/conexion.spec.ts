@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "./test.ts";
 import {
   count,
@@ -8,8 +9,9 @@ import {
   origin,
 } from "./support.ts";
 
-// The engine's calls to TradeStation can't be intercepted from the browser; the token exchange,
-// accounts and revoke paths are covered against a mocked TradeStation in engine/test.
+// The engine's calls to TradeStation can't be intercepted from the browser, so a paste that would
+// reach the token exchange is not sent here: the exchange with the pasted code, the accounts, the
+// reused state and the revoke paths run against a mocked TradeStation in engine/test.
 const SECRET = "e2e-secret-SHOULD-NEVER-APPEAR";
 
 test.beforeEach(async ({ context }) => {
@@ -24,42 +26,118 @@ test("sends visitors without a session to the access screen", async ({ page }) =
   await expect(page).toHaveURL(/\/acceso$/);
 });
 
-test("shows the callback URL and sends the client to TradeStation without leaking the secret", async ({
+const KEY = "e2e-client-id-0123456789";
+
+/** Saves a key like a form submit and returns the authorize URL the page offers (paste mode). */
+async function beginPasteConnection(page: Page) {
+  const response = await page.request.post("/conexion?/connect", {
+    form: { clientId: KEY, clientSecret: SECRET },
+    // Like a form submit; without this SvelteKit answers a fetch with JSON.
+    headers: { accept: "text/html" },
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  expect(html).not.toContain(SECRET);
+  const href = /href="(https:\/\/signin\.tradestation\.com\/authorize[^"]*)"/.exec(html)?.[1];
+  return new URL((href ?? "").replaceAll("&amp;", "&"));
+}
+
+test("asks TradeStation to redirect to localhost without leaking the secret", async ({
   context,
   page,
 }) => {
   const userId = await seedSignedInUser(context);
   await page.goto("/conexion");
   await expect(page.getByRole("heading", { name: "Conexión" })).toBeVisible();
-  await expect(page.locator("code")).toHaveText(`${origin}/conexion/callback`);
+  // Paste mode shows no callback URL to register and no paste step before a key is saved.
+  await expect(page.locator("code")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Completar conexión" })).toHaveCount(0);
 
-  // Posted without following the redirect, so the browser never reaches the real TradeStation.
-  const response = await page.request.post("/conexion?/connect", {
-    form: { clientId: "e2e-client-id-0123456789", clientSecret: SECRET },
-    // Like a form submit; without this SvelteKit answers a fetch with JSON.
-    headers: { accept: "text/html" },
-    maxRedirects: 0,
-  });
-  expect(response.status()).toBe(303);
-  const authorizeUrl = new URL(response.headers().location ?? "");
-  expect(authorizeUrl.origin).toBe("https://signin.tradestation.com");
-  expect(await response.text()).not.toContain(SECRET);
-
+  const authorizeUrl = await beginPasteConnection(page);
   expect(authorizeUrl.pathname).toBe("/authorize");
   expect(Object.fromEntries(authorizeUrl.searchParams)).toMatchObject({
     response_type: "code",
-    client_id: "e2e-client-id-0123456789",
+    client_id: KEY,
     audience: "https://api.tradestation.com",
-    redirect_uri: `${origin}/conexion/callback`,
+    redirect_uri: "http://localhost:3000",
     scope: "openid offline_access MarketData ReadAccount Trade",
   });
   expect(authorizeUrl.searchParams.get("state")).toMatch(/^[0-9a-f]{64}$/);
   expect(authorizeUrl.toString()).not.toContain(SECRET);
   expect(count(`SELECT COUNT(*) AS n FROM broker_connection WHERE user_id='${userId}'`)).toBe(0);
 
-  // Nothing about the secret comes back when the page is shown again.
   const html = await (await page.request.get("/conexion")).text();
   expect(html).not.toContain(SECRET);
+});
+
+test("shows the paste step after saving a key", async ({ context, page }) => {
+  await seedSignedInUser(context);
+  await page.goto("/conexion");
+  await page.getByLabel("API key (client ID)").fill(KEY);
+  await page.getByLabel("Secreto").fill(SECRET);
+  // The new tab would reach the real TradeStation; the test only needs the page to react.
+  await page.context().route("https://signin.tradestation.com/**", (route) => route.abort());
+  await page.getByRole("button", { name: /Conectar con TradeStation/ }).click();
+  await expect(page.getByRole("button", { name: "Completar conexión" })).toBeVisible();
+  await expect(page.getByText("La página siguiente no va a cargar")).toBeVisible();
+  await expect(page.getByLabel("Dirección copiada")).toBeVisible();
+  await expect(page.getByLabel("Secreto")).toHaveValue("");
+  if (process.env.E2E_SCREENSHOT_DIR) {
+    for (const [name, width, height] of [
+      ["desktop", 1440, 900],
+      ["mobile", 390, 844],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.screenshot({
+        path: `${process.env.E2E_SCREENSHOT_DIR}/conexion-paste-${name}.png`,
+        fullPage: true,
+      });
+    }
+  }
+});
+
+test("rejects a pasted address that is foreign, malformed, declined or without a valid state", async ({
+  context,
+  page,
+}) => {
+  const userId = await seedSignedInUser(context);
+  const authorizeUrl = await beginPasteConnection(page);
+  const code = "pasted-code-SHOULD-NEVER-APPEAR";
+  const rejected: [string, string][] = [
+    [`http://localhost:3000/?code=${code}&state=${"a".repeat(64)}`, "El enlace de autorización"],
+    [`http://localhost:3000/?code=${code}`, "El enlace de autorización"],
+    [`http://localhost:3000/?state=${authorizeUrl.searchParams.get("state")}`, "No reconocemos"],
+    [`http://localhost:3001/?code=${code}&state=s`, "No reconocemos"],
+    [`${origin}/conexion/callback?code=${code}&state=s`, "No reconocemos"],
+    [`http://localhost:3000/?code=${code}&state=s&extra=1`, "No reconocemos"],
+    [`not an address ${code}`, "No reconocemos"],
+    ["http://localhost:3000/?error=access_denied&error_description=nope", "No autorizaste"],
+  ];
+  for (const [pasted, message] of rejected) {
+    const response = await page.request.post("/conexion?/paste", {
+      form: { redirect: pasted },
+      headers: { accept: "text/html" },
+      maxRedirects: 0,
+    });
+    expect(response.status()).toBe(400);
+    const html = await response.text();
+    expect(html).toContain(message);
+    // Nothing the client pasted comes back.
+    expect(html).not.toContain(code);
+    expect(html).not.toContain("localhost:3001");
+  }
+  expect(count(`SELECT COUNT(*) AS n FROM broker_connection WHERE user_id='${userId}'`)).toBe(0);
+});
+
+test("needs a session to paste", async ({ page }) => {
+  const response = await page.request.post("/conexion?/paste", {
+    form: { redirect: "http://localhost:3000/?code=c&state=s" },
+    headers: { accept: "text/html" },
+    maxRedirects: 0,
+  });
+  expect(response.status()).not.toBe(200);
+  expect(await response.text()).not.toContain("Completar conexión");
 });
 
 test("rejects a foreign or missing state and a declined authorization with Spanish copy", async ({
@@ -121,5 +199,5 @@ test("a passkey confirmation makes the session fresh again", async ({ context, p
     headers: { accept: "text/html" },
     maxRedirects: 0,
   });
-  expect(response.status()).toBe(303);
+  expect(response.status()).toBe(200);
 });

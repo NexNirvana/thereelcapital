@@ -2,6 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { Schema } from "effect";
+import { connectRedirectUri } from "#lib/domain/connect-redirect.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { isConnectionErrorCode, type ConnectionErrorCode } from "#lib/server/connection-errors.ts";
 import type { RequestHandler } from "./$types";
@@ -42,7 +43,7 @@ export const GET: RequestHandler = async (event) => {
       mode: "SIM",
       code: params.success.code,
       state: params.success.state,
-      origin: new URL(env.APP_ORIGIN).origin,
+      redirectUri: connectRedirectUri(env.APP_ORIGIN),
     })
     .catch(() => null);
   if (result === null) return back("BROKER_UNAVAILABLE");

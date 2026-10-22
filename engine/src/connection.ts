@@ -47,7 +47,6 @@ export type ConnectionView =
       readonly lastOkAt: number | null;
     };
 
-const redirectUri = (origin: string) => `${origin}/conexion/callback`;
 const secretContext = (userId: string) => `${userId}:client_secret`;
 const refreshContext = (userId: string) => `${userId}:refresh_token`;
 
@@ -75,7 +74,7 @@ function randomState(): string {
 
 export async function beginConnection(
   ctx: ConnectionContext,
-  args: { clientId: string; clientSecret: string; origin: string },
+  args: { clientId: string; clientSecret: string; redirectUri: string },
 ): Promise<EngineResult<{ authorizeUrl: string }>> {
   const cipher = await ctx.cipher();
   const clientSecretEnc = await cipher.encrypt(args.clientSecret, secretContext(ctx.userId));
@@ -96,7 +95,7 @@ export async function beginConnection(
   return success({
     authorizeUrl: authorizeUrl({
       clientId: args.clientId,
-      redirectUri: redirectUri(args.origin),
+      redirectUri: args.redirectUri,
       state,
     }),
   });
@@ -110,7 +109,7 @@ interface AttemptRow extends Record<string, SqlStorageValue> {
 
 export async function completeConnection(
   ctx: ConnectionContext,
-  args: { code: string; state: string; origin: string },
+  args: { code: string; state: string; redirectUri: string },
 ): Promise<EngineResult<ConnectionView>> {
   // Consume the state before any await: a replay finds nothing, whatever happens next. The DO is
   // the client's own, so a state issued to someone else is simply not here.
@@ -137,7 +136,7 @@ export async function completeConnection(
     clientId,
     clientSecret,
     code: args.code,
-    redirectUri: redirectUri(args.origin),
+    redirectUri: args.redirectUri,
   });
   if (!exchanged.ok) {
     log(ctx, "warn", "broker.token_exchange_failed", {
