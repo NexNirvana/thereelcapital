@@ -1,0 +1,41 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/brokerage/accounts"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "320",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "318",
+      "x-ratelimit-reset": "3",
+      "x-ratelimit-resource": "sim-get-accounts"
+    },
+    "body": {
+      "Accounts": [
+        {
+          "AccountID": "****704F",
+          "Currency": "USD",
+          "Status": "Active",
+          "AccountType": "Futures"
+        },
+        {
+          "AccountID": "****703M",
+          "Currency": "USD",
+          "Status": "Active",
+          "AccountType": "Margin",
+          "AccountDetail": {
+            "IsStockLocateEligible": true,
+            "EnrolledInRegTProgram": true,
+            "RequiresBuyingPowerWarning": true,
+            "CryptoEnabled": false,
+            "DayTradingQualified": true,
+            "OptionApprovalLevel": 5,
+            "PatternDayTrader": false
+          }
+        }
+      ]
+    }
+  }
+}

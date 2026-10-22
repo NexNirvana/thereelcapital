@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/options/expirations/F"
+  },
+  "response": {
+    "status": 403,
+    "headers": {},
+    "body": {
+      "Message": "Missing required scope.",
+      "StatusCode": 403,
+      "TraceID": "1e23ee0e-9b17-48fa-8370-41a9f99b99e7"
+    }
+  }
+}

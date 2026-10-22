@@ -17,4 +17,16 @@ Issue #21 (the SIM spike) records real SIM responses; those replace these files,
 | `positions.json` | spec example of `GET /brokerage/accounts/{accounts}/positions`, plus a schema-derived option and a short position |
 | `confirm.json`, `place.json`, `place-refused.json`, `cancel.json` | spec examples of `orderconfirm`, `POST orders` (the success example trimmed to one order, and its `Errors` example alone) and `DELETE orders/{id}` |
 
-The `sim/<step>/` folders, written by `bun run spike` (`scripts/sim-spike/`), hold real SIM responses with secrets, tokens and account numbers redacted; they replace the derived files above once the spike has run.
+The `sim/<step>/` folders, written by `bun run spike` (`scripts/sim-spike/`), hold real SIM responses with secrets, tokens and account numbers redacted (credentials and tokens are `[REDACTED]`, account ids keep only their last four characters). Each file is `{ request, response: { status, headers, body } }`. The first run, on 2026-10-22 after the close, recorded:
+
+| Folder | Content |
+| --- | --- |
+| `auth/` | the authorization code exchange (`scope`, `expires_in`) |
+| `refresh/` | `refresh-grant.json` (200, no rotated token) and `refresh-refused.json` (403 `invalid_grant`) |
+| `accounts/`, `confirm/accounts.json`, `rate-limits/` | `GET /brokerage/accounts` and its `X-RateLimit-*` headers |
+| `quotes/quote-equity.json`, `confirm/quote-equity.json` | equity quote snapshot |
+| `symbols/symbol-equity.json` | equity symbol details |
+| `expirations/`, `chain/`, `option-order/`, `stops/`, `quotes/`, `symbols/` `expirations.json` | 403 "Missing required scope." (fixed by requesting `OptionSpreads`) |
+| `*positions*.json`, `fill-fields/orders-today.json` | empty positions and orders: the market was closed |
+
+The derived files above are replaced as the rerun records what they stand for.

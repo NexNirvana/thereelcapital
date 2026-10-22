@@ -1,0 +1,38 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/symbols/F"
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Symbols": [
+        {
+          "AssetType": "STOCK",
+          "Country": "United States",
+          "Currency": "USD",
+          "Description": "Ford Motor",
+          "Exchange": "NYSE",
+          "Symbol": "F",
+          "Root": "F",
+          "PriceFormat": {
+            "Format": "Decimal",
+            "Decimals": "2",
+            "IncrementStyle": "Simple",
+            "Increment": "0.01",
+            "PointValue": "1"
+          },
+          "QuantityFormat": {
+            "Format": "Decimal",
+            "Decimals": "0",
+            "IncrementStyle": "Simple",
+            "Increment": "1",
+            "MinimumTradeQuantity": "1"
+          }
+        }
+      ],
+      "Errors": []
+    }
+  }
+}
