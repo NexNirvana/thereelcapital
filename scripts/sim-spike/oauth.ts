@@ -6,14 +6,16 @@ import type { Redactor } from "./redact.ts";
 
 export const DEFAULT_PORT = 3000;
 
-export const callbackUrl = (port: number) => `http://localhost:${port}/callback`;
+// TradeStation allows these callbacks by default, without a path (auth-code docs): http://localhost
+// on ports 80, 3000, 3001, 8080 and 31022. Any other URL has to be added to the key by TradeStation.
+export const callbackUrl = (port: number) => `http://localhost:${port}`;
 
 export type CallbackResult =
   { readonly ok: true; readonly code: string } | { readonly ok: false; readonly reason: string };
 
 /** Pure check of the redirect the browser makes to our callback. */
 export function readCallback(url: URL, expectedState: string): CallbackResult {
-  if (url.pathname !== "/callback") return { ok: false, reason: "wrong path" };
+  if (url.pathname !== "/") return { ok: false, reason: "wrong path" };
   const error = url.searchParams.get("error");
   if (error !== null) return { ok: false, reason: `authorization error: ${error}` };
   if (url.searchParams.get("state") !== expectedState)
