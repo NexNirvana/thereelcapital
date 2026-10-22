@@ -254,7 +254,12 @@ export async function seedTradingClient(
   // Any shell page reaches the engine and creates this client's object; the one new file is it.
   const existing = engineFiles();
   await page.goto("/conexion");
-  const created = [...engineFiles()].filter((file) => !existing.has(file));
+  // The object's file can show up a moment after the response that created it.
+  let created: string[] = [];
+  for (let attempt = 0; attempt < 50 && created.length === 0; attempt++) {
+    created = [...engineFiles()].filter((file) => !existing.has(file));
+    if (created.length === 0) await new Promise((done) => setTimeout(done, 100));
+  }
   if (created.length !== 1)
     throw new Error(`expected one new Durable Object, got ${created.length}`);
   seedEngineAccounts(created[0] as string, accounts);
