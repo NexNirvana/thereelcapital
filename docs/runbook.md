@@ -158,7 +158,7 @@ Events are listed per client in `/historial` and across clients in `/admin/histo
 
 **Protection:** stops are engine-held (D36): each sync tick compares fresh bids with the stop level and sells `available` at MARKET; a stale or failing quote or token shows `unverified`, and a rejected stop waits `STOP_REJECTED_COOLDOWN_MS` before a new one. Trailing, once the client activates it, follows the same rule: the monitor raises the peak and level on each fresh bid and the exit fires at the higher of stop and trailing level.
 
-**Not built or not verified:** the SIM spike (#21, `bun run spike`) has not produced results, so the refused-refresh answer, token lifetime counting and several order behaviors are unconfirmed ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
+**Not built or not verified:** the SIM spike (#21, `bun run spike`) has so far recorded accounts, token refresh and rate limits (2026-10-22, after the close); the options endpoints (needs the `OptionSpreads` scope, reconnect once), order behaviors, token lifetime counting and option expiry are unconfirmed until the rerun in the regular session ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
 
 ## CI incidents
 
