@@ -134,7 +134,9 @@ export async function main(argv: readonly string[]): Promise<number> {
   });
   const session = new TokenSession({ now }, redactor, credentials, () => client);
 
-  log(`SIM only. Register this callback URL on the API key: ${callbackUrl(options.port)}`);
+  log(
+    `SIM only. Callback: ${callbackUrl(options.port)} (allowed by default on ports 80, 3000, 3001, 8080 and 31022; any other port must be added to the key).`,
+  );
   await session.login({ port: options.port, client, log });
   log("Logged in. Tokens stay in memory.");
 
