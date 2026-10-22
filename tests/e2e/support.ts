@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createHmac, randomUUID } from "node:crypto";
 import { MessageChannel, Worker, receiveMessageOnPort } from "node:worker_threads";
-import { type BrowserContext, type Page } from "@playwright/test";
+import { type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 import { sessionDate } from "../../src/lib/domain/calendar.ts";
 import { newInvitation } from "../../src/lib/server/activation-link.ts";
 import { origin } from "./ports.ts";
@@ -22,7 +22,7 @@ export const authSecret = "e2e-only-secret-0123456789-0123456789";
 // races their locks (SQLITE_BUSY).
 const SEED_URL = `${origin}/api/test/seed`;
 
-interface SeedReply {
+export interface SeedReply {
   readonly status: number;
   readonly text: string;
 }
@@ -59,12 +59,66 @@ function postSeedSync(body: unknown): SeedReply {
 // closed one, answers 500 "Network connection lost" without delivering the request. It retries only
 // GET and HEAD itself, so a POST has to be resent here. Nothing ran then, and a seed is one
 // transaction, so the resend cannot apply it twice.
+const proxyDropMessage = "Network connection lost";
 const droppedByProxy = (reply: SeedReply) =>
-  reply.status === 500 && reply.text.includes("Network connection lost");
+  reply.status === 500 && reply.text.includes(proxyDropMessage);
+
+// Under load the proxy can drop a resend too, so resend up to twice.
+async function resendWhileDropped<T>(
+  send: () => Promise<T>,
+  dropped: (reply: T) => boolean | Promise<boolean>,
+) {
+  let reply = await send();
+  for (let resend = 0; resend < 2 && (await dropped(reply)); resend++) reply = await send();
+  return reply;
+}
+
+/** Makes the POSTs a spec sends through page.request (Node side) resend like the seeds do. */
+export function resendDroppedApiPosts(request: APIRequestContext) {
+  const fetchOnce = request.fetch.bind(request);
+  request.fetch = async (urlOrRequest, options) => {
+    const method =
+      options?.method ?? (typeof urlOrRequest === "string" ? "GET" : urlOrRequest.method());
+    if (method === "GET" || method === "HEAD") return fetchOnce(urlOrRequest, options);
+    return resendWhileDropped(
+      () => fetchOnce(urlOrRequest, options),
+      async (response) =>
+        droppedByProxy({ status: response.status(), text: await response.text() }),
+    );
+  };
+}
+
+/**
+ * Resends dropped POSTs for everything a browser context sends: the page's own fetch() calls
+ * (passkey ceremonies, form actions) and its request context. The app never saw the first attempt,
+ * so nothing runs twice. Wrapping fetch inside the page leaves cookies and redirects to the browser.
+ */
+export async function resendDroppedPosts(context: BrowserContext) {
+  await context.addInitScript((dropMessage) => {
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const retryable = request.clone();
+      let response = await nativeFetch(request);
+      for (
+        let resend = 0;
+        resend < 2 && request.method !== "GET" && request.method !== "HEAD";
+        resend++
+      ) {
+        if (response.status !== 500 || !(await response.clone().text()).includes(dropMessage))
+          break;
+        response = await nativeFetch(retryable.clone());
+      }
+      return response;
+    };
+  }, proxyDropMessage);
+  resendDroppedApiPosts(context.request);
+}
 
 function postSeed(body: unknown): SeedReply {
-  const reply = postSeedSync(body);
-  return droppedByProxy(reply) ? postSeedSync(body) : reply;
+  let reply = postSeedSync(body);
+  for (let resend = 0; resend < 2 && droppedByProxy(reply); resend++) reply = postSeedSync(body);
+  return reply;
 }
 
 function checkSeedReply(reply: SeedReply): unknown {
@@ -229,8 +283,7 @@ async function seedEngine(clientId: string, statements: readonly EngineStatement
     return { status: response.status, text: await response.text() };
   };
   // One transaction inside the object, so a resend after a request the proxy never delivered is safe.
-  let reply = await send();
-  if (droppedByProxy(reply)) reply = await send();
+  const reply = await resendWhileDropped(send, droppedByProxy);
   if (reply.status !== 200) throw new Error(`engine seeding failed (${reply.status})`);
 }
 
