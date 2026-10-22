@@ -86,7 +86,7 @@ install_service() {
 description="GitHub Actions runner reel-local-${n}"
 supervisor=supervise-daemon
 command="${dir}/run.sh"
-command_user="${RUNNER_USER}:${RUNNER_USER}"
+command_user="${RUNNER_USER}"
 directory="${dir}"
 respawn_delay=5
 respawn_max=0
