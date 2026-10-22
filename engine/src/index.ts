@@ -10,6 +10,7 @@ import {
 import {
   REFRESH_REQUEST_RETRY_DELAY_MS,
   REFRESH_RETRY_DELAY_MS,
+  SYNC_RETRY_DELAY_MS,
   SYNC_INTERVAL_MS,
 } from "#lib/domain/config.ts";
 import { createCipher, CredentialsKeyError } from "./crypto.ts";
@@ -65,6 +66,11 @@ import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
 import type { Schema } from "effect";
 import type { Mode } from "./mode.ts";
+
+const ALARM_RETRY_DELAY_MS = {
+  refresh: REFRESH_RETRY_DELAY_MS,
+  sync: SYNC_RETRY_DELAY_MS,
+} as const satisfies Record<AlarmTask, number>;
 
 type Row = Record<string, SqlStorageValue>;
 
@@ -306,7 +312,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       } catch {
         // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
         this.log("error", "SIM", "alarm.task_failed", task);
-        await this.#alarms.schedule(task, this.#now() + REFRESH_RETRY_DELAY_MS);
+        await this.#alarms.schedule(task, this.#now() + ALARM_RETRY_DELAY_MS[task]);
         continue;
       }
       // A job that did not reschedule itself is finished; leaving it due would re-fire at once.
@@ -452,7 +458,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (context === null) return failure("INVALID_INPUT");
     try {
       return await run(context, decoded.value);
-    } catch (error) {
+    } catch {
       if (!(error instanceof CredentialsKeyError)) throw error;
       this.log("error", "SIM", "rpc.credentials_unavailable", method);
       return failure("CREDENTIALS_UNAVAILABLE");
