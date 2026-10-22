@@ -8,6 +8,7 @@ import { error, isHttpError } from "@sveltejs/kit";
 import { Schema } from "effect";
 import { STOP_PCT_BOUNDS, TRAILING_UNLOCK_PCT_BOUNDS } from "#lib/domain/config.ts";
 import { MAX_DAILY_ENTRIES, MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
+import { validateSizeChange } from "#lib/domain/sizing.ts";
 import { validateStopPct, validateTrailingUnlockPct } from "#lib/domain/stop.ts";
 import {
   insertInvitation,
@@ -167,6 +168,8 @@ export interface ClientDetail {
   link: { state: LinkState; expiresAt: number | null };
   /** Null only for a client created without settings, which should not exist. */
   settings: ClientSettings | null;
+  /** Lowest SIZE (whole USD) the form accepts: SIZE never goes below the stored one. */
+  minSizeUsd: number | null;
   /** Fixed limits, shown read-only (docs/product-spec.md#parameters). */
   limits: { openPositions: number; dailyEntries: number };
   /** Allowed ranges for the form's hints; the server re-checks them with the domain validators. */
@@ -261,6 +264,7 @@ export async function getClientDetail<S extends AccessStatement>(
     unusedCodes: profile.unusedCodes,
     link: { state: linkState, expiresAt: latest?.expiresAt ?? null },
     settings,
+    minSizeUsd: settings?.sizeUsd ?? null,
     limits: { openPositions: MAX_OPEN_POSITIONS, dailyEntries: MAX_DAILY_ENTRIES },
     bounds: { stopPct: STOP_PCT_BOUNDS, unlockPct: TRAILING_UNLOCK_PCT_BOUNDS },
     sessions: Schema.decodeUnknownSync(Schema.Array(SessionRow))(sessions.results)
@@ -599,6 +603,7 @@ export async function listOtherAdmins<S extends AccessStatement>(db: AccessDb<S>
 }
 
 // Whole numbers typed in the form; anything else becomes NaN and fails the validators.
+const MICROS_PER_USD = 1_000_000;
 const SettingsForm = Schema.Struct({
   sizeUsd: Schema.String.check(Schema.isMaxLength(12)),
   stopPct: Schema.String.check(Schema.isMaxLength(12)),
@@ -632,7 +637,17 @@ export function updateClientSettings<L extends GuardLocals, S extends AccessStat
     }
     const before = await loadSettings(db, target.id);
     if (before === null) return refuse(settingsErrors.missing);
-    if (sizeUsd < before.sizeUsd) return refuse(settingsErrors.sizeDecrease);
+    // Equal SIZE is a valid save (only the percentages change); the domain rule decides any change.
+    if (sizeUsd !== before.sizeUsd) {
+      const micros = sizeUsd * MICROS_PER_USD;
+      const currentMicros = before.sizeUsd * MICROS_PER_USD;
+      if (!Number.isSafeInteger(micros) || !Number.isSafeInteger(currentMicros)) {
+        return refuse(settingsErrors.sizeInvalid);
+      }
+      if (!validateSizeChange(currentMicros, micros).ok) {
+        return refuse(settingsErrors.sizeDecrease);
+      }
+    }
     const after: ClientSettings = { sizeUsd, stopPct, trailingUnlockPct };
     if (
       after.sizeUsd === before.sizeUsd &&

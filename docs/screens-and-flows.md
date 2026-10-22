@@ -34,7 +34,7 @@ Designed screens are reproduced from their PNGs. Undesigned screens use the same
 
 `?/updateSettings` saves SIZE, stop % and trailing-unlock % of one client (`src/lib/server/admin-client-access.ts`). The three fields travel together; unknown fields are rejected (400).
 
-- SIZE is whole US dollars (the `size_usd` column), increase only: a lower value is rejected (422 `SIZE_DECREASE`). The same value is allowed when a percentage changes; a save that changes nothing is rejected (409 `SETTINGS_UNCHANGED`).
+- SIZE is whole US dollars (the `size_usd` column), increase only: a lower value is rejected (422 `SIZE_DECREASE`), and so is one whose micro-dollars exceed the safe-integer range (422 `SIZE_INVALID`). The same value is allowed when a percentage changes; a save that changes nothing is rejected (409 `SETTINGS_UNCHANGED`).
 - Stop % and unlock % are whole numbers inside the bounds of `src/lib/domain/config.ts`, checked by `validateStopPct` and `validateTrailingUnlockPct` (422 `STOP_PCT_OUT_OF_BOUNDS`, `TRAILING_UNLOCK_PCT_OUT_OF_BOUNDS`) with Spanish messages that quote the bounds.
 - The values apply to new entries and new positions only; every open position keeps the stop % and unlock % stored on it. The screen says so next to each field.
 - The UPDATE matches the values the check ran against, so a concurrent change fails (409 `SETTINGS_CHANGED`) rather than slipping under the increase-only rule; it commits in one batch with its audit row.

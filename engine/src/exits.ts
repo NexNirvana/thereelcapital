@@ -9,7 +9,7 @@
 //   4. a synchronous write of the outcome: ACKNOWLEDGED, REJECTED (gives the step back) or UNKNOWN
 // Limits never apply here: exits and cancels are not entries (CLAUDE.md, rule 7).
 
-import { isRegularSession } from "#lib/domain/calendar.ts";
+import { isRegularSession, type InstrumentKind } from "#lib/domain/calendar.ts";
 import { allOutQty, scaleOutQty } from "#lib/domain/scaleout.ts";
 import { checkOrder, type RejectionReason } from "#lib/domain/guards.ts";
 import type { ConnectionHealth } from "#lib/domain/connection.ts";
@@ -371,7 +371,7 @@ async function placeExit(
 interface CancelTarget extends Record<string, SqlStorageValue> {
   account_id: string;
   position_id: string | null;
-  asset_type: string;
+  asset_type: InstrumentKind;
   state: string;
   broker_order_id: string | null;
 }

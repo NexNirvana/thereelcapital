@@ -552,6 +552,26 @@ describe("updateClientSettings", () => {
     expect(n(s.db, "audit_log")).toBe(0);
   });
 
+  test("accepts a SIZE one dollar above the stored one and refuses one whose micro-dollars overflow", async () => {
+    const s = setup();
+    expect(await save(s, { sizeUsd: "20001" })).toEqual({ ok: true });
+    const stored = settingsOf(s, "c1");
+    expect(await save(s, { sizeUsd: "999999999999" })).toEqual({
+      ok: false,
+      error: settingsErrors.sizeInvalid,
+    });
+    expect(settingsOf(s, "c1")).toEqual(stored);
+  });
+
+  test("refuses a save instead of throwing when the stored SIZE is out of range", async () => {
+    const s = setup();
+    s.db.sqlite.run(`UPDATE client_settings SET size_usd = 999999999999 WHERE user_id = 'c1'`);
+    expect(await save(s, { sizeUsd: "30000" })).toEqual({
+      ok: false,
+      error: settingsErrors.sizeInvalid,
+    });
+  });
+
   test("accepts the same SIZE when a percentage changes and rejects a save that changes nothing", async () => {
     const s = setup();
     expect(await save(s, { stopPct: "35" })).toEqual({ ok: true });
@@ -633,6 +653,7 @@ describe("updateClientSettings", () => {
     const s = setup();
     expect(await getClientDetail(s.db, "c1", now)).toMatchObject({
       settings: { sizeUsd: 20000, stopPct: 30, trailingUnlockPct: 70 },
+      minSizeUsd: 20000,
       limits: { openPositions: 2, dailyEntries: 3 },
     });
   });
