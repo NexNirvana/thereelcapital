@@ -2,7 +2,7 @@
 
 The overall flow is in [`designs/flow/como-funciona.svg`](../designs/flow/como-funciona.svg): admin invites and configures → 01 Acceso → 02 Compra → 03 TradeStation returns state and fills → 04 Posición (exits, stop, trailing) → 05 Historial.
 
-Designed screens are reproduced from their PNGs. Undesigned screens use the same shell and components ([design-system.md](design-system.md)). Every screen has explicit loading, empty, error and confirmation states.
+Designed screens are reproduced from their PNGs. Undesigned screens use the same shell and components ([design-system.md](design-system.md)). On mobile, `Admin` and `Cerrar sesión` sit in a footer below the content (D38), and the tab bar keeps the three tabs of D29. Every screen has explicit loading, empty, error and confirmation states.
 
 ## Client
 
