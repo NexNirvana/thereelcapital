@@ -59,14 +59,14 @@ A repeated `OrderConfirmID` returns the order it already made; whether TradeStat
 
 ## Broker SIM acceptance (first delivery)
 
-1. Admin creates a client (SIZE 20,000) → copies the activation link → the client opens it → passkey → recovery codes → own key → OAuth → SIM account.
-2. In session: MARKET BUY of a stock and BUYTOOPEN of a contract from the chain, both auto-sized from the live ask.
-3. Fills shown; a partial exit with the bar; ALL OUT; history visible after signing in again.
-4. A pending order cancelled while the broker still allows it.
-5. Admin raises SIZE → the next entry uses it; other clients and existing orders are unchanged.
-6. A 4th entry the same day is rejected, also from another account or tab; exits still work.
-7. The 30% stop acts on the remainder and survives a reconnect; a new admin % applies only to new positions.
-8. A 3rd position is rejected. Trailing unlocks only after confirmed sales.
-9. The ask is read-only, cleared on contract change, and missing data is shown; the execution price comes from fills.
-10. A revoked token blocks entries, shows protection unverified, and reconnecting reconciles.
-11. Click → send → ack → fill timestamps recorded from intents for review. SIM fills are instant, so this is not a LIVE latency estimate.
+1. Admin creates a client (SIZE 20,000) → copies the activation link → the client opens it → passkey → recovery codes → own key → OAuth → SIM account. Browser: `activation.spec.ts`, `activation-ui.spec.ts`, `admin-clients.spec.ts` and `conexion.spec.ts` cover the steps up to the pasted OAuth address; the TradeStation exchange itself is manual.
+2. In session: MARKET BUY of a stock and BUYTOOPEN of a contract from the chain, both auto-sized from the live ask. Browser: the stock order from `new-entry.spec.ts` and `order-review.spec.ts`, the contract pick from `option-chain.spec.ts`; no browser spec sends a BUYTOOPEN yet.
+3. Fills shown; a partial exit with the bar; ALL OUT; history visible after signing in again. Browser: `order-review.spec.ts`, `posiciones.spec.ts` and `historial.spec.ts`.
+4. A pending order cancelled while the broker still allows it. Browser: `tests/e2e/posiciones.spec.ts` (a HOLD exit is cancelled and its step comes back). The product offers no cancel for an entry, so there is no entry case.
+5. Admin raises SIZE → the next entry uses it; other clients and existing orders are unchanged. Browser: `tests/e2e/acceptance.spec.ts` (admin form, then a 247-share review next to an unchanged 198-share position and an unchanged other client).
+6. A 4th entry the same day is rejected, also from another account or tab; exits still work. Browser: `tests/e2e/acceptance.spec.ts` (sequential and simultaneous from two tabs, 3/3 shown, an exit at the limit).
+7. The 30% stop acts on the remainder and survives a reconnect; a new admin % applies only to new positions. No browser spec: engine tests (`protection`, `refresh`) only.
+8. A 3rd position is rejected. Trailing unlocks only after confirmed sales. Browser: `tests/e2e/acceptance.spec.ts` (limit message on the form and on a send prepared earlier; «Activar» enabled only after step 4 is sold).
+9. The ask is read-only, cleared on contract change, and missing data is shown; the execution price comes from fills. Browser: `new-entry.spec.ts` and `option-chain.spec.ts`; no browser spec asserts a price read from the fills (`historial.spec.ts` only shows the stored fill price).
+10. A revoked token blocks entries, shows protection unverified, and reconnecting reconciles. Browser: `tests/e2e/acceptance.spec.ts` covers the blocked entries and their return once the connection row is CONNECTED again. «Sin verificar» after a revoke and the reconnect's reconciliation are engine tests only: the local simulation keeps its access token valid and the OAuth reconnect needs TradeStation.
+11. Click → send → ack → fill timestamps recorded from intents for review. SIM fills are instant, so this is not a LIVE latency estimate. No client browser spec: the engine tests cover the recorded instants, and the admin history screen (`admin-history.spec.ts`) shows each intent's stored time.
