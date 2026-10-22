@@ -1,6 +1,7 @@
 import { expect, test } from "./test.ts";
 import { type Page } from "@playwright/test";
 import { SETTLE_MS, d1, seedTradingClient, origin } from "./support.ts";
+import { openReview, send } from "./trading.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares and
@@ -24,21 +25,6 @@ async function shoot(page: Page, name: string) {
     await page.setViewportSize({ width, height });
     await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-${label}.png`, fullPage: true });
   }
-}
-
-async function openReview(page: Page, symbol: string) {
-  await page.goto(`/operar?simbolo=${symbol}`);
-  await page.getByRole("link", { name: /Revisar orden/ }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\?/);
-  await expect(page.getByRole("heading", { name: "Revisar orden" })).toBeVisible();
-  // Let the page hydrate before submitting: a native post would reload it under the assertions.
-  await page.waitForLoadState("networkidle");
-}
-
-/** Submits the review and waits until the browser is on the order's status page. */
-async function send(page: Page, button = "Enviar orden") {
-  await page.getByRole("button", { name: button }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
 }
 
 const SEND = "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=SLOW&/enviar";
