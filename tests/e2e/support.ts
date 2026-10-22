@@ -55,6 +55,18 @@ function postSeedSync(body: unknown): SeedReply {
   }
 }
 
+// wrangler dev's proxy reuses keep-alive connections to the Worker and, when workerd has already
+// closed one, answers 500 "Network connection lost" without delivering the request. It retries only
+// GET and HEAD itself, so a POST has to be resent here. Nothing ran then, and a seed is one
+// transaction, so the resend cannot apply it twice.
+const droppedByProxy = (reply: SeedReply) =>
+  reply.status === 500 && reply.text.includes("Network connection lost");
+
+function postSeed(body: unknown): SeedReply {
+  const reply = postSeedSync(body);
+  return droppedByProxy(reply) ? postSeedSync(body) : reply;
+}
+
 function checkSeedReply(reply: SeedReply): unknown {
   if (reply.status !== 200) throw new Error(`seeding failed (${reply.status}): ${reply.text}`);
   return JSON.parse(reply.text);
@@ -68,7 +80,7 @@ export function d1(sql: string): unknown[] {
     .split(/;\s*(?:\n|$)/)
     .map((statement) => statement.trim())
     .filter(Boolean);
-  const reply = checkSeedReply(postSeedSync({ target: "d1", statements }));
+  const reply = checkSeedReply(postSeed({ target: "d1", statements }));
   const results =
     typeof reply === "object" && reply !== null && "results" in reply ? reply.results : [];
   return Array.isArray(results) ? results : [];
@@ -208,12 +220,18 @@ interface EngineStatement {
 }
 
 async function seedEngine(clientId: string, statements: readonly EngineStatement[]) {
-  const response = await fetch(SEED_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ target: "engine", clientId, statements }),
-  });
-  if (!response.ok) throw new Error(`engine seeding failed (${response.status})`);
+  const send = async (): Promise<SeedReply> => {
+    const response = await fetch(SEED_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: "engine", clientId, statements }),
+    });
+    return { status: response.status, text: await response.text() };
+  };
+  // One transaction inside the object, so a resend after a request the proxy never delivered is safe.
+  let reply = await send();
+  if (droppedByProxy(reply)) reply = await send();
+  if (reply.status !== 200) throw new Error(`engine seeding failed (${reply.status})`);
 }
 
 export interface SeededOrder {
