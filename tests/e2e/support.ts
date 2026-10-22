@@ -11,6 +11,19 @@ export const authSecret = "e2e-only-secret-0123456789-0123456789";
 // Test-only seeding straight into the local D1 the dev server uses. There is no sign-up or
 // session-minting endpoint in the app, so a registered user needs a row and a signed cookie.
 export function d1(sql: string): unknown[] {
+  // The dev server's Durable Objects keep reconciling open orders and read the same D1 file, so
+  // the CLI can meet a brief SQLITE_BUSY lock; it is safe to run the statement again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return runD1(sql);
+    } catch (error) {
+      if (attempt === 5 || !String(error).includes("SQLITE_BUSY")) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300 * attempt);
+    }
+  }
+}
+
+function runD1(sql: string): unknown[] {
   const output = execFileSync(
     "node_modules/.bin/wrangler",
     ["d1", "execute", "DB", "--local", "--json", "--command", sql],
