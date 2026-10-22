@@ -108,6 +108,24 @@ describe("CREDENTIALS_KEY rotation", () => {
     expect(JSON.stringify(events)).toContain("KEY_UNKNOWN");
   });
 
+  it("opens a legacy unsaved token, saved without a keyId, with the row's key_id", async () => {
+    const client = await clientSealedWith(OLD_KEY);
+    const sealer = await createCipher(OLD_KEY);
+    const UNSAVED = "unsaved-refresh-token-SHOULD-NEVER-LEAK";
+    const row = await rowOf(client.userId);
+    const tokenEnc = await sealer.encrypt(UNSAVED, `${client.userId}:refresh_token`);
+    await runInDurableObject(client.stub, (_instance, state) => {
+      state.storage.kv.put("unsaved_refresh_token", {
+        tokenEnc,
+        replaces: String(row?.refresh_token_enc),
+      });
+    });
+
+    expect((await refreshWith(client, OLD_KEY)).outcome.kind).toBe("ready");
+    const sent = vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body;
+    expect(String(sent)).toContain(UNSAVED);
+  });
+
   it("puts no key material, secret or token in events", async () => {
     for (const key of [OLD_KEY, STRANGER_KEY]) {
       const { events } = await refreshWith(await clientSealedWith(key), OLD_KEY);
