@@ -77,13 +77,17 @@ Order: `bunx wrangler d1 migrations apply DB --remote`, then the engine Worker, 
 
 ## Reading the audit log and history
 
-- `/admin/auditoria`, `/admin/operativa` and `/admin/historial` are **not built** yet ([screens-and-flows.md](screens-and-flows.md#admin)). Until they are, read the audit log in D1. It stores no secrets (`at` is epoch milliseconds):
+- Read-only admin pages (admins only; [screens-and-flows.md](screens-and-flows.md#admin)):
+  - `/admin/auditoria`: the audit log, 50 per page, newest first, with actor, action, target, time and before → after. Filters by actor, action, target and dates (New York days) combine. Credential-like values are masked.
+  - `/admin/operativa`: every client's connection state, open positions, pending orders, protection and UNKNOWN orders, as each client's engine reports them. A client whose engine does not answer shows «No disponible» and the others still show. Nothing can be sent or cancelled from it.
+  - `/admin/historial`: orders and events across clients, 25 orders per page. Filters by client, account, symbol, state, type and dates. Events come with the first page only. A client whose engine fails is listed in an alert.
+- Fallback if the admin pages are unavailable: read the audit log in D1. It stores no secrets (`at` is epoch milliseconds):
 
   ```sh
   bunx wrangler d1 execute DB --remote --command "SELECT datetime(at/1000,'unixepoch') AS at_utc, actor_id, action, target_user_id, before_json, after_json FROM audit_log ORDER BY at DESC LIMIT 50"
   ```
 
-- Orders, fills and events live in each client's Durable Object, not in D1. The client sees them in `/historial`. There is no admin view across clients yet.
+- Orders, fills and events live in each client's Durable Object, not in D1. The client sees theirs in `/historial`; the admin sees all clients in `/admin/historial`.
 - Retention: 6 years for orders, fills, events and audit, and no deletion code exists (D22 in [decisions.md](decisions.md)). Do not delete rows by hand.
 - D1 backup: Time Travel restore is **not verified** in this project; check the Cloudflare D1 documentation before relying on it.
 
@@ -94,12 +98,12 @@ What the engine does on its own is in [order-lifecycle.md](order-lifecycle.md#de
 | Situation | Automatic behavior | Admin checks |
 | --- | --- | --- |
 | Client's connection `expired` or `revoked` (the key's 24 h lifetime ended, or TradeStation refused the refresh) | Entries blocked, positions `unverified`, no further refresh until reconnect. Exits and cancels are not blocked by the hold | Ask the client to press «Reconectar con TradeStation». After reconnecting, entries stay blocked until the sync loop reconciles |
-| `reconciliation_pending` (after a failed refresh, connect or disconnect) | Entries blocked. Only a successful reconciliation (`markReconciled`) lifts it | Wait a sync tick with the app open. If it persists, check the connection status on `/admin/clientes/[id]` (the connection section is **not built**, #35) and ask the client to reconnect |
+| `reconciliation_pending` (after a failed refresh, connect or disconnect) | Entries blocked. Only a successful reconciliation (`markReconciled`) lifts it | Wait a sync tick with the app open. If it persists, check the connection status on `/admin/clientes/[id]` or `/admin/operativa` and ask the client to reconnect |
 | UNKNOWN order (timeout or unclear answer on place) | Never retried. Both reservations held and the position `unverified` until reconciliation matches it to a broker order by `OrderID` or `OrderConfirmID`. Several candidates stay UNKNOWN and log `reconcile.ambiguous` | Do not tell the client to resend. Ask them to check the order in TradeStation; the next reconciliation resolves it. A persistent one is escalated to the owner |
 | TradeStation outage (5xx, timeouts) | `sync.broker_error`: entries blocked, retried every tick, `sync.recovered` lifts the hold | Check TradeStation's status page; nothing to do |
 | 429 | `sync.rate_limited`: waits the reset time from `X-RateLimit-Reset`; the order is not placed and the reservation is released | Limits are per client key; repeated 429s point to something polling too often |
 
-Events are listed per client in `/historial`. Server-side logs: `bunx wrangler tail reel-engine` (logs events, never secrets).
+Events are listed per client in `/historial` and across clients in `/admin/historial`. Server-side logs: `bunx wrangler tail reel-engine` (logs events, never secrets).
 
 **Not built or not verified:** stop and trailing protection (#28, #29), so `unverified` is shown but no server stop is monitored yet; the SIM spike (#21, `bun run spike`) has not produced results, so the refused-refresh answer, token lifetime counting and several order behaviors are unconfirmed ([tradestation-integration.md](tradestation-integration.md#spike-checklist-sim-regular-session)).
 
