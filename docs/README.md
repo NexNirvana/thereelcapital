@@ -13,6 +13,7 @@ Engineering reference for `thereelcapital.com`: an invitation-only terminal wher
 | [design-system.md](design-system.md) | tokens, type, shell, components |
 | [screens-and-flows.md](screens-and-flows.md) | client and admin routes |
 | [test-plan.md](test-plan.md) | test layers, cases, SIM acceptance |
+| [runbook.md](runbook.md) | operating the pilot: admin recovery, secrets, deploys, incidents |
 | [decisions.md](decisions.md) | superseded rules, product and technical decisions |
 | [open-questions.md](open-questions.md) | what is still undecided or unverified |
 
