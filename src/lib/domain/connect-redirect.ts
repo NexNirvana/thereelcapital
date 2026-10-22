@@ -29,13 +29,16 @@ const ALLOWED_PARAMS: ReadonlySet<string> = new Set([
 ]);
 
 /** Reads the address the client copied from the browser bar after authorizing. */
-export function parsePastedRedirect(pasted: string): PastedRedirect {
+export function parsePastedRedirect(
+  pasted: string,
+  redirectUri: string = PASTE_REDIRECT_URI,
+): PastedRedirect {
   const text = pasted.trim();
   if (text.length === 0 || text.length > MAX_PASTE_LENGTH || !URL.canParse(text)) {
     return { ok: false, reason: "MALFORMED" };
   }
   const url = new URL(text);
-  const expected = new URL(PASTE_REDIRECT_URI);
+  const expected = new URL(redirectUri);
   const foreign =
     url.origin !== expected.origin ||
     url.username !== "" ||

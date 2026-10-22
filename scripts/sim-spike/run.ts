@@ -17,6 +17,7 @@ export interface Options {
   readonly steps: readonly string[];
   readonly confirmSimOrders: boolean;
   readonly port: number;
+  readonly paste: boolean;
   readonly symbol: string;
   readonly account: string | undefined;
 }
@@ -27,9 +28,11 @@ export function parseArgs(argv: readonly string[]): Options | string {
   const flags = new Map<string, string>();
   const positional: string[] = [];
   let confirmSimOrders = false;
+  let paste = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? "";
     if (arg === "--confirm-sim-orders") confirmSimOrders = true;
+    else if (arg === "--paste") paste = true;
     else if (arg === "--port" || arg === "--symbol" || arg === "--account") {
       const value = argv[i + 1];
       if (value === undefined) return `${arg} needs a value`;
@@ -50,6 +53,7 @@ export function parseArgs(argv: readonly string[]): Options | string {
     steps: all ? stepNames : stepNames.filter((name) => positional.includes(name)),
     confirmSimOrders,
     port,
+    paste,
     symbol,
     account: flags.get("--account"),
   };
@@ -95,7 +99,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const options = parseArgs(argv);
   if (typeof options === "string") {
     console.error(
-      `${options}\nusage: bun run spike [step|all] [--confirm-sim-orders] [--port N] [--symbol F] [--account ID]`,
+      `${options}\nusage: bun run spike [step|all] [--confirm-sim-orders] [--port N] [--paste] [--symbol F] [--account ID]`,
     );
     return 2;
   }
@@ -137,7 +141,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   log(
     `SIM only. Callback: ${callbackUrl(options.port)} (allowed by default on ports 80, 3000, 3001, 8080 and 31022; any other port must be added to the key).`,
   );
-  await session.login({ port: options.port, client, log });
+  await session.login({ port: options.port, paste: options.paste, client, log });
   log("Logged in. Tokens stay in memory.");
 
   const context: StepContext = {

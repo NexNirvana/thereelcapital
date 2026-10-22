@@ -20,6 +20,11 @@ describe("parseArgs", () => {
     });
   });
 
+  test("reads --paste and leaves it off by default", () => {
+    expect(parseArgs(["--paste"])).toMatchObject({ paste: true });
+    expect(parseArgs([])).toMatchObject({ paste: false });
+  });
+
   test("rejects unknown steps and options", () => {
     expect(typeof parseArgs(["nope"])).toBe("string");
     expect(typeof parseArgs(["--live"])).toBe("string");
