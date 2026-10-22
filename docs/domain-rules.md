@@ -68,6 +68,7 @@ Expected results, steps pressed in order (encode as unit tests):
 
 - `stopLevel = avg_entry_price × (1 − stop_pct / 100)`, using the average fill price (premium for options) and the `stop_pct` stored on the position at open.
 - It triggers when a fresh bid ≤ `stopLevel`, and then sells `available` at MARKET.
+- The engine holds it (D36): the DO checks fresh bids on the sync tick and sends the MARKET sell through the sell ledger; no broker stop order exists. A stop exit never consumes an entry and limits never block it.
 - It is a trigger, not a loss guarantee; the UI copy says so.
 
 ## 8. Trailing
@@ -75,7 +76,7 @@ Expected results, steps pressed in order (encode as unit tests):
 - Eligible iff `sold_qty / original_qty ≥ trailing_unlock_pct / 100` and `original_qty − sold_qty > 0`, using the `trailing_unlock_pct` stored on the position.
 - `trailing_pct` must be one of {1, 5, 8, 10, 15, 20} (default 10). The admin's `stop_pct` must be within 10–50 and `trailing_unlock_pct` within 30–90; all of these live in one config module ([product-spec.md](product-spec.md#parameters)). The bounds are checked when a value is **written** (admin settings, activation). When a rule is **evaluated**, the value stored on the position is trusted even if the bounds changed since; only a value that cannot be a percentage (not a whole number from 1 to 99) is rejected as corrupt.
 - On manual activation: `peak = fresh bid`. On each fresh quote: `peak = max(peak, bid)`, `trailLevel = max(trailLevel, peak × (1 − trailing_pct / 100))`.
-- Effective exit level = `max(stopLevel, trailLevel)`. When the bid ≤ effective level, sell `available` at MARKET.
+- Effective exit level = `max(stopLevel, trailLevel)`. When the bid ≤ effective level, the engine (D36) sells `available` at MARKET through the same exit path as the stop.
 
 ## 9. Adding to a position
 

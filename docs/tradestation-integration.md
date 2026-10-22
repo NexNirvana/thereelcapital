@@ -92,15 +92,15 @@ The TradeStation implementation of the `BrokerAdapter` interface ([architecture.
 - **SIM account guard.** The docs name no marker that tells a SIM account from a live one (**verify** in #21 whether SIM accounts have a recognizable `AccountID` pattern). So before any `orderconfirm`, place or cancel, the account must appear in `GET /brokerage/accounts` fetched through the SIM host and be active Cash or Margin; the list is cached and refetched once when an id is missing. Otherwise the call is `Rejected` with `ACCOUNT_NOT_SIM` and nothing is sent. Together with the construction check this means an order request needs a SIM base URL, `SIM` mode and a SIM-listed account.
 - **Wiring.** `makeTradeStationAdapter(config)` builds the SIM adapter and `tradeStationLayer(config)` provides it as an Effect service (failing with `SimOnlyRefused` when SIM cannot be proven). `engine/src/broker/provider.ts` (`resolveBroker`) is what the Durable Object calls, once per instance: TradeStation SIM in production, and the local simulation only with an explicit `BROKER=local-sim` in `development` or `test` (`broker/select.ts`).
 
-## Native protection (decision pending the spike)
+## Protection (engine-held, D36)
 
-v3 supports `StopMarket`, and a percent/amount trailing stop via `AdvancedOptions.TrailingStop` on a `StopMarket` order. The spec examples are equities; support for **options** in regular-session DAY/GTC is **(verify)**. GTC orders live at most 90 days.
+Stops and trailing are held by the engine: on each sync tick the DO compares fresh bids with the effective exit level and sends a MARKET sell of `available` through the normal exit path. No `StopMarket` or trailing `StopMarket` order is placed at the broker, so there is never more than one working sell per position. Protection depends on our uptime and the client's token, which is why the DO exposes one `protection_state` the UI shows as is:
 
-Two designs; the spike decides:
-1. **Broker-hosted**: a working StopMarket (later a trailing StopMarket) for the remaining qty. It survives our outages, but every scale-out must first cancel/replace it so the sum of working sells never exceeds the position.
-2. **Server-monitored**: the DO alarm compares fresh quotes with the levels and sends a MARKET close. Simpler order book, but protection depends on our uptime and token.
+- `verified`: the engine has a fresh quote and a valid token and is actively monitoring.
+- `unverified`: the quote is stale, the token expired or failing, or the engine cannot monitor.
+- `none`: no protection applies (no open position or nothing to protect).
 
-Until decided, the DO exposes one `protection_state` (`verified` / `unverified` / `none`) that the UI shows either way.
+Future work only: v3 supports `StopMarket` and `AdvancedOptions.TrailingStop` (spec examples are equities; option support is **(verify)** in spike #21, GTC orders live at most 90 days). A broker-held stop could be added later if SIM supports it; it would need every scale-out to cancel/replace it.
 
 ## Limits and streams
 
