@@ -2,6 +2,12 @@
 
 Engineering reference for `thereelcapital.com`: an invitation-only terminal where clients trade equities and long options in their own TradeStation accounts with their own API key, MARKET orders only, regular session only, SIM first.
 
+## How to read these docs
+
+Start with [product-spec.md](product-spec.md) for what the product is, then [architecture.md](architecture.md) for how it is built. Open the other docs when you touch their area: each rule has one owning doc, and the others link to it instead of restating it. [decisions.md](decisions.md) explains why a rule is what it is; [open-questions.md](open-questions.md) lists what is still unverified. Facts that are not confirmed against the broker are marked **(verify)**.
+
+## The docs
+
 | Doc | Covers |
 | --- | --- |
 | [product-spec.md](product-spec.md) | purpose, roles, parameters, scope, journey, modes |
@@ -9,13 +15,13 @@ Engineering reference for `thereelcapital.com`: an invitation-only terminal wher
 | [order-lifecycle.md](order-lifecycle.md) | intents, idempotency, atomicity, the sell ledger, reconciliation, degraded states |
 | [architecture.md](architecture.md) | Workers, Durable Object, data model, repo layout, config and deploy |
 | [auth-and-security.md](auth-and-security.md) | Better Auth setup and its gaps, flows, sessions, secrets, isolation |
-| [tradestation-integration.md](tradestation-integration.md) | OAuth, tokens, endpoints, order body, status mapping, limits, spike checklist |
+| [tradestation-integration.md](tradestation-integration.md) | OAuth, tokens, endpoints, order body, status mapping, engine-held protection, limits, spike checklist and tooling |
 | [design-system.md](design-system.md) | tokens, type, shell, components |
 | [screens-and-flows.md](screens-and-flows.md) | client and admin routes |
 | [test-plan.md](test-plan.md) | test layers, cases, SIM acceptance |
-| [runbook.md](runbook.md) | operating the pilot: admin recovery, secrets, deploys, incidents |
-| [decisions.md](decisions.md) | superseded rules, product and technical decisions |
-| [open-questions.md](open-questions.md) | what is still undecided or unverified |
+| [runbook.md](runbook.md) | operating the pilot: admin recovery, secrets, deploys, connecting a client's key, broker and CI incidents |
+| [decisions.md](decisions.md) | superseded rules (D1–D14), product decisions (D18 onward), technical decisions (T1 onward) |
+| [open-questions.md](open-questions.md) | what is still undecided or unverified (answered items move to decisions.md) |
 
 ## Precedence
 
@@ -24,6 +30,17 @@ Engineering reference for `thereelcapital.com`: an invitation-only terminal wher
 3. These docs.
 4. The PDFs, superseded where they conflict ([decisions.md](decisions.md)).
 5. The demo HTMLs, for interaction ideas only.
+
+## Elsewhere in the repository
+
+| Path | What it is |
+| --- | --- |
+| [`ONBOARDING.md`](../ONBOARDING.md) | the owner's confirmed decisions (Spanish); first in the precedence order |
+| [`CLAUDE.md`](../CLAUDE.md) | short orientation and the non-negotiable rules for coding agents |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | workflow, review gate, commit format, hooks, code guidelines |
+| `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` | review rules, general and scoped by path; the local reviewer reads them |
+| `.claude/skills/*/SKILL.md` | task checklists for agents (`reel-trading`, `tradestation-integration`, `reel-design-system`, `reel-security-review`); they point to these docs |
+| [`engine/test/fixtures/README.md`](../engine/test/fixtures/README.md) | where each TradeStation test fixture comes from |
 
 ## Source files
 

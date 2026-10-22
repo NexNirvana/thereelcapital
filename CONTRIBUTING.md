@@ -1,5 +1,15 @@
 # Contributing
 
+## Contents
+
+- [Setup](#setup)
+- [TradeStation: SIM only](#tradestation-sim-only)
+- [Workflow](#workflow): branches, pull requests, verification and screenshots, review gate, organizing commits
+- [CI and repository settings](#ci-and-repository-settings): CI runners, branch rulesets, self-hosted runner
+- [Commit messages](#commit-messages)
+- [Hooks](#hooks)
+- [Code guidelines](#code-guidelines)
+
 ## Setup
 
 ```sh
@@ -41,58 +51,6 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 - Keep the branch current by rebasing on `main` (`git rebase origin/main`), never by merging `main` into it.
 - Behavior changes update the relevant `docs/` file in the same PR.
 - Merge with **Rebase and merge**. Each commit lands on `main` exactly as organized, and history stays linear. The branch is deleted on merge.
-
-### CI runners
-
-Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` and `guards` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` and `guards` always run on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
-
-### Branch rulesets
-
-GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
-
-- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e` and `build` (`.github/workflows/ci.yml`, which runs the pull request's own code), `guards` (`.github/workflows/policy.yml`) and `review-gate` (`.github/workflows/review-gate.yml`, see the review gate below) passing, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin's bypass (`bypass_mode: pull_request`) applies only to merging through a pull request, and it covers every rule that gates that merge: when the admin explicitly chooses to bypass, the pull request requirement, unresolved review threads and the required status checks can all be skipped. It never covers force-push or deletion protection.
-
-`guards` runs on `pull_request_target`, so GitHub uses the base branch's copy of `policy.yml` and a pull request cannot weaken it. It checks out only the base commit, fetches the pull request's commits as data, and runs the base branch's `.githooks/` scripts over them. It never builds or executes pull request code and uses no secrets. A change to `policy.yml` or `.githooks/` takes effect for other pull requests once it is on `main`, and does not apply to its own pull request.
-- `pr-assets`: no force push, no deletion. Normal pushes are allowed.
-- `feature/*`, `fix/*` and `hotfix/*` are unrestricted, since they are force-pushed during review. Branch names are checked by the `pre-push` hook (a GitHub name-pattern rule would also block bot-created branches).
-
-The repository is public, which is what makes rulesets available on the `NexNirvana` organization's GitHub Free plan (a private repository would need GitHub Team). Never commit anything private: secrets stay in `.env`/`.dev.vars` and Worker secrets.
-
-Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as a repo admin:
-
-```sh
-bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
-```
-
-### Self-hosted runner
-
-CI can optionally run on the owner's machine (`scripts/ci-runner/`) to speed up pull requests. `.github/workflows/ci.yml` picks the runner from the repository variable `CI_RUNNER` (a JSON label array); unset, everything runs on GitHub-hosted runners.
-
-Safety model:
-
-- The runners (`reel-local-1..N`, labels `self-hosted,linux,x64,reel-local`) run as the unprivileged system user `ghrunner`, whose home is mode 700 and separate from the owner's account, so jobs cannot read the owner's secrets (`.env`, Cloudflare and other logins).
-- Only same-repo pull requests and pushes use them: `ci.yml` gates each job on the head repository, and fork pull requests, `deploy` and other secret-using jobs stay on GitHub-hosted runners. `toggle.sh on` refuses while `ci.yml` on `main` has no such gate.
-- The repository setting "Require approval for all outside collaborators" is on (`gh api repos/NexNirvana/thereelcapital/actions/permissions/fork-pr-contributor-approval` returns `all_external_contributors`).
-- `setup.sh` runs under `sudo` but fetches the registration token through `gh` as the invoking user, so `ghrunner` never holds a GitHub admin token. The token is passed to `config.sh` as an argument, so it is visible in `ps` for a moment; it expires after an hour and only registers a runner.
-- A job on the runner is still code from this repository running on the owner's machine: review pull requests from collaborators before CI runs them.
-
-Commands (`--dry-run` on the first and last prints every privileged action without running it):
-
-```sh
-sudo scripts/ci-runner/setup.sh [--count 4]   # install and start the runners (idempotent)
-scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the machine (refuses unless a reel-local runner is online)
-scripts/ci-runner/toggle.sh status            # CI_RUNNER value and each reel-local runner's status
-scripts/ci-runner/toggle.sh off               # deletes CI_RUNNER: CI uses GitHub-hosted runners
-scripts/ci-runner/toggle.test.sh              # test toggle.sh with a fake gh (also part of bun run test:unit)
-scripts/ci-runner/setup.test.sh               # check the service setup.sh would install, via --dry-run (also part of bun run test:unit)
-sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
-```
-
-If gh keeps its token in the desktop keyring (`gh auth status` says `(keyring)`), `sudo` can't reach it and GitHub answers 401: pass it explicitly with `sudo GH_TOKEN="$(gh auth token)" scripts/ci-runner/setup.sh` (and the same for `uninstall.sh`). The token is removed from the environment at once and handed only to the `gh` call that fetches the short-lived runner token (through `sudo --preserve-env`, never on a command line), so the runner user never inherits it.
-
-While `CI_RUNNER` is on, the machine is running CI: run browser tests locally only for specific specs with `--workers=2` at most, never the full suite (that runs in CI). Overloading the machine makes `wrangler dev` drop requests and slows every shard.
-
-Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N` running the runner's own `bin/runsvc.sh` under `supervise-daemon`, logging to `/var/log/gh-runner-N.log`. If a service was stopped while its listener lived on (jobs failing with `Missing file at path: .../_work/_temp/...`, or `toggle.sh status` showing more than one listener for a runner), run `sudo scripts/ci-runner/setup.sh`: it stops each service, ends leftover processes of that runner (found by working directory) and starts it again; `toggle.sh on` refuses while any runner has more than one listener (a stopped runner reads as unknown and is skipped). The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
 
 ### Verification and screenshots
 
@@ -148,6 +106,60 @@ refactor(domain): extract position quantities into a ledger type
 feat(domain): compute scale-out quantities with cumulative rounding
 feat(domain): mark zero-quantity steps as done without an order
 ```
+
+## CI and repository settings
+
+### CI runners
+
+Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` and `guards` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` and `guards` always run on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
+
+### Branch rulesets
+
+GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
+
+- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e` and `build` (`.github/workflows/ci.yml`, which runs the pull request's own code), `guards` (`.github/workflows/policy.yml`) and `review-gate` (`.github/workflows/review-gate.yml`, see the review gate below) passing, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin's bypass (`bypass_mode: pull_request`) applies only to merging through a pull request, and it covers every rule that gates that merge: when the admin explicitly chooses to bypass, the pull request requirement, unresolved review threads and the required status checks can all be skipped. It never covers force-push or deletion protection.
+
+- `pr-assets`: no force push, no deletion. Normal pushes are allowed.
+- `feature/*`, `fix/*` and `hotfix/*` are unrestricted, since they are force-pushed during review. Branch names are checked by the `pre-push` hook (a GitHub name-pattern rule would also block bot-created branches).
+
+The repository is public, which is what makes rulesets available on the `NexNirvana` organization's GitHub Free plan (a private repository would need GitHub Team). Never commit anything private: secrets stay in `.env`/`.dev.vars` and Worker secrets.
+
+`guards` runs on `pull_request_target`, so GitHub uses the base branch's copy of `policy.yml` and a pull request cannot weaken it. It checks out only the base commit, fetches the pull request's commits as data, and runs the base branch's `.githooks/` scripts over them. It never builds or executes pull request code and uses no secrets. A change to `policy.yml` or `.githooks/` takes effect for other pull requests once it is on `main`, and does not apply to its own pull request.
+Apply or re-apply them (idempotent, by ruleset name) with `gh` authenticated as a repo admin:
+
+```sh
+bun run scripts/apply-rulesets.ts NexNirvana/thereelcapital
+```
+
+### Self-hosted runner
+
+CI can optionally run on the owner's machine (`scripts/ci-runner/`) to speed up pull requests. `.github/workflows/ci.yml` picks the runner from the repository variable `CI_RUNNER` (a JSON label array); unset, everything runs on GitHub-hosted runners.
+
+Safety model:
+
+- The runners (`reel-local-1..N`, labels `self-hosted,linux,x64,reel-local`) run as the unprivileged system user `ghrunner`, whose home is mode 700 and separate from the owner's account, so jobs cannot read the owner's secrets (`.env`, Cloudflare and other logins).
+- Only same-repo pull requests and pushes use them: `ci.yml` gates each job on the head repository, and fork pull requests, `deploy` and other secret-using jobs stay on GitHub-hosted runners. `toggle.sh on` refuses while `ci.yml` on `main` has no such gate.
+- The repository setting "Require approval for all outside collaborators" is on (`gh api repos/NexNirvana/thereelcapital/actions/permissions/fork-pr-contributor-approval` returns `all_external_contributors`).
+- `setup.sh` runs under `sudo` but fetches the registration token through `gh` as the invoking user, so `ghrunner` never holds a GitHub admin token. The token is passed to `config.sh` as an argument, so it is visible in `ps` for a moment; it expires after an hour and only registers a runner.
+- A job on the runner is still code from this repository running on the owner's machine: review pull requests from collaborators before CI runs them.
+
+Commands (`--dry-run` on the first and last prints every privileged action without running it):
+
+```sh
+sudo scripts/ci-runner/setup.sh [--count 4]   # install and start the runners (idempotent)
+scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the machine (refuses unless a reel-local runner is online)
+scripts/ci-runner/toggle.sh status            # CI_RUNNER value and each reel-local runner's status
+scripts/ci-runner/toggle.sh off               # deletes CI_RUNNER: CI uses GitHub-hosted runners
+scripts/ci-runner/toggle.test.sh              # test toggle.sh with a fake gh (also part of bun run test:unit)
+scripts/ci-runner/setup.test.sh               # check the service setup.sh would install, via --dry-run (also part of bun run test:unit)
+sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
+```
+
+If gh keeps its token in the desktop keyring (`gh auth status` says `(keyring)`), `sudo` can't reach it and GitHub answers 401: pass it explicitly with `sudo GH_TOKEN="$(gh auth token)" scripts/ci-runner/setup.sh` (and the same for `uninstall.sh`). The token is removed from the environment at once and handed only to the `gh` call that fetches the short-lived runner token (through `sudo --preserve-env`, never on a command line), so the runner user never inherits it.
+
+While `CI_RUNNER` is on, the machine is running CI: run browser tests locally only for specific specs with `--workers=2` at most, never the full suite (that runs in CI). Overloading the machine makes `wrangler dev` drop requests and slows every shard.
+
+Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N` running the runner's own `bin/runsvc.sh` under `supervise-daemon`, logging to `/var/log/gh-runner-N.log`. If a service was stopped while its listener lived on (jobs failing with `Missing file at path: .../_work/_temp/...`, or `toggle.sh status` showing more than one listener for a runner), run `sudo scripts/ci-runner/setup.sh`: it stops each service, ends leftover processes of that runner (found by working directory) and starts it again; `toggle.sh on` refuses while any runner has more than one listener (a stopped runner reads as unknown and is skipped). The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
 
 ## Commit messages
 

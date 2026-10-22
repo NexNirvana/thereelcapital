@@ -4,7 +4,7 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 
 ## Product (user decides)
 
-1–5, 13. Decided on 2026-10-21: trailing set and bounds, adding to a position, retention and budget; no email (activation links shared by the admin); and the recovery and activation redemption rate limits. See [decisions.md](decisions.md) (D19–D22, D25, D28).
+None open. Questions 1–5 and 13 were decided on 2026-10-21 (trailing set and bounds, adding to a position, retention and budget, no email, redemption rate limits): see D19–D22, D25 and D28 in [decisions.md](decisions.md).
 
 ## TradeStation (SIM spike)
 
@@ -16,4 +16,4 @@ Each item is tracked as a GitHub issue. Answered items move to [decisions.md](de
 11. Behavior of an option at expiry, and the resulting positions.
 12. Which rate-limit numbers apply (250 vs 320 / 5 min).
 
-Timing values: decided (D33 in [decisions.md](decisions.md)).
+Timing values are decided: D33 in [decisions.md](decisions.md).
