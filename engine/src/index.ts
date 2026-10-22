@@ -82,13 +82,22 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
-    this.#alarms = new AlarmScheduler(ctx.storage);
+    this.#alarms = new AlarmScheduler(ctx.storage, () => this.#now());
     // Built before the first request is served, so every RPC sees the full schema.
     void ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage);
       // The Durable Object (re)started: reconcile at once if anything is open or pending.
-      if (syncWanted(ctx.storage)) await this.#alarms.scheduleNoLater("sync", Date.now());
+      if (syncWanted(ctx.storage)) await this.#alarms.scheduleNoLater("sync", this.#now());
     });
+  }
+
+  /**
+   * The wall clock of everything scheduled: alarm due times, retries, token expiry and event
+   * stamps. It is deliberately not `engineNow`: a pinned TEST_NOW never advances, so alarm times
+   * built on it would never come due and would stall the sync loop (clock.ts).
+   */
+  #now(): number {
+    return Date.now();
   }
 
   ping(): string {
@@ -113,7 +122,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       if (result.ok && result.value.status === "PLACED") {
         await this.#alarms.scheduleNoLater(
           "sync",
-          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+          this.#now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
         );
       }
       return result;
@@ -131,7 +140,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       if (result.nextInMs !== null) {
         await this.#alarms.scheduleNoLater(
           "sync",
-          Date.now() + syncDelayMs(this.env, result.nextInMs),
+          this.#now() + syncDelayMs(this.env, result.nextInMs),
         );
       }
       return success({ reconciled: result.reconciled });
@@ -181,7 +190,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         // The loop watches the fill; it must be running while an exit is pending.
         await this.#alarms.scheduleNoLater(
           "sync",
-          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+          this.#now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
         );
       }
       return result;
@@ -195,7 +204,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       if (result.ok && result.value.status === "REQUESTED") {
         await this.#alarms.scheduleNoLater(
           "sync",
-          Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+          this.#now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
         );
       }
       return result;
@@ -277,7 +286,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           // One tick from now, so the first read does not race the connection settling.
           await this.#alarms.scheduleNoLater(
             "sync",
-            Date.now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
+            this.#now() + syncDelayMs(this.env, SYNC_INTERVAL_MS),
           );
         }
         return result;
@@ -290,14 +299,14 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    * reschedules itself, then the alarm is armed for the earliest remaining time.
    */
   async alarm(): Promise<void> {
-    for (const task of this.#alarms.due(Date.now())) {
+    for (const task of this.#alarms.due(this.#now())) {
       const scheduledFor = this.#alarms.dueAt(task);
       try {
         await this.runTask(task);
       } catch {
         // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
         this.log("error", "SIM", "alarm.task_failed", task);
-        await this.#alarms.schedule(task, Date.now() + REFRESH_RETRY_DELAY_MS);
+        await this.#alarms.schedule(task, this.#now() + REFRESH_RETRY_DELAY_MS);
         continue;
       }
       // A job that did not reschedule itself is finished; leaving it due would re-fire at once.
@@ -316,7 +325,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         if (outcome.kind === "ready") await this.scheduleRefresh(tokens.nextRefreshAt());
         // A refusal or a missing connection waits for a reconnect, which arms the alarm again.
         else if (outcome.kind === "retryable") {
-          await this.scheduleRefresh(Date.now() + REFRESH_RETRY_DELAY_MS);
+          await this.scheduleRefresh(this.#now() + REFRESH_RETRY_DELAY_MS);
         }
         return;
       }
@@ -327,7 +336,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         const result = await this.syncOnce({ ...ctx, broker });
         await this.#alarms.schedule(
           "sync",
-          result.nextInMs === null ? null : Date.now() + syncDelayMs(this.env, result.nextInMs),
+          result.nextInMs === null ? null : this.#now() + syncDelayMs(this.env, result.nextInMs),
         );
         return;
       }
@@ -411,7 +420,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     const resolved = resolveBroker({
       settings: this.env,
       userId: ctx.userId,
-      now: () => Date.now(),
+      now: () => this.#now(),
       accessToken: async () => {
         const access = await ctx.tokens.accessToken();
         return access.ok ? { ok: true, token: access.token } : { ok: false };
@@ -476,7 +485,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       db: this.env.DB,
       userId,
       cipher: () => createCipher(this.env.CREDENTIALS_KEY, this.env.CREDENTIALS_KEY_PREVIOUS),
-      clock: () => Date.now(),
+      clock: () => this.#now(),
       retryDelayMs: REFRESH_REQUEST_RETRY_DELAY_MS,
     });
     return this.#tokens;
@@ -487,7 +496,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   private log(level: "info" | "warn" | "error", mode: Mode, type: string, method: string): void {
-    writeEvent(this.ctx.storage.sql, Date.now(), {
+    writeEvent(this.ctx.storage.sql, this.#now(), {
       mode,
       level,
       type,

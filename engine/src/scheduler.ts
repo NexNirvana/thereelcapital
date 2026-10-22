@@ -8,7 +8,11 @@ const TASKS: readonly AlarmTask[] = ["refresh", "sync"];
 const dueKey = (task: AlarmTask) => `alarm_due:${task}`;
 
 export class AlarmScheduler {
-  constructor(private readonly storage: DurableObjectStorage) {}
+  constructor(
+    private readonly storage: DurableObjectStorage,
+    /** The wall clock the real alarm runs on. */
+    private readonly now: () => number,
+  ) {}
 
   /** When the task is next due; null when it is not scheduled. */
   dueAt(task: AlarmTask): number | null {
@@ -42,6 +46,6 @@ export class AlarmScheduler {
   async arm(): Promise<void> {
     const times = TASKS.map((task) => this.dueAt(task)).filter((at) => at !== null);
     if (times.length === 0) await this.storage.deleteAlarm();
-    else await this.storage.setAlarm(Math.max(Math.min(...times), Date.now()));
+    else await this.storage.setAlarm(Math.max(Math.min(...times), this.now()));
   }
 }

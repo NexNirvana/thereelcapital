@@ -3,7 +3,9 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { AlarmScheduler } from "../src/scheduler.ts";
 
-const FAR = Date.now() + 60 * 60 * 1000;
+// A fixed clock: the scheduler only ever sees the instant it is given.
+const NOW = Date.parse("2030-01-01T15:00:00Z");
+const FAR = NOW + 60 * 60 * 1000;
 
 /** Each test gets its own Durable Object so alarms and KV never leak between them. */
 let counter = 0;
@@ -13,7 +15,7 @@ async function withScheduler<T>(
   const stub = env.COORDINATOR.getByName(`scheduler-${++counter}`);
   await stub.ping();
   return runInDurableObject(stub, (_instance, state) =>
-    body(new AlarmScheduler(state.storage), state),
+    body(new AlarmScheduler(state.storage, () => NOW), state),
   );
 }
 
@@ -73,7 +75,6 @@ describe("AlarmScheduler", () => {
   });
 
   it("arms an overdue job for now, not for the past", async () => {
-    const before = Date.now();
     // An alarm armed for now would fire at once and clear itself before it could be read back, so
     // record the time the scheduler asks for and park the real alarm an hour away.
     const armed: number[] = [];
@@ -90,9 +91,8 @@ describe("AlarmScheduler", () => {
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
-      await new AlarmScheduler(recording).schedule("sync", 1);
+      await new AlarmScheduler(recording, () => NOW).schedule("sync", 1);
     });
-    expect(armed).toHaveLength(1);
-    expect(armed[0]).toBeGreaterThanOrEqual(before);
+    expect(armed).toEqual([NOW]);
   });
 });
