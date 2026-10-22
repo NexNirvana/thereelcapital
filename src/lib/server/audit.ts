@@ -16,7 +16,7 @@ export interface AuditEntry {
 }
 
 // Tripwire for the day someone passes a whole row: a key that names a credential is a bug.
-const credentialKey =
+export const credentialKey =
   /secret|token|password|pwd|otp|passkey|credential|authorization|cookie|bearer|recovery|code_?hash|private|api_?key/i;
 
 function assertNoCredentials(value: unknown, path = "$"): void {
