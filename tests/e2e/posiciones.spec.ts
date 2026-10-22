@@ -1,6 +1,6 @@
 import { expect, test } from "./test.ts";
-import { type Page } from "@playwright/test";
-import { seedTradingClient } from "./support.ts";
+import { type Locator, type Page } from "@playwright/test";
+import { SETTLE_MS, seedTradingClient } from "./support.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares:
@@ -31,11 +31,24 @@ async function openPosition(page: Page, symbol: string, shares: string) {
   await page.goto(`/operar?simbolo=${symbol}`);
   await page.getByRole("link", { name: /Revisar orden/ }).click();
   await page.getByRole("button", { name: "Enviar orden" }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
-  await page.goto("/posiciones");
+  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
+  // The position shows up on a poll. Wait for the page to hydrate too: a click before that is a
+  // native form post that reloads the page under the assertions.
+  await page.goto("/posiciones", { waitUntil: "networkidle" });
   await expect(page.getByText(`${shares} restantes`, { exact: true })).toBeVisible({
-    timeout: 60_000,
+    timeout: SETTLE_MS,
   });
+  await page.waitForLoadState("networkidle");
+}
+
+/** Clicks an exit button and waits for the server's answer, so nothing below races the request. */
+async function sell(page: Page, button: Locator) {
+  const answered = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes("/salir"),
+    { timeout: SETTLE_MS },
+  );
+  await button.click();
+  await answered;
 }
 
 const step = (page: Page, n: number) =>
@@ -57,9 +70,9 @@ test("shows the position, its seven steps and sells the step's quantity", async 
   await shoot(page, "position");
 
   // 30% of 198 is 59.4: the engine sells 59.
-  await step(page, 1).click();
+  await sell(page, step(page, 1));
   await expect(page.getByText("139 acciones restantes", { exact: true })).toBeVisible({
-    timeout: 40_000,
+    timeout: SETTLE_MS,
   });
   await expect(page.getByText("198 iniciales · 59 vendidos")).toBeVisible();
   await expect(step(page, 1)).toBeDisabled();
@@ -72,13 +85,15 @@ test("marks a step that rounds to zero and sends nothing for it", async ({ conte
   // SIZE US$202 buys 2 shares: 30% sells 1, and the 20% step lands on the same target.
   await seedTradingClient(context, { sizeUsd: 202 });
   await openPosition(page, "MSFT", "2 acciones");
-  await step(page, 1).click();
+  await sell(page, step(page, 1));
   await expect(page.getByText("1 acción restante", { exact: true })).toBeVisible({
-    timeout: 40_000,
+    timeout: SETTLE_MS,
   });
 
-  await step(page, 2).click();
-  await expect(page.getByText("Paso 2 (20%): 0 acciones por redondeo")).toBeVisible();
+  await sell(page, step(page, 2));
+  await expect(page.getByText("Paso 2 (20%): 0 acciones por redondeo")).toBeVisible({
+    timeout: SETTLE_MS,
+  });
   await expect(step(page, 2)).toBeDisabled();
   await expect(page.getByText("1 acción restante", { exact: true })).toBeVisible();
   await expect(page.getByText("Sin órdenes pendientes.")).toBeVisible();
@@ -98,8 +113,9 @@ test("sends one order when a step is double-clicked", async ({ context, page }) 
     await route.continue();
   });
   await step(page, 1).dblclick();
+  // The form disables itself on the first click, so the second one is not a second post.
   await expect(page.getByText("139 acciones restantes", { exact: true })).toBeVisible({
-    timeout: 40_000,
+    timeout: SETTLE_MS,
   });
   expect(posts).toBe(1);
   await page.goto("/historial");
@@ -120,24 +136,27 @@ test("closes the position with ALL OUT only after a confirmation", async ({ cont
   await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Cerrar posición" }).click();
-  await page.getByRole("button", { name: "Confirmar cierre" }).click();
-  await expect(page.getByText("No tienes posiciones abiertas.")).toBeVisible({ timeout: 40_000 });
+  await sell(page, page.getByRole("button", { name: "Confirmar cierre" }));
+  await expect(page.getByText("No tienes posiciones abiertas.")).toBeVisible({
+    timeout: SETTLE_MS,
+  });
 });
 
 test("cancels a working exit and gives the step back", async ({ context, page }) => {
   await seedTradingClient(context);
   await openPosition(page, "SLOW", "198 acciones");
-  await step(page, 1).click();
+  await sell(page, step(page, 1));
   const pending = page.getByRole("region", { name: "Órdenes pendientes" });
-  await expect(pending).toContainText("Recibida");
+  await expect(pending).toContainText("Recibida", { timeout: SETTLE_MS });
   await expect(step(page, 1)).toBeDisabled();
   await shoot(page, "pending-order");
 
   await pending.getByRole("button", { name: "Cancelar" }).click();
-  await expect(pending).toContainText(/Cancelando|Sin órdenes pendientes/);
-  await expect(pending).toContainText("Sin órdenes pendientes.", { timeout: 40_000 });
-  await expect(step(page, 1)).toBeEnabled();
-  await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible();
+  await expect(pending).toContainText("Sin órdenes pendientes.", { timeout: SETTLE_MS });
+  await expect(step(page, 1)).toBeEnabled({ timeout: SETTLE_MS });
+  await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible({
+    timeout: SETTLE_MS,
+  });
 });
 
 test("says «Activo» only for a stop the engine verified", async ({ context, page }) => {
@@ -219,10 +238,10 @@ test("keeps the selected position after acting on it", async ({ context, page })
       { id: "pos-b", symbol: "BBB", qty: 20 },
     ],
   });
-  await page.goto("/posiciones?p=pos-b");
-  await step(page, 1).click();
+  await page.goto("/posiciones?p=pos-b", { waitUntil: "networkidle" });
+  await sell(page, step(page, 1));
   // The simulation does not know BBB, so the order is refused; either way the view stays on BBB.
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: SETTLE_MS });
   await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
   await expect(page).toHaveURL(/p=pos-b/);
 });

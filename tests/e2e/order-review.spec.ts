@@ -1,6 +1,6 @@
 import { expect, test } from "./test.ts";
 import { type Page } from "@playwright/test";
-import { d1, seedTradingClient, origin } from "./support.ts";
+import { SETTLE_MS, d1, seedTradingClient, origin } from "./support.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares and
@@ -31,6 +31,14 @@ async function openReview(page: Page, symbol: string) {
   await page.getByRole("link", { name: /Revisar orden/ }).click();
   await expect(page).toHaveURL(/\/operar\/revisar\?/);
   await expect(page.getByRole("heading", { name: "Revisar orden" })).toBeVisible();
+  // Let the page hydrate before submitting: a native post would reload it under the assertions.
+  await page.waitForLoadState("networkidle");
+}
+
+/** Submits the review and waits until the browser is on the order's status page. */
+async function send(page: Page, button = "Enviar orden") {
+  await page.getByRole("button", { name: button }).click();
+  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
 }
 
 const SEND = "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=SLOW&/enviar";
@@ -49,14 +57,13 @@ test("reviews the order read-only, then follows it to filled", async ({ context,
   await expect(page.locator("input:not([type=hidden]), select, textarea")).toHaveCount(0);
   await shoot(page, "review");
 
-  await page.getByRole("button", { name: "Enviar orden" }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
+  await send(page);
   await expect(state(page)).toContainText("Recibida por TradeStation");
   // Acknowledged is not executed.
   await expect(page.getByText("Ejecutada")).toHaveCount(0);
   await shoot(page, "acknowledged");
 
-  await expect(state(page)).toContainText("Ejecutada", { timeout: 40_000 });
+  await expect(state(page)).toContainText("Ejecutada", { timeout: SETTLE_MS });
   await expect(state(page)).toContainText("198 de 198");
   await shoot(page, "filled");
 });
@@ -64,8 +71,8 @@ test("reviews the order read-only, then follows it to filled", async ({ context,
 test("shows a partial fill as partial, never as executed", async ({ context, page }) => {
   await seedTradingClient(context);
   await openReview(page, "PART");
-  await page.getByRole("button", { name: "Enviar orden" }).click();
-  await expect(state(page)).toContainText("Ejecución parcial", { timeout: 30_000 });
+  await send(page);
+  await expect(state(page)).toContainText("Ejecución parcial", { timeout: SETTLE_MS });
   await expect(state(page)).toContainText("50 de 198");
   await expect(page.getByText("Ejecutada")).toHaveCount(0);
   await shoot(page, "partial");
@@ -74,8 +81,8 @@ test("shows a partial fill as partial, never as executed", async ({ context, pag
 test("shows a rejected order as rejected with nothing executed", async ({ context, page }) => {
   await seedTradingClient(context);
   await openReview(page, "RJCT");
-  await page.getByRole("button", { name: "Enviar orden" }).click();
-  await expect(state(page)).toContainText("Rechazada", { timeout: 30_000 });
+  await send(page);
+  await expect(state(page)).toContainText("Rechazada", { timeout: SETTLE_MS });
   await expect(state(page)).toContainText("No se ejecutó nada");
   await expect(page.getByText("Ejecutada")).toHaveCount(0);
   await shoot(page, "rejected");
@@ -87,14 +94,14 @@ test("explains a lost broker answer as being verified, not as a failure", async 
 }) => {
   await seedTradingClient(context);
   await openReview(page, "DROP");
-  await page.getByRole("button", { name: "Enviar orden" }).click();
+  await send(page);
   await expect(state(page)).toContainText("Verificando");
   await expect(state(page)).toContainText("no es un fallo");
   await expect(page.getByText("Rechazada")).toHaveCount(0);
   await expect(page.getByText("Ejecutada")).toHaveCount(0);
   await shoot(page, "unknown");
   // Reconciliation finds the order the broker did take.
-  await expect(state(page)).toContainText("Ejecutada", { timeout: 40_000 });
+  await expect(state(page)).toContainText("Ejecutada", { timeout: SETTLE_MS });
 });
 
 test("asks to re-confirm when the quantity changed, then sends the new one", async ({
@@ -108,8 +115,8 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
   // The admin halves SIZE while the client is reading.
   d1(`UPDATE client_settings SET size_usd = 10000 WHERE user_id = '${userId}'`);
   await page.getByRole("button", { name: "Enviar orden" }).click();
+  await expect(page.getByText("La cantidad cambió")).toBeVisible({ timeout: SETTLE_MS });
   await expect(page).toHaveURL(/\/operar\/revisar\?/);
-  await expect(page.getByText("La cantidad cambió")).toBeVisible();
   await expect(page.getByText("Antes eran 198 acciones y ahora son 99 acciones.")).toBeVisible();
   await expect(page.locator("dl")).toContainText("99 acciones");
   await shoot(page, "reconfirm");
@@ -120,8 +127,7 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
   await expect(other.getByText("0/2 posiciones · 0/3 entradas hoy")).toBeVisible();
   await other.close();
 
-  await page.getByRole("button", { name: "Confirmar y enviar" }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
+  await send(page, "Confirmar y enviar");
   await expect(page.locator("dl")).toContainText("99");
 });
 
@@ -129,7 +135,7 @@ test("sends one order when Enviar orden is double-clicked", async ({ context, pa
   await seedTradingClient(context);
   await openReview(page, "MSFT");
   await page.getByRole("button", { name: /Enviar|Enviando/ }).dblclick();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/);
+  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
   await page.goto("/operar?simbolo=MSFT");
   await expect(page.getByText(/[01]\/2 posiciones · 1\/3 entradas hoy/)).toBeVisible();
 });
