@@ -67,6 +67,16 @@ import type { PositionsView } from "#lib/domain/positions-view.ts";
 import type { Schema } from "effect";
 import type { Mode } from "./mode.ts";
 
+/** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
+function errorTag(error: unknown): string {
+  return typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    typeof error._tag === "string"
+    ? error._tag
+    : "unknown";
+}
+
 const ALARM_RETRY_DELAY_MS = {
   refresh: REFRESH_RETRY_DELAY_MS,
   sync: SYNC_RETRY_DELAY_MS,
@@ -309,9 +319,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       const scheduledFor = this.#alarms.dueAt(task);
       try {
         await this.runTask(task);
-      } catch {
+      } catch (error) {
         // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
-        this.log("error", "SIM", "alarm.task_failed", task);
+        this.log("error", "SIM", "alarm.task_failed", task, errorTag(error));
         await this.#alarms.schedule(task, this.#now() + ALARM_RETRY_DELAY_MS[task]);
         continue;
       }
@@ -458,7 +468,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (context === null) return failure("INVALID_INPUT");
     try {
       return await run(context, decoded.value);
-    } catch {
+    } catch (error) {
       if (!(error instanceof CredentialsKeyError)) throw error;
       this.log("error", "SIM", "rpc.credentials_unavailable", method);
       return failure("CREDENTIALS_UNAVAILABLE");
@@ -501,13 +511,19 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (at !== null) await this.#alarms.schedule("refresh", at);
   }
 
-  private log(level: "info" | "warn" | "error", mode: Mode, type: string, method: string): void {
+  private log(
+    level: "info" | "warn" | "error",
+    mode: Mode,
+    type: string,
+    method: string,
+    failure?: string,
+  ): void {
     writeEvent(this.ctx.storage.sql, this.#now(), {
       mode,
       level,
       type,
       message: method,
-      data: { method },
+      data: failure === undefined ? { method } : { method, failure },
     });
   }
 }
