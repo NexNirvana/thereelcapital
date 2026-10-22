@@ -67,7 +67,7 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 
 **Mobile / iPad** (see `designs/mobile/`):
 - Header: wordmark left, outlined `SIM` right; line `TradeStation · •• 4821`.
-- Single column, stacked. Bottom tab nav `Operar · Posiciones · Historial` (active = underline; only the built screens are listed, plus `Conexión`, `Admin` for admins and `Cerrar sesión`). Conexión is also reachable from the header.
+- Single column, stacked. Bottom tab nav `Operar · Posiciones · Historial` (active = underline; only the built screens are listed; decision D29). Conexión is reached from the header; `Admin` (admins) and `Cerrar sesión` sit below the content. On Posiciones the heading reads `Posición`, the `x de 2 posiciones` count is hidden and the ALL OUT caption is the short `ALL OUT · 15 contratos`.
 - Touch targets **≥ 44px**. Safe-area padding.
 
 ## Components

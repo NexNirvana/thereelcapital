@@ -22,6 +22,11 @@
     ...(data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []),
   ]);
 
+  // D29: the mobile tab bar keeps the three designed tabs; Conexión sits in the top bar.
+  const tabs = $derived(
+    nav.filter((item) => ["Operar", "Posiciones", "Historial"].includes(item.label)),
+  );
+
   const isCurrent = (href: string) => page.url.pathname.startsWith(href);
 </script>
 
@@ -64,18 +69,22 @@
       {#if data.unusedCodes === 0}<RecoveryCodesPrompt />{/if}
       {@render children()}
     </main>
+
+    <footer class="mobile-only extras">
+      {#if data.isAdmin}<a href={resolve("/admin")}>Admin</a>{/if}
+      <SignOutButton />
+    </footer>
   </div>
 
   <nav class="tabbar" aria-label="Principal">
     <ul>
-      {#each nav as item (item.href)}
+      {#each tabs as item (item.href)}
         <li>
           <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
             {item.label}
           </a>
         </li>
       {/each}
-      <li><SignOutButton /></li>
     </ul>
   </nav>
 </div>
@@ -271,6 +280,19 @@
       padding: 0 1rem env(safe-area-inset-bottom);
       border-top: 1px solid var(--rule);
       background: var(--bg);
+    }
+    .extras {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding-bottom: 1.5rem;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .extras a {
+      display: flex;
+      align-items: center;
+      min-height: var(--target);
     }
     .tabbar ul {
       display: flex;

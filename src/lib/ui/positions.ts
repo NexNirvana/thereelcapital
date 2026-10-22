@@ -52,6 +52,11 @@ export function allOutHint(position: PositionView, qty: number): string {
   return `ALL OUT · Cierra ${position.option === null ? "las" : "los"} ${qty} ${units} restantes`;
 }
 
+/** «ALL OUT · 15 contratos»: the short caption of the mobile design. */
+export function allOutShortHint(position: PositionView, qty: number): string {
+  return `ALL OUT · ${formatUnits(qty, position)}`;
+}
+
 const EXPIRY = new Intl.DateTimeFormat("es", {
   day: "numeric",
   month: "short",
