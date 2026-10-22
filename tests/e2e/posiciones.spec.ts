@@ -1,6 +1,7 @@
 import { expect, test } from "./test.ts";
-import { type Locator, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
 import { SETTLE_MS, seedTradingClient } from "./support.ts";
+import { openPosition, sell, step } from "./trading.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares:
@@ -26,34 +27,6 @@ async function shoot(page: Page, name: string) {
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 }
-
-/** Buys through the UI and waits for the engine to open the position. */
-async function openPosition(page: Page, symbol: string, shares: string) {
-  await page.goto(`/operar?simbolo=${symbol}`);
-  await page.getByRole("link", { name: /Revisar orden/ }).click();
-  await page.getByRole("button", { name: "Enviar orden" }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
-  // The position shows up on a poll. Wait for the page to hydrate too: a click before that is a
-  // native form post that reloads the page under the assertions.
-  await page.goto("/posiciones", { waitUntil: "networkidle" });
-  await expect(page.getByText(`${shares} restantes`, { exact: true })).toBeVisible({
-    timeout: SETTLE_MS,
-  });
-  await page.waitForLoadState("networkidle");
-}
-
-/** Clicks an exit button and waits for the server's answer, so nothing below races the request. */
-async function sell(page: Page, button: Locator) {
-  const answered = page.waitForResponse(
-    (response) => response.request().method() === "POST" && response.url().includes("/salir"),
-    { timeout: SETTLE_MS },
-  );
-  await button.click();
-  await answered;
-}
-
-const step = (page: Page, n: number) =>
-  page.getByRole("button", { name: new RegExp(`^Paso ${n},`) });
 
 test("shows the position, its seven steps and sells the step's quantity", async ({
   context,
