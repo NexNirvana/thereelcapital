@@ -117,10 +117,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     });
   }
 
-  /** Reads the broker now and reconciles (a client opened the app). Safe to call at any time. */
+  /**
+   * Reads the broker and reconciles (a client opened the app), unless a good pass ran within
+   * `SYNC_MIN_INTERVAL_MS` and nothing is pending. Safe to call at any time.
+   */
   sync(input: unknown): Promise<EngineResult<{ reconciled: boolean }>> {
     return this.enterWithBroker("sync", ModeOnlyArgs, input, async (ctx) => {
-      const result = await this.syncOnce(ctx);
+      const result = await this.syncOnce(ctx, { throttle: true });
       // Work this pass found or left keeps the loop going even if it had stopped.
       if (result.nextInMs !== null) {
         await this.#alarms.scheduleNoLater("sync", Date.now() + result.nextInMs);
@@ -316,8 +319,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     }
   }
 
-  private syncOnce(ctx: SyncContext): Promise<SyncResult> {
-    this.#syncing ??= runSync(ctx).finally(() => {
+  private syncOnce(
+    ctx: SyncContext,
+    options?: { readonly throttle?: boolean },
+  ): Promise<SyncResult> {
+    this.#syncing ??= runSync(ctx, options).finally(() => {
       this.#syncing = null;
     });
     return this.#syncing;

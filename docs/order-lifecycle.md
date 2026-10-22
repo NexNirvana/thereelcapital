@@ -67,6 +67,8 @@ How: read the broker's orders and positions for the client's accounts in that mo
 
 Entries stay blocked and open positions show `unverified` protection from a failed refresh, a connect or a disconnect until a reconciliation completes; only `markReconciled` lifts the block, and a hold that lands while it waits is not lifted by it.
 
+A `sync` request (a page load or poll) does not read the broker again when the last good pass is younger than `SYNC_MIN_INTERVAL_MS` and no reconciliation is pending; it returns the current state. The loop's own tick is never throttled. The protection settings the pass needs are read from D1 and reused for `PROTECTION_SETTINGS_TTL_MS`; D1 stays their only owner, so an admin change reaches the engine within that time.
+
 Reconnecting never resets counters, reservations or scale-out steps.
 
 Each good pass also prunes `events` older than the 6-year retention of D22 (`EVENT_RETENTION_MS`); nothing else is ever deleted.
