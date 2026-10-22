@@ -112,19 +112,20 @@ setup_instance() {
   log "runner reel-local-${n}"
   if [ "$DRY_RUN" -eq 1 ] || [ ! -f "${dir}/config.sh" ]; then
     run install -d -m 700 -o "$RUNNER_USER" -g "$RUNNER_USER" "$dir"
-    as_runner "$dir" tar xzf "${CACHE_DIR}/${RUNNER_TARBALL}"
+    as_runner "$dir" tar xzf "${CACHE_DIR}/${RUNNER_TARBALL}" || return 1
   fi
   if [ "$DRY_RUN" -eq 1 ] || [ ! -f "${dir}/.runner" ]; then
-    token="$(fetch_runner_token registration)"
+    token="$(fetch_runner_token registration)" || return 1
     # self-hosted, linux and x64 are added by the runner itself.
     as_runner "$dir" ./config.sh --unattended --url "$REPO_URL" --token "$token" \
-      --name "reel-local-${n}" --labels reel-local --work _work --replace
+      --name "reel-local-${n}" --labels reel-local --work _work --replace || return 1
   else
     log "already registered"
   fi
-  install_service "$n" "$dir"
-  run rc-update add "gh-runner-${n}" default
-  run rc-service "gh-runner-${n}" restart
+  # The || return 1 guards matter: the caller runs this in an || context, where set -e is off.
+  install_service "$n" "$dir" || return 1
+  run rc-update add "gh-runner-${n}" default || return 1
+  run rc-service "gh-runner-${n}" restart || return 1
 }
 
 require_root_via_sudo
@@ -132,7 +133,23 @@ require_root_via_sudo
 check_prerequisites
 create_user
 download_runner
+failed=0
 for n in $(seq 1 "$COUNT"); do
-  setup_instance "$n"
+  # A failed instance must not stop the others; the summary reports it.
+  setup_instance "$n" || { printf 'error: runner reel-local-%s failed to set up\n' "$n" >&2; failed=$((failed + 1)); }
 done
-log "done; check Settings > Actions > Runners, then run scripts/ci-runner/toggle.sh on"
+
+stopped=0
+for n in $(seq 1 "$COUNT"); do
+  if [ -f "${RUNNERS_DIR}/${n}/.runner" ] || [ "$DRY_RUN" -eq 1 ]; then
+    printf '    reel-local-%s registered: ' "$n"
+  else
+    printf '    reel-local-%s NOT registered: ' "$n"
+  fi
+  run rc-service "gh-runner-${n}" status || stopped=$((stopped + 1))
+done
+log "summary: $((COUNT - failed))/${COUNT} runners set up, ${stopped} service(s) not running"
+if [ "$failed" -gt 0 ] || [ "$stopped" -gt 0 ]; then
+  die "${failed} runner(s) failed to set up, ${stopped} service(s) not running; fix the errors above and run setup.sh again"
+fi
+log "done; confirm with scripts/ci-runner/toggle.sh status, then run scripts/ci-runner/toggle.sh on"
