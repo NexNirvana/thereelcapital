@@ -85,11 +85,25 @@ Recovery codes are stored as HMAC-SHA-256 with a server key; activation tokens (
 - Guarded layouts: the `(app)` layout load sends anyone without a session to `/acceso` (303) and answers 403 to a banned client (`requireUser`); the `/admin` layout does the same for anonymous visitors and answers 403 to a non-admin. Form actions and `+server` routes still answer 401/403 themselves. The shell makes no call to the engine except through `engineFor` (the connection health in the top bar); the old `ENGINE.getByName("smoke")` ping is gone, so no route addresses a Durable Object by anything but the session user id.
 - Disabling a client = `banUser` (it deletes sessions and blocks new ones). It does not touch broker orders.
 - Logout or browser close does not affect protections; they live in the DO or at the broker.
-- Pages load nothing from other origins except the Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`), injected at the edge in production only (D26 in [decisions.md](decisions.md)). A future Content-Security-Policy must allow that script and its reporting endpoint.
+- Pages load nothing from other origins except the Cloudflare Web Analytics beacon (`static.cloudflareinsights.com`), injected at the edge in production only (D26 in [decisions.md](decisions.md)).
+
+### Security headers
+
+- Content-Security-Policy: `kit.csp` in `vite.config.ts` (SvelteKit adds nonces or hashes to its own inline script, so there is no `unsafe-inline` for scripts). `default-src 'none'`; scripts from `'self'` and `https://static.cloudflareinsights.com`; `connect-src 'self' https://cloudflareinsights.com` (the beacon's reporting endpoint); styles, fonts and images from `'self'` (images also `data:`); `form-action 'self' https://signin.tradestation.com` (the connect form is answered with a redirect to TradeStation's sign-in); `base-uri 'none'`, `object-src 'none'`, `frame-ancestors 'none'`. Style attributes alone are allowed inline (`style-src-attr`): they cannot run script. Passkeys need nothing extra.
+- `src/lib/server/security-headers.ts`, applied by the outermost `handle` to every response (pages, endpoints, redirects, the enrollment gate's answers and Better Auth's): `Strict-Transport-Security: max-age=31536000; includeSubDomains` (no `preload`: it is hard to undo and nobody asked for it), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`, a minimal `Permissions-Policy` and `Referrer-Policy: strict-origin-when-cross-origin`. A route's own stricter `no-referrer` (activation, OAuth callback) wins. Static assets are served by the platform without passing the Worker.
+- `tests/e2e/security-headers.spec.ts` asserts them, and every e2e spec fails if the browser reports a CSP violation (`tests/e2e/test.ts`).
+
+### Rate limits
+
+| What | Limit | Where |
+| --- | --- | --- |
+| Activation link, recovery code redemption | 5 per 10 minutes per IP (D28) | plugin `rateLimit`, `ACTIVATION_REDEEM_RATE_LIMIT`, `RECOVERY_REDEEM_RATE_LIMIT` |
+
+Passkey sign-in and sending orders have no rate limit (D34); orders are bounded by the entry and position limits and by TradeStation's own limits. Covered by `tests/e2e/rate-limits.spec.ts`.
 
 ## Secrets
 
-- Never in Git, logs, responses, bundles or URLs: TradeStation client secret and tokens, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`. `client_id` appears only in the OAuth redirect. Activation tokens appear only in their activation link and in the one-time admin response that shows it; never in Git, logs, bundles or any other response.
+- Never in Git, logs, responses, bundles or URLs (the `guards` job scans every pull request's commits with a pinned gitleaks, and the `build` job greps the built client assets for secret names and token shapes with `scripts/check-client-bundle.ts`): TradeStation client secret and tokens, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`. `client_id` appears only in the OAuth redirect. Activation tokens appear only in their activation link and in the one-time admin response that shows it; never in Git, logs, bundles or any other response.
 - TradeStation secret and refresh token: AES-GCM via WebCrypto, random 12-byte nonce per value, `key_id` stored for rotation (the first 4 bytes of SHA-256 of the key, hex), the user id and field authenticated as additional data. `CREDENTIALS_KEY` is base64 of 32 random bytes. Encryption and decryption happen in the engine Worker.
 - `audit_log` stores before/after of settings and roles, never credential values.
 
