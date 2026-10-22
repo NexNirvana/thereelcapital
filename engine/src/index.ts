@@ -38,6 +38,7 @@ import {
 import { writeEvent } from "./events.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { readOverview } from "./overview.ts";
+import { readPositionsView } from "./positions-view.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
 import { migrate } from "./schema.ts";
 import {
@@ -59,6 +60,7 @@ import {
   type EngineResult,
 } from "./rpc.ts";
 import type { ClientOverview } from "#lib/domain/overview.ts";
+import type { PositionsView } from "#lib/domain/positions-view.ts";
 import type { Schema } from "effect";
 import type { Mode } from "./mode.ts";
 
@@ -202,6 +204,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           .toArray(),
       });
     });
+  }
+
+  /** Open positions with their steps and the exit orders still working, for /posiciones. Read-only. */
+  positions(input: unknown): EngineResult<PositionsView> {
+    return this.enter("positions", ModeOnlyArgs, input, () =>
+      success(readPositionsView(this.ctx.storage.sql, engineNow(this.env))),
+    );
   }
 
   /** Orders (newest first, one page) and events of this client. Read-only; no P&L. */
