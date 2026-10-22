@@ -44,7 +44,7 @@ A hotfix is a normal PR that skips the queue: smallest possible change, its own 
 
 ### CI runners
 
-Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` always runs on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
+Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER` (a JSON label such as `"ubuntu-24.04"` or `["self-hosted","reel-local"]`) moves every job except `deploy` and `guards` to another runner. Pull requests from forks always use GitHub-hosted runners, because the repository is public and a self-hosted runner must never run fork code; `deploy` and `guards` always run on `ubuntu-24.04`. Jobs delete their local state (`.wrangler`, Playwright output) at the end so a reused runner starts clean.
 
 ### Branch rulesets
 
