@@ -7,7 +7,9 @@ import {
   DEFAULT_STOP_PCT,
   DEFAULT_TRAILING_UNLOCK_PCT,
   ORDER_MATCH_SKEW_MS,
+  PROTECTION_SETTINGS_TTL_MS,
   SYNC_INTERVAL_MS,
+  SYNC_MIN_INTERVAL_MS,
 } from "#lib/domain/config.ts";
 import type { BrokerAdapterShape, BrokerOrder, SymbolDetails } from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
@@ -34,13 +36,14 @@ export interface SyncContext extends ConnectionContext {
 }
 
 export interface SyncResult {
-  /** True when this pass completed and lifted the hold. */
+  /** True when no reconciliation is pending after this call: a pass completed, or a recent one still stands (throttled). */
   readonly reconciled: boolean;
   /** When to run again; null when the loop should stop. */
   readonly nextInMs: number | null;
 }
 
 const DEGRADED_KEY = "sync_degraded";
+export const LAST_OK_KEY = "sync_last_ok_at";
 
 function log(
   ctx: ConnectionContext,
@@ -72,6 +75,14 @@ export function syncWanted(storage: DurableObjectStorage): boolean {
   return open > 0;
 }
 
+/** A pass completed within the minimum interval and nothing has asked for a new one since. */
+function recentlySynced(ctx: ConnectionContext): boolean {
+  const lastOkAt = ctx.storage.kv.get<number>(LAST_OK_KEY);
+  if (lastOkAt === undefined || reconciliationPending(ctx.storage)) return false;
+  const age = ctx.now - lastOkAt;
+  return age >= 0 && age < SYNC_MIN_INTERVAL_MS;
+}
+
 type Read<A> =
   { readonly ok: true; readonly value: A } | { readonly ok: false; readonly error: BrokerError };
 
@@ -79,13 +90,22 @@ type Read<A> =
  * One pass. A broker failure is a degraded state (docs/order-lifecycle.md#degraded-states): entries
  * stay blocked and protection `unverified` until a later pass succeeds, exits and cancels are not
  * touched, and nothing is retried here beyond the loop's next tick.
+ *
+ * `throttle` is for requests (a page load or poll): when the last good pass is recent and no
+ * reconciliation is pending, the broker is not read again and the current state stands.
  */
-export async function runSync(ctx: SyncContext): Promise<SyncResult> {
+export async function runSync(
+  ctx: SyncContext,
+  options: { readonly throttle?: boolean } = {},
+): Promise<SyncResult> {
   const accounts = ctx.sql
     .exec<{ account_id: string }>("SELECT account_id FROM broker_accounts WHERE mode = 'SIM'")
     .toArray()
     .map((row) => row.account_id);
   if (accounts.length === 0) return { reconciled: false, nextInMs: null };
+  if (options.throttle === true && recentlySynced(ctx)) {
+    return { reconciled: true, nextInMs: syncWanted(ctx.storage) ? SYNC_INTERVAL_MS : null };
+  }
 
   // Taken before the reads: a hold that lands while they are out is not ours to lift.
   const ticket = reconciliationTicket(ctx.storage);
@@ -111,6 +131,7 @@ export async function runSync(ctx: SyncContext): Promise<SyncResult> {
     log(ctx, "info", "sync.recovered");
   }
   pruneEvents(ctx.sql, ctx.now, "SIM");
+  ctx.storage.kv.put(LAST_OK_KEY, ctx.now);
   if (summary.unknownLeft > 0) {
     // A stuck intent waits for a human: log when the count changes, not on every tick.
     logOnce(
@@ -175,15 +196,32 @@ async function readHistory(
   return attempt(ctx.broker.historicalOrders(accounts, since));
 }
 
+/** A short-lived read-through copy for the loop; D1 `client_settings` stays the only owner. */
+const settingsCache = new WeakMap<
+  DurableObjectStorage,
+  { readonly readAt: number; readonly settings: ProtectionSettings }
+>();
+
 async function protectionSettings(ctx: SyncContext): Promise<ProtectionSettings> {
+  const cached = settingsCache.get(ctx.storage);
+  if (
+    cached !== undefined &&
+    ctx.now - cached.readAt >= 0 &&
+    ctx.now - cached.readAt < PROTECTION_SETTINGS_TTL_MS
+  ) {
+    return cached.settings;
+  }
+  const readAt = ctx.now;
   const row = await ctx.db
     .prepare("SELECT stop_pct, trailing_unlock_pct FROM client_settings WHERE user_id = ?")
     .bind(ctx.userId)
     .first<{ stop_pct: number; trailing_unlock_pct: number }>();
-  return {
+  const settings = {
     stopPct: row?.stop_pct ?? DEFAULT_STOP_PCT,
     trailingUnlockPct: row?.trailing_unlock_pct ?? DEFAULT_TRAILING_UNLOCK_PCT,
   };
+  settingsCache.set(ctx.storage, { readAt, settings });
+  return settings;
 }
 
 /**

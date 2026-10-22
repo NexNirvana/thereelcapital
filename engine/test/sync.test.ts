@@ -7,8 +7,13 @@ import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
 import { Unknown } from "../src/broker/errors.ts";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { holdForReconciliation, reconciliationPending } from "../src/refresh.ts";
-import { EVENT_RETENTION_MS, SYNC_INTERVAL_MS } from "#lib/domain/config.ts";
-import { runSync, syncWanted } from "../src/sync.ts";
+import {
+  EVENT_RETENTION_MS,
+  PROTECTION_SETTINGS_TTL_MS,
+  SYNC_INTERVAL_MS,
+  SYNC_MIN_INTERVAL_MS,
+} from "#lib/domain/config.ts";
+import { LAST_OK_KEY, runSync, syncWanted } from "../src/sync.ts";
 import {
   ACCOUNTS,
   IN_SESSION,
@@ -51,6 +56,111 @@ async function withOpenPosition(ctx: EntryContext, symbol = "AAPL") {
   await enter(ctx, symbol);
   expect(await runSync(ctx)).toMatchObject({ reconciled: true });
 }
+
+describe("sync throttle and settings cache", () => {
+  function counted(broker: BrokerAdapterShape) {
+    const calls = { orders: 0, settings: 0 };
+    return {
+      calls,
+      broker: {
+        ...broker,
+        orders: (ids: readonly string[]) => {
+          calls.orders += 1;
+          return broker.orders(ids);
+        },
+      } satisfies BrokerAdapterShape,
+      db: new Proxy(env.DB, {
+        get(target, key) {
+          if (key !== "prepare")
+            return Reflect.get(target, key).bind?.(target) ?? Reflect.get(target, key);
+          return (query: string) => {
+            if (query.includes("client_settings")) calls.settings += 1;
+            return target.prepare(query);
+          };
+        },
+      }),
+    };
+  }
+
+  it("a request inside the minimum interval makes no broker call, one after it does", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const spy = counted(sim.adapter);
+    await inClient(client, clock, spy.broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      expect(await runSync(ctx, { throttle: true })).toMatchObject({ reconciled: true });
+      expect(spy.calls.orders).toBe(1);
+
+      clock.now += SYNC_MIN_INTERVAL_MS - 1;
+      expect(await runSync(ctx, { throttle: true })).toEqual({
+        reconciled: true,
+        nextInMs: SYNC_INTERVAL_MS,
+      });
+      expect(spy.calls.orders).toBe(1);
+
+      clock.now += 1;
+      await runSync(ctx, { throttle: true });
+      expect(spy.calls.orders).toBe(2);
+    });
+  });
+
+  it("the loop tick is never throttled, and a pending reconciliation is never skipped", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const spy = counted(sim.adapter);
+    await inClient(client, clock, spy.broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      await runSync(ctx);
+      await runSync(ctx);
+      expect(spy.calls.orders).toBe(2);
+
+      holdForReconciliation(ctx.storage);
+      await runSync(ctx, { throttle: true });
+      expect(spy.calls.orders).toBe(3);
+      expect(reconciliationPending(ctx.storage)).toBe(false);
+    });
+  });
+
+  it("a failed pass does not count as a recent good one", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const spy = counted(sim.adapter);
+    await inClient(client, clock, spy.broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      await runSync(ctx, { throttle: true });
+      const lastOkAt = ctx.storage.kv.get(LAST_OK_KEY);
+      expect(lastOkAt).toBe(IN_SESSION);
+
+      clock.now += SYNC_MIN_INTERVAL_MS;
+      sim.inject({ kind: "authExpired", operation: "orders" });
+      await runSync(ctx);
+      expect(ctx.storage.kv.get(LAST_OK_KEY)).toBe(lastOkAt);
+    });
+  });
+
+  it("reads the protection settings again only after the TTL", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const spy = counted(sim.adapter);
+    await inClient(client, clock, spy.broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      // Not a spread: that would freeze the context's `now` getter.
+      const withSpyDb: EntryContext = Object.create(ctx, { db: { value: spy.db } });
+      await runSync(withSpyDb);
+      const afterFirst = spy.calls.settings;
+      await runSync(withSpyDb);
+      expect(spy.calls.settings).toBe(afterFirst);
+
+      clock.now += PROTECTION_SETTINGS_TTL_MS;
+      await runSync(withSpyDb);
+      expect(spy.calls.settings).toBe(afterFirst + 1);
+    });
+  });
+});
 
 describe("event retention", () => {
   const oldEvents = (ctx: EntryContext) =>
