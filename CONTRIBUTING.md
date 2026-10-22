@@ -80,12 +80,14 @@ Commands (`--dry-run` on the first and last prints every privileged action witho
 
 ```sh
 sudo scripts/ci-runner/setup.sh [--count 4]   # install and start the runners (idempotent)
-scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the machine
+scripts/ci-runner/toggle.sh on                # sets CI_RUNNER: CI uses the machine (refuses unless a reel-local runner is online)
+scripts/ci-runner/toggle.sh status            # CI_RUNNER value and each reel-local runner's status
 scripts/ci-runner/toggle.sh off               # deletes CI_RUNNER: CI uses GitHub-hosted runners
+scripts/ci-runner/toggle.test.sh              # test toggle.sh with a fake gh (also part of bun run test:unit)
 sudo scripts/ci-runner/uninstall.sh           # deregister, remove services, user and files
 ```
 
-Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. Services are OpenRC `gh-runner-N`, logging to `/var/log/gh-runner-N.log`. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
+Run `toggle.sh off` before the machine goes off; otherwise jobs wait for an offline runner. `toggle.sh off` is also the recovery whenever CI jobs sit queued: it moves every job back to GitHub-hosted runners at once. Services are OpenRC `gh-runner-N`, logging to `/var/log/gh-runner-N.log`. The pinned runner version in `setup.sh` is only the first install; the runner updates itself.
 
 ### Verification and screenshots
 
