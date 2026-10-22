@@ -50,7 +50,7 @@ Jobs run on GitHub-hosted runners by default. The repository variable `CI_RUNNER
 
 GitHub enforces the rules above through two rulesets, kept as JSON in `.github/rulesets/`:
 
-- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e` and `build` (`.github/workflows/ci.yml`, which runs the pull request's own code) and `guards` (`.github/workflows/policy.yml`) passing, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin's bypass (`bypass_mode: pull_request`) applies only to merging through a pull request, and it covers every rule that gates that merge: when the admin explicitly chooses to bypass, the pull request requirement, unresolved review threads and the required status checks can all be skipped. It never covers force-push or deletion protection.
+- `main`: changes only through pull requests, rebase merge only, linear history, review threads resolved, the CI checks `check`, `lint`, `unit`, `engine`, `e2e` and `build` (`.github/workflows/ci.yml`, which runs the pull request's own code), `guards` (`.github/workflows/policy.yml`) and `review-gate` (`.github/workflows/review-gate.yml`, see the review gate below) passing, no force push, no deletion. Required approving reviews is 0: the review gate above is a process rule. The repository admin's bypass (`bypass_mode: pull_request`) applies only to merging through a pull request, and it covers every rule that gates that merge: when the admin explicitly chooses to bypass, the pull request requirement, unresolved review threads and the required status checks can all be skipped. It never covers force-push or deletion protection.
 
 `guards` runs on `pull_request_target`, so GitHub uses the base branch's copy of `policy.yml` and a pull request cannot weaken it. It checks out only the base commit, fetches the pull request's commits as data, and runs the base branch's `.githooks/` scripts over them. It never builds or executes pull request code and uses no secrets. A change to `policy.yml` or `.githooks/` takes effect for other pull requests once it is on `main`, and does not apply to its own pull request.
 - `pr-assets`: no force push, no deletion. Normal pushes are allowed.
@@ -103,6 +103,8 @@ Every PR shows how it was verified, in the template's sections:
 ### Review gate
 
 **No PR is merged until the local reviewer has reviewed its final commit with confidence 4 or 5 and no actionable findings (critical, major or minor)**, and every CodeRabbit comment that arrived before the merge is addressed.
+
+The required `review-gate` check enforces this: it passes for PRs that change only Markdown or files the reviewer ignores, or when the repository owner's local review of the current head commit has confidence 4 or 5 and no actionable findings, and fails on drafts. It reads only API data and re-runs when a review is submitted, so the review that `bun run review <pr>` posts turns it green without a push.
 
 **Exception: documentation-only PRs.** A PR that changes only Markdown files (`*.md`) needs no AI review: mark it ready and enable auto-merge once the self-review is done, and it merges when CI is green. A PR that also touches code, configuration, workflows or hooks follows the full gate.
 

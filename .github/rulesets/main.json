@@ -34,7 +34,8 @@
           { "context": "engine" },
           { "context": "e2e" },
           { "context": "build" },
-          { "context": "guards" }
+          { "context": "guards" },
+          { "context": "review-gate" }
         ]
       }
     }
