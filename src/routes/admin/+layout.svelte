@@ -8,7 +8,11 @@
   let { children }: LayoutProps = $props();
 
   // Clientes also covers the client and admin detail pages under /admin.
-  const sections = [resolve("/admin/historial"), resolve("/admin/auditoria")];
+  const sections = [
+    resolve("/admin/operativa"),
+    resolve("/admin/historial"),
+    resolve("/admin/auditoria"),
+  ];
   function current(href: string) {
     const path = page.url.pathname;
     const inSection = sections.some((section) => path.startsWith(section));
@@ -29,6 +33,9 @@
     <Badge label="SIM" />
     <nav aria-label="Administración">
       <a href={resolve("/admin")} aria-current={current(resolve("/admin"))}>Clientes</a>
+      <a href={resolve("/admin/operativa")} aria-current={current(resolve("/admin/operativa"))}>
+        Operativa
+      </a>
       <a href={resolve("/admin/historial")} aria-current={current(resolve("/admin/historial"))}>
         Historial
       </a>

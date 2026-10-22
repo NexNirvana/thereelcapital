@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
+  import { connectionLabel } from "#lib/ui/admin-operations.ts";
   import Button from "#lib/ui/Button.svelte";
   import ActivationLink from "#lib/ui/ActivationLink.svelte";
   import Notice from "#lib/ui/Notice.svelte";
@@ -10,9 +11,6 @@
   let { data, form }: PageProps = $props();
 
   const access = { invited: "Invitado", active: "Activo", disabled: "Desactivado" } as const;
-  // TODO(#35): the connection states are defined with the connection screen; until then a row
-  // in broker_connection means the client has connected.
-  const connection = ["Sin conectar", "Conectada"] as const;
 
   let creating = $state(false);
   let submitFailure = $state<string | null>(null);
@@ -121,7 +119,7 @@
                 <a href={resolve("/admin/clientes/[id]", { id: client.id })}>{client.email}</a>
               </th>
               <td data-label="Acceso">{access[client.access]}</td>
-              <td data-label="Conexión">{connection[client.hasConnection]}</td>
+              <td data-label="Conexión">{connectionLabel(client.connection)}</td>
             </tr>
           {/each}
         </tbody>

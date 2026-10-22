@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { createHmac, randomUUID } from "node:crypto";
 import { type BrowserContext, type Page } from "@playwright/test";
+import { sessionDate } from "../../src/lib/domain/calendar.ts";
 import { newInvitation } from "../../src/lib/server/activation-link.ts";
 
 // Same throwaway value playwright.config.ts passes to the dev server; not a credential.
@@ -234,6 +235,45 @@ function seedEngineOrders(file: string, orders: readonly SeededOrder[]) {
   }
 }
 
+export interface SeededPosition {
+  readonly id: string;
+  readonly symbol: string;
+  readonly qty: number;
+  readonly soldQty?: number;
+  readonly protectionState?: string;
+  readonly account?: string;
+}
+
+// Open positions and the day's entry count as the engine would have stored them (no order UI yet).
+function seedEnginePositions(file: string, positions: readonly SeededPosition[], entries: number) {
+  const db = new DatabaseSync(`${DO_DIR}/${file}`);
+  try {
+    db.exec("PRAGMA busy_timeout = 5000");
+    const insert = db.prepare(
+      `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
+         trailing_unlock_pct, protection_state, status, opened_on)
+       VALUES (?, 'SIM', ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04')`,
+    );
+    for (const p of positions) {
+      insert.run(
+        p.id,
+        p.account ?? "SIM-1",
+        p.symbol,
+        p.qty,
+        p.soldQty ?? 0,
+        p.protectionState ?? "none",
+      );
+    }
+    if (entries > 0) {
+      db.prepare(
+        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', ?, ?, 0)",
+      ).run(sessionDate(new Date(ENGINE_NOW)), entries);
+    }
+  } finally {
+    db.close();
+  }
+}
+
 // A signed-in client with a CONNECTED TradeStation SIM connection, SIZE and stop % in D1, and
 // `accounts` in its engine. The engine runs the local simulation (tests/e2e/engine.env).
 export async function seedTradingClient(
@@ -243,14 +283,26 @@ export async function seedTradingClient(
     accounts = ["SIM-1"],
     sizeUsd = 20_000,
     orders = [],
-  }: { accounts?: readonly string[]; sizeUsd?: number; orders?: readonly SeededOrder[] } = {},
+    positions = [],
+    entriesToday = 0,
+    status = "CONNECTED",
+    refreshExpiresAt = null,
+  }: {
+    accounts?: readonly string[];
+    sizeUsd?: number;
+    orders?: readonly SeededOrder[];
+    positions?: readonly SeededPosition[];
+    entriesToday?: number;
+    status?: "CONNECTED" | "EXPIRED" | "REVOKED" | "ERROR";
+    refreshExpiresAt?: number | null;
+  } = {},
 ) {
   const userId = await seedSignedInUser(context);
   d1(
     `INSERT INTO client_settings (user_id, size_usd, stop_pct, trailing_unlock_pct, updated_at)
      VALUES ('${userId}', ${sizeUsd}, 30, 70, 0);
      INSERT INTO broker_connection (user_id, client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status, last_ok_at)
-     VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', NULL, 'CONNECTED', 0);
+     VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', ${refreshExpiresAt ?? "NULL"}, '${status}', ${ENGINE_NOW - 60_000});
      INSERT INTO recovery_codes (id, user_id, code_hash) VALUES ('${randomUUID()}', '${userId}', 'h-${randomUUID()}')`,
   );
   // Any shell page reaches the engine and creates this client's object; the one new file is it.
@@ -266,5 +318,8 @@ export async function seedTradingClient(
     throw new Error(`expected one new Durable Object, got ${created.length}`);
   seedEngineAccounts(created[0] as string, accounts);
   if (orders.length > 0) seedEngineOrders(created[0] as string, orders);
+  if (positions.length > 0 || entriesToday > 0) {
+    seedEnginePositions(created[0] as string, positions, entriesToday);
+  }
   return userId;
 }
