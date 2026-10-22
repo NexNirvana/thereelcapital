@@ -42,3 +42,14 @@ test("the activation page keeps its stricter no-referrer", async ({ request }) =
   const response = await request.get("/activar/not-a-real-token");
   expect(response.headers()["referrer-policy"]).toBe("no-referrer");
 });
+
+// SvelteKit's origin check guards every form action; nothing in the config switches it off
+// (docs/auth-and-security.md#sessions-and-requests).
+test("a form action refuses a cross-site form post", async ({ request }) => {
+  const forged = await request.post("/admin?/create", {
+    headers: { origin: "https://evil.example" },
+    form: { email: "x@example.com" },
+    maxRedirects: 0,
+  });
+  expect(forged.status()).toBe(403);
+});
