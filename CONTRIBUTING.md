@@ -75,7 +75,7 @@ Every PR shows how it was verified, in the template's sections:
 
 ### Review gate
 
-**No PR is merged until the local reviewer has reviewed its final commit with confidence 4 or 5 and no actionable findings (critical, major or minor)**, after every CodeRabbit comment is addressed.
+**No PR is merged until the local reviewer has reviewed its final commit with confidence 4 or 5 and no actionable findings (critical, major or minor)**, and every CodeRabbit comment that arrived before the merge is addressed.
 
 **Exception: documentation-only PRs.** A PR that changes only Markdown files (`*.md`) needs no AI review: mark it ready and enable auto-merge once the self-review is done, and it merges when CI is green. A PR that also touches code, configuration, workflows or hooks follows the full gate.
 
@@ -90,7 +90,7 @@ The local reviewer builds its context from this file, `CLAUDE.md`, `.github/copi
 
 - **Self-review before leaving draft.** Read the whole diff (`git diff origin/main`) against `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `greptile.json` (the local reviewer's instructions), looking specifically for unhandled failure paths, quoting and injection, secrets reachable from the wrong scope, missing negative tests, and similar code that should change the same way. The goal is a first bot review that finds nothing.
 - Open PRs as drafts and mark them ready only when commits are organized, checks pass, the self-review is done and verification is filled in. CodeRabbit then reviews automatically, once; pushes don't re-trigger it (`.coderabbit.yaml`).
-- Wait for CodeRabbit's review to finish. A "processing", "skipped" or "review limit reached" comment is not a review; if its limit is reached, go straight to the local reviewer. Address CodeRabbit's comments first, push, then run `bun run review <pr>` on the final commit.
+- **Don't wait for anything that can run in parallel.** Run `bun run review <pr>` as soon as the PR leaves draft, while CI and CodeRabbit run. Fix the local findings and any CodeRabbit comments that have arrived in one pass, push once, and run the next local round while CI re-runs. CodeRabbit is advisory on timing: nobody waits for it, but a comment that arrives before the merge is fixed or answered like any other.
 - Address every actionable comment: fix it in the commit it belongs to, or reply with the reason it doesn't apply. Handle each review round in **one fix pass**: collect every finding, fix it together with every similar spot in the diff (a finding is usually a class of bug, not one line), push all fixes together, then run `bun run review <pr>` again: it sees the earlier threads, checks the fixes, replies to them and resolves the ones it confirms. Resolve any thread it leaves open once handled.
 - **Rounds are capped.** The first local review covers the whole diff; follow-up rounds judge only what changed since the last reviewed commit (plus a critical problem anywhere), recompute confidence from the findings, and skip a head that already has a review. After three local rounds without convergence, stop and ask the coordinator: `bun run review` refuses a fourth round unless `--force`, and `scripts/pr-status.sh` flags the PR as non-converging.
 - Spend reviews on code that will merge: don't request one for a PR that is still changing, and don't push to a PR while its review is running.
