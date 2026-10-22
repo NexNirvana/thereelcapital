@@ -7,7 +7,7 @@ import {
   ROTATING_REFRESH_LIFETIME_MS,
 } from "#lib/domain/config.ts";
 import type { StoredConnectionState } from "#lib/domain/connection.ts";
-import type { CredentialCipher } from "./crypto.ts";
+import { UnknownKeyIdError, type CredentialCipher } from "./crypto.ts";
 import { writeEvent } from "./events.ts";
 import { refreshAccessToken } from "./tradestation/auth.ts";
 
@@ -23,6 +23,8 @@ const UNSAVED_REFRESH_KEY = "unsaved_refresh_token";
 interface UnsavedRefreshToken {
   readonly tokenEnc: string;
   readonly replaces: string;
+  /** Key it was sealed with; absent on a copy saved before key rotation existed (current key). */
+  readonly keyId?: string;
 }
 
 export interface RefresherDeps {
@@ -146,18 +148,26 @@ export class TokenRefresher {
     let cipher: CredentialCipher;
     try {
       cipher = await this.deps.cipher();
-      clientSecret = await cipher.decrypt(row.client_secret_enc, secretContext(userId));
-      storedToken = await cipher.decrypt(row.refresh_token_enc, refreshContext(userId));
+      clientSecret = await cipher.decrypt(row.client_secret_enc, secretContext(userId), row.key_id);
+      storedToken = await cipher.decrypt(row.refresh_token_enc, refreshContext(userId), row.key_id);
       const unsaved = this.deps.storage.kv.get<UnsavedRefreshToken>(UNSAVED_REFRESH_KEY);
       if (unsaved?.replaces === row.refresh_token_enc) {
-        refreshToken = await cipher.decrypt(unsaved.tokenEnc, refreshContext(userId));
+        refreshToken = await cipher.decrypt(
+          unsaved.tokenEnc,
+          refreshContext(userId),
+          unsaved.keyId ?? row.key_id,
+        );
       } else {
         // Superseded (the row was replaced by a reconnect): nothing to recover.
         if (unsaved !== undefined) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
         refreshToken = storedToken;
       }
-    } catch {
-      // A missing or rotated CREDENTIALS_KEY is a failure like any other: entries must stop.
+    } catch (error) {
+      // A key_id that neither key matches never recovers by itself: the client must reconnect.
+      if (error instanceof UnknownKeyIdError) {
+        return this.#fail(row, generation, { kind: "terminal", state: "EXPIRED" }, "KEY_UNKNOWN");
+      }
+      // A missing or malformed CREDENTIALS_KEY is a failure like any other: entries must stop.
       return this.#fail(row, generation, { kind: "retryable" }, "CREDENTIALS");
     }
 
@@ -183,7 +193,8 @@ export class TokenRefresher {
     // What the client must hold from now on: the new token if the response rotated, otherwise the
     // one just used, which differs from the stored one only when an earlier rotation was not saved.
     const current = tokens.rotatedRefreshToken ?? refreshToken;
-    if (current !== storedToken) {
+    // A row still on the previous key is re-encrypted now rather than at the next rotation.
+    if (current !== storedToken || row.key_id !== cipher.keyId) {
       await this.#persistRefreshToken(row, generation, cipher, clientSecret, current, now);
     } else {
       await this.#recordSuccess(row, now);
@@ -213,6 +224,7 @@ export class TokenRefresher {
         this.deps.storage.kv.put<UnsavedRefreshToken>(UNSAVED_REFRESH_KEY, {
           tokenEnc: refreshTokenEnc,
           replaces: row.refresh_token_enc,
+          keyId: cipher.keyId,
         });
       }
       // key_id covers both ciphertexts, so a key change re-encrypts the secret in the same statement.

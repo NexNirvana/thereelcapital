@@ -104,6 +104,7 @@ export async function beginConnection(
 interface AttemptRow extends Record<string, SqlStorageValue> {
   client_id: string;
   client_secret_enc: string;
+  key_id: string;
   expires_at: number;
 }
 
@@ -116,7 +117,7 @@ export async function completeConnection(
   const attempt = ctx.storage.transactionSync(() => {
     const row = ctx.sql
       .exec<AttemptRow>(
-        "SELECT client_id, client_secret_enc, expires_at FROM oauth_attempts WHERE state = ? AND mode = 'SIM'",
+        "SELECT client_id, client_secret_enc, key_id, expires_at FROM oauth_attempts WHERE state = ? AND mode = 'SIM'",
         args.state,
       )
       .toArray()[0];
@@ -129,7 +130,11 @@ export async function completeConnection(
   }
 
   const cipher = await ctx.cipher();
-  const clientSecret = await cipher.decrypt(attempt.client_secret_enc, secretContext(ctx.userId));
+  const clientSecret = await cipher.decrypt(
+    attempt.client_secret_enc,
+    secretContext(ctx.userId),
+    attempt.key_id,
+  );
   const clientId = attempt.client_id;
 
   const exchanged = await exchangeCode({
@@ -172,16 +177,29 @@ export async function completeConnection(
   // best effort, before it is overwritten and forgotten.
   const previous = await ctx.db
     .prepare(
-      "SELECT client_id, client_secret_enc, refresh_token_enc FROM broker_connection WHERE user_id = ?",
+      "SELECT client_id, client_secret_enc, refresh_token_enc, key_id FROM broker_connection WHERE user_id = ?",
     )
     .bind(ctx.userId)
-    .first<{ client_id: string; client_secret_enc: string; refresh_token_enc: string }>();
+    .first<{
+      client_id: string;
+      client_secret_enc: string;
+      refresh_token_enc: string;
+      key_id: string;
+    }>();
   if (previous !== null && previous.client_id !== clientId) {
     try {
       await revokeRefreshToken({
         clientId: previous.client_id,
-        clientSecret: await cipher.decrypt(previous.client_secret_enc, secretContext(ctx.userId)),
-        refreshToken: await cipher.decrypt(previous.refresh_token_enc, refreshContext(ctx.userId)),
+        clientSecret: await cipher.decrypt(
+          previous.client_secret_enc,
+          secretContext(ctx.userId),
+          previous.key_id,
+        ),
+        refreshToken: await cipher.decrypt(
+          previous.refresh_token_enc,
+          refreshContext(ctx.userId),
+          previous.key_id,
+        ),
       });
     } catch {
       // Undecryptable (key rotated): nothing to revoke with.
@@ -284,10 +302,15 @@ export async function readConnection(ctx: ConnectionContext): Promise<Connection
 export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boolean }> {
   const row = await ctx.db
     .prepare(
-      "SELECT client_id, client_secret_enc, refresh_token_enc FROM broker_connection WHERE user_id = ?",
+      "SELECT client_id, client_secret_enc, refresh_token_enc, key_id FROM broker_connection WHERE user_id = ?",
     )
     .bind(ctx.userId)
-    .first<{ client_id: string; client_secret_enc: string; refresh_token_enc: string }>();
+    .first<{
+      client_id: string;
+      client_secret_enc: string;
+      refresh_token_enc: string;
+      key_id: string;
+    }>();
 
   let revoked = false;
   if (row !== null) {
@@ -295,8 +318,16 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
       const cipher = await ctx.cipher();
       const outcome = await revokeRefreshToken({
         clientId: row.client_id,
-        clientSecret: await cipher.decrypt(row.client_secret_enc, secretContext(ctx.userId)),
-        refreshToken: await cipher.decrypt(row.refresh_token_enc, refreshContext(ctx.userId)),
+        clientSecret: await cipher.decrypt(
+          row.client_secret_enc,
+          secretContext(ctx.userId),
+          row.key_id,
+        ),
+        refreshToken: await cipher.decrypt(
+          row.refresh_token_enc,
+          refreshContext(ctx.userId),
+          row.key_id,
+        ),
       });
       revoked = outcome.ok;
     } catch {

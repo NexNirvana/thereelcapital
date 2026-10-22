@@ -440,7 +440,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       db: this.env.DB,
       userId,
       now: engineNow(this.env),
-      cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+      cipher: () => createCipher(this.env.CREDENTIALS_KEY, this.env.CREDENTIALS_KEY_PREVIOUS),
       tokens,
     };
   }
@@ -454,7 +454,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       storage: this.ctx.storage,
       db: this.env.DB,
       userId,
-      cipher: () => createCipher(this.env.CREDENTIALS_KEY),
+      cipher: () => createCipher(this.env.CREDENTIALS_KEY, this.env.CREDENTIALS_KEY_PREVIOUS),
       clock: () => Date.now(),
       retryDelayMs: REFRESH_REQUEST_RETRY_DELAY_MS,
     });

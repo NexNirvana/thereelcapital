@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCipher, CredentialsKeyError } from "../src/crypto";
+import { createCipher, CredentialsKeyError, UnknownKeyIdError } from "../src/crypto";
 
 const key = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const otherKey = btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
@@ -39,5 +39,32 @@ describe("credential cipher", () => {
     for (const bad of [undefined, "", "not base64!!", btoa("short")]) {
       await expect(createCipher(bad)).rejects.toBeInstanceOf(CredentialsKeyError);
     }
+  });
+
+  it("reads what the previous key sealed, and seals only with the current one", async () => {
+    const old = await createCipher(otherKey);
+    const rotated = await createCipher(key, otherKey);
+    const blob = await old.encrypt("s3cret", "c");
+    expect(await rotated.decrypt(blob, "c", old.keyId)).toBe("s3cret");
+    expect(rotated.keyId).toBe((await createCipher(key)).keyId);
+    const fresh = await rotated.encrypt("s3cret", "c");
+    await expect(old.decrypt(fresh, "c")).rejects.toThrow();
+  });
+
+  it("fails closed with a typed error on a key_id that neither key has", async () => {
+    const rotated = await createCipher(key, otherKey);
+    const blob = await rotated.encrypt("s3cret", "c");
+    await expect(rotated.decrypt(blob, "c", "deadbeef")).rejects.toBeInstanceOf(UnknownKeyIdError);
+    const noPrevious = await createCipher(key);
+    const old = await createCipher(otherKey);
+    await expect(
+      noPrevious.decrypt(await old.encrypt("x", "c"), "c", old.keyId),
+    ).rejects.toBeInstanceOf(UnknownKeyIdError);
+  });
+
+  it("rejects a malformed previous key without echoing it", async () => {
+    await expect(createCipher(key, "nope!!")).rejects.toThrow(
+      /^CREDENTIALS_KEY_PREVIOUS is not base64$/,
+    );
   });
 });
