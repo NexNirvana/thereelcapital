@@ -26,8 +26,8 @@ Start with [product-spec.md](product-spec.md) for what the product is, then [arc
 ## Precedence
 
 1. [`ONBOARDING.md`](../ONBOARDING.md): the user's confirmed decisions (Spanish). It wins; if a doc disagrees, fix the doc.
-2. Final designs in [`designs/`](../designs/) for layout and copy.
-3. These docs.
+2. These docs.
+3. Final designs in [`designs/`](../designs/) for layout; their screen copy wins over the docs (D41 in [decisions.md](decisions.md)).
 4. The PDFs, superseded where they conflict ([decisions.md](decisions.md)).
 5. The demo HTMLs, for interaction ideas only.
 

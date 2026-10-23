@@ -81,7 +81,7 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 - **Definition row**: label left (body), value right (mono), hairline below. Read-only values look read-only (no input chrome).
 - **Progress bar**: thin; filled `--text`, track `--rule`; right label `70% vendido`.
 - **Scale-out bar**: 7 compact square-cornered buttons in one row (`30% 20% 10% 10% 10% 10% 10%`). Available = outlined; used = dimmed + ✓ (mobile: `--done` fill with ✓, label below); pending = distinct label (e.g. `…` / `Enviando`), never re-clickable; used with zero quantity = dimmed + caption «0 contratos por redondeo». Wraps 4+3 on narrow screens.
-- **Protection rows**: `Stop loss / 30%` + verified state (`Activo` / `No verificado`); `Trailing / 10%` + % selector (allowed values only, no free text) + `Activar trailing` + caption `Disponible: 70% vendido` or the real eligibility.
+- **Protection rows**: `Stop loss / 30%` + verified state (`Activo` / `No verificado`); `Trailing / 10%` + % selector (allowed values only, no free text) + `Activar trailing` + caption `Disponible desde 70% vendido` on desktop and mobile (D42), or the real eligibility.
 - **Admin tables** (lists of clients, orders, fills, errors, audit): mono rows with hairlines, a filter bar (text search + selects), no zebra colors, sticky header, horizontal scroll container on mobile.
 - **Notices**: connection, permission, unknown result and protection-loss messages. Bordered text block, never hidden or color-only.
 - **Focus**: always visible (2px outline). Keyboard reachable.

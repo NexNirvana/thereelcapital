@@ -26,7 +26,4 @@ Timing values are decided: D33 in [decisions.md](decisions.md).
 
 ## Config values to confirm
 
-Both are marked undecided in `src/lib/domain/config.ts`.
-
-14. `SYNC_MIN_INTERVAL_MS` (2 s): a `sync` request (page load or poll) skips the broker read when the last good pass is younger than this.
-15. `PROTECTION_SETTINGS_TTL_MS` (5 s, one sync tick): how long the engine reuses the protection settings it read from D1.
+None open. Questions 14 and 15 (`SYNC_MIN_INTERVAL_MS`, `PROTECTION_SETTINGS_TTL_MS`) were decided on 2026-10-23: see D40 in [decisions.md](decisions.md).
