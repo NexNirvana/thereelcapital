@@ -24,6 +24,7 @@ const actions = [
   "revokeSession",
   "revokeAllSessions",
   "updateSettings",
+  "rename",
   "recover",
 ];
 
@@ -276,6 +277,34 @@ test("saves a client's settings with an audit row, refuses a lower SIZE and show
   expect(await stop.text()).toContain("El stop debe ser un entero entre 10 y 50.");
   expect(settingsOf(client.userId)).toEqual([{ sizeUsd: 25000, stopPct: 25, unlockPct: 60 }]);
   expect(audited("client_settings.update", client.userId)).toBe(1);
+});
+
+test("renames a client with an audit row of the old and new name and refuses an empty name", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { role: "admin" });
+  const client = await seedPendingClient();
+  const other = await seedPendingClient();
+  const nameOf = (userId: string) =>
+    d1(`SELECT "name" AS name FROM "user" WHERE "id" = '${userId}'`);
+  const otherName = nameOf(other.userId);
+  await page.goto(`/admin/clientes/${client.userId}`, { waitUntil: "networkidle" });
+
+  await page.getByLabel("Nombre", { exact: true }).fill("  Ana Pérez ");
+  await page.getByRole("button", { name: "Guardar nombre" }).click();
+  await expect(page.getByText("Nombre guardado.")).toBeVisible();
+  expect(nameOf(client.userId)).toEqual([{ name: "Ana Pérez" }]);
+  expect(nameOf(other.userId)).toEqual(otherName);
+  expect(audited("client.rename", client.userId)).toBe(1);
+
+  const empty = await page.request.post(`/admin/clientes/${client.userId}?/rename`, {
+    form: { name: "   " },
+    headers: { origin, accept: "application/json" },
+  });
+  expect(await empty.text()).toContain("El nombre no puede estar vacío");
+  expect(nameOf(client.userId)).toEqual([{ name: "Ana Pérez" }]);
+  expect(audited("client.rename", client.userId)).toBe(1);
 });
 
 test("the admin cannot impersonate a client or set their password", async ({ context, page }) => {

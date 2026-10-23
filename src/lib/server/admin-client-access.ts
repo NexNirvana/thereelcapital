@@ -7,6 +7,7 @@
 import { error, isHttpError } from "@sveltejs/kit";
 import { Schema } from "effect";
 import { STOP_PCT_BOUNDS, TRAILING_UNLOCK_PCT_BOUNDS } from "#lib/domain/config.ts";
+import { CLIENT_NAME_MAX_CHARS, normalizeClientName } from "#lib/domain/client-name.ts";
 import { MAX_DAILY_ENTRIES, MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
 import { validateSizeChange } from "#lib/domain/sizing.ts";
 import { validateStopPct, validateTrailingUnlockPct } from "#lib/domain/stop.ts";
@@ -114,7 +115,21 @@ export const settingsErrors = {
   },
 } as const;
 
+export const nameErrors = {
+  nameInvalid: {
+    status: 422,
+    code: "NAME_INVALID",
+    message: `El nombre no puede estar vacío ni superar ${CLIENT_NAME_MAX_CHARS} caracteres.`,
+  },
+  nameChangedMeanwhile: {
+    status: 409,
+    code: "NAME_CHANGED",
+    message: "El nombre cambió mientras lo editabas. Recarga la página.",
+  },
+} as const;
+
 type Failure =
+  | (typeof nameErrors)[keyof typeof nameErrors]
   | (typeof accessErrors)[keyof typeof accessErrors]
   | (typeof settingsErrors)[keyof typeof settingsErrors]
   | typeof guardErrors.reauthRequired;
@@ -183,7 +198,7 @@ export interface ClientDetail {
   }[];
 }
 
-type Target = { id: string; email: string; banned: boolean; passkeys: number };
+type Target = { id: string; email: string; name: string; banned: boolean; passkeys: number };
 
 async function loadTarget<S extends AccessStatement>(
   db: AccessDb<S>,
@@ -304,6 +319,7 @@ async function guardedAs<L extends GuardLocals, S extends AccessStatement, T>(
   return run(actor, {
     id: profile.id,
     email: profile.email,
+    name: profile.name,
     banned: profile.banned === 1,
     passkeys: profile.passkeys,
   });
@@ -610,6 +626,45 @@ const SettingsForm = Schema.Struct({
   unlockPct: Schema.String.check(Schema.isMaxLength(12)),
 });
 const wholeNumber = (text: string) => (/^\d+$/.test(text) ? Number(text) : NaN);
+
+// No length check here: normalizeClientName owns it, so every overlong name is NAME_INVALID.
+const NameForm = Schema.Struct({ name: Schema.String });
+
+/**
+ * Renames a client (D39). The name is trimmed; a name equal to the current one is a no-op with
+ * no audit row. The UPDATE matches the name the check read, so a concurrent rename fails
+ * instead of being overwritten, and the audit row (old and new name) lands in the same batch.
+ */
+export function renameClient<L extends GuardLocals, S extends AccessStatement>(
+  event: GuardEvent<L>,
+  { db }: Context<S>,
+  targetId: string,
+  form: unknown,
+  now = Date.now(),
+): Promise<Outcome> {
+  return guarded(event, db, targetId, now, async (actor, target) => {
+    const name = normalizeClientName(decode(NameForm, form).name);
+    if (name === null) return refuse(nameErrors.nameInvalid);
+    if (name === target.name) return { ok: true };
+    const [updated] = await db.batch([
+      db
+        .prepare(`UPDATE "user" SET "name" = ?, "updatedAt" = ? WHERE "id" = ? AND "name" = ?`)
+        .bind(name, now, target.id, target.name),
+      db
+        .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`)
+        .bind(
+          crypto.randomUUID(),
+          now,
+          actor.user.id,
+          "client.rename",
+          target.id,
+          JSON.stringify({ name: target.name }),
+          JSON.stringify({ name }),
+        ),
+    ]);
+    return updated?.meta.changes === 1 ? { ok: true } : refuse(nameErrors.nameChangedMeanwhile);
+  });
+}
 
 /**
  * Saves a client's SIZE, stop % and trailing-unlock %. They apply to new entries and new
