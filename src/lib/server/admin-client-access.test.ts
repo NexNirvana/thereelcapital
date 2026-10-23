@@ -12,6 +12,8 @@ import {
   recoverClient,
   revokeAllSessions,
   revokeLink,
+  nameErrors,
+  renameClient,
   revokeSession,
   settingsErrors,
   updateClientSettings,
@@ -94,6 +96,7 @@ const mutations: Record<string, Mutation> = {
   revokeAll: (s, e, id = "c1") => revokeAllSessions(e, s.ctx, id, now),
   updateSettings: (s, e, id = "c1") =>
     updateClientSettings(e, s.ctx, id, { sizeUsd: "25000", stopPct: "30", unlockPct: "70" }, now),
+  rename: (s, e, id = "c1") => renameClient(e, s.ctx, id, { name: "Ana Pérez" }, now),
   recover: (s, e, id = "c1") => recoverClient(e, s.ctx, id, { verified: "on" }, now),
 };
 
@@ -484,6 +487,78 @@ describe("admin recovery (another admin)", () => {
     expect(await listOtherAdmins(s.db, "admin-1")).toEqual([
       { id: "admin-2", email: "admin-2@example.com" },
     ]);
+  });
+});
+
+describe("renameClient", () => {
+  const rename = (s: ReturnType<typeof setup>, name: string, id = "c1") =>
+    renameClient(admin(), s.ctx, id, { name }, now);
+  const nameOf = (s: ReturnType<typeof setup>, id: string) =>
+    s.db.sqlite.query(`SELECT "name" AS name FROM "user" WHERE "id" = ?`).get(id);
+
+  test("trims and saves the name with one audit row of the old and new name", async () => {
+    const s = setup();
+    expect(await rename(s, "  Ana Pérez  ")).toEqual({ ok: true });
+    expect(nameOf(s, "c1")).toEqual({ name: "Ana Pérez" });
+    expect(nameOf(s, "c2")).toEqual({ name: "c2" });
+    const [row, ...rest] = audits(s.db, "client.rename");
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ actor_id: "admin-1", target_user_id: "c1", at: now });
+    expect(JSON.parse(row?.before_json ?? "")).toEqual({ name: "c1" });
+    expect(JSON.parse(row?.after_json ?? "")).toEqual({ name: "Ana Pérez" });
+  });
+
+  test("is a no-op without an audit row when the name does not change", async () => {
+    const s = setup();
+    expect(await rename(s, " c1 ")).toEqual({ ok: true });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test.each(["", "   ", "x".repeat(255), "x".repeat(5000), "Ana\nPérez"])(
+    "rejects the name %j",
+    async (name) => {
+      const s = setup();
+      expect(await rename(s, name)).toEqual({ ok: false, error: nameErrors.nameInvalid });
+      expect(nameOf(s, "c1")).toEqual({ name: "c1" });
+      expect(n(s.db, "audit_log")).toBe(0);
+    },
+  );
+
+  test("fails instead of overwriting when the name changed after the check", async () => {
+    const s = setup();
+    const racing = {
+      ...s.ctx,
+      db: new Proxy(s.db, {
+        get(target, key, receiver) {
+          if (key !== "batch") return Reflect.get(target, key, receiver);
+          return (statements: Parameters<typeof s.db.batch>[0]) => {
+            s.db.sqlite.run(`UPDATE "user" SET "name" = 'Otro' WHERE "id" = 'c1'`);
+            return target.batch(statements);
+          };
+        },
+      }),
+    };
+    expect(await renameClient(admin(), racing, "c1", { name: "Ana" }, now)).toEqual({
+      ok: false,
+      error: nameErrors.nameChangedMeanwhile,
+    });
+    expect(nameOf(s, "c1")).toEqual({ name: "Otro" });
+    expect(audits(s.db, "client.rename")).toEqual([]);
+  });
+
+  test("renames only the client the admin names", async () => {
+    const s = setup();
+    await rename(s, "Luis", "c2");
+    expect(nameOf(s, "c1")).toEqual({ name: "c1" });
+    expect(nameOf(s, "c2")).toEqual({ name: "Luis" });
+  });
+
+  test("rejects unknown fields as invalid input", async () => {
+    const s = setup();
+    await expect(
+      renameClient(admin(), s.ctx, "c1", { name: "Ana", email: "x@example.com" }, now),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(n(s.db, "audit_log")).toBe(0);
   });
 });
 

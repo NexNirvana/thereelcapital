@@ -2,6 +2,7 @@
   import { enhance, type SubmitFunction } from "$app/forms";
   import { resolve } from "$app/paths";
   import { connectionKey } from "#lib/domain/overview.ts";
+  import { CLIENT_NAME_MAX_CHARS } from "#lib/domain/client-name.ts";
   import { connectionLabel } from "#lib/ui/admin-operations.ts";
   import ClientOperations from "#lib/ui/ClientOperations.svelte";
   import { formatWhen } from "#lib/ui/history.ts";
@@ -30,6 +31,7 @@
     revokeSession: "Sesión cerrada.",
     revokeAllSessions: "Sesiones cerradas.",
     updateSettings: "Configuración guardada.",
+    rename: "Nombre guardado.",
   };
 
   const usd = new Intl.NumberFormat("en-US"); // docs/design-system.md#formats: US$20,000
@@ -111,12 +113,28 @@
   <h2 id="profile">Perfil</h2>
   <dl>
     <DefinitionRow label="Correo" value={client.email} />
-    <DefinitionRow label="Nombre" value={client.name} />
     <DefinitionRow label="Rol" value="Cliente" />
     <DefinitionRow label="Acceso" value={access[client.access]} />
     <DefinitionRow label="Passkeys" value={String(client.passkeys)} />
     <DefinitionRow label="Códigos de recuperación sin usar" value={String(client.unusedCodes)} />
   </dl>
+  <form method="POST" action="?/rename" use:enhance={submit("rename")}>
+    <div class="field">
+      <label for="name">Nombre</label>
+      <input
+        id="name"
+        name="name"
+        type="text"
+        autocomplete="off"
+        maxlength={CLIENT_NAME_MAX_CHARS}
+        required
+        value={client.name}
+      />
+    </div>
+    <Button type="submit" disabled={busy !== null}>
+      {busy === "rename" ? "Guardando" : "Guardar nombre"}
+    </Button>
+  </form>
 </section>
 
 <section aria-labelledby="access">

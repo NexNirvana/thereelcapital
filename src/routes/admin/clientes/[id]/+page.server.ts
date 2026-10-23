@@ -6,6 +6,7 @@ import {
   generateLink,
   getClientDetail,
   reactivateClient,
+  renameClient,
   recoverClient,
   revokeAllSessions,
   revokeLink,
@@ -72,6 +73,12 @@ export const actions: Actions = {
       event,
       "updateSettings",
       await updateClientSettings(event, context(), event.params.id, await form(event)),
+    ),
+  rename: async (event) =>
+    respond(
+      event,
+      "rename",
+      await renameClient(event, context(), event.params.id, await form(event)),
     ),
   recover: async (event) =>
     respond(
