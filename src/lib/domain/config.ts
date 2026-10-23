@@ -60,13 +60,13 @@ export const REFRESH_REQUEST_RETRY_DELAY_MS = 500;
 export const SYNC_INTERVAL_MS = 5 * 1000;
 
 /**
- * Undecided (docs/open-questions.md): a `sync` request (page load or poll) skips the broker read when
+ * Decided (D40): a `sync` request (page load or poll) skips the broker read when
  * the last good pass is younger than this. Short enough that a screen is never visibly stale, long
  * enough to absorb a burst of page loads; the sync-loop tick is never throttled.
  */
 export const SYNC_MIN_INTERVAL_MS = 2 * 1000;
 
-/** Undecided: how long the engine reuses the protection settings it read from D1 (D1 stays their owner). */
+/** Decided (D40): how long the engine reuses the protection settings it read from D1 (D1 stays their owner). */
 export const PROTECTION_SETTINGS_TTL_MS = SYNC_INTERVAL_MS;
 
 /** Decided (D22): events are kept 6 years, then the sync tick prunes them. */
