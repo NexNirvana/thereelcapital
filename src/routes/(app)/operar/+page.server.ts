@@ -9,6 +9,7 @@ import { requireUser } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async (event) => {
+  const { parent } = event;
   if (!event.locals.user) redirect(303, resolve("/acceso"));
   const { user } = requireUser(event);
   // Quotes and accounts of one client: never cached by a shared proxy.
@@ -19,8 +20,8 @@ export const load: PageServerLoad = async (event) => {
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
   const engine = engineFor(env.ENGINE, event);
-  const [connection, limits, settings, contract] = await Promise.all([
-    engine.connection({ mode: "SIM" }).catch(() => null),
+  // The connection comes from the layout; the other reads start now so they overlap with it.
+  const others = Promise.all([
     engine.limits({ mode: "SIM" }).catch(() => null),
     env.DB.prepare("SELECT stop_pct FROM client_settings WHERE user_id = ?")
       .bind(user.id)
@@ -32,6 +33,8 @@ export const load: PageServerLoad = async (event) => {
       ? engine.optionContract({ mode: "SIM", symbol }).catch(() => null)
       : null,
   ]);
+  const { connection: shell } = await parent();
+  const [limits, settings, contract] = await others;
 
   const base = {
     tipo,
@@ -42,14 +45,14 @@ export const load: PageServerLoad = async (event) => {
     accounts: [] as string[],
     accountId: null as string | null,
   };
-  if (connection === null || !connection.ok) {
+  if (!shell?.ok) {
     return {
       ...base,
       preview: null,
-      blocked: connection?.ok === false ? connection.message : "No pudimos leer tu conexión.",
+      blocked: shell?.ok === false ? shell.message : "No pudimos leer tu conexión.",
     };
   }
-  const view = connection.value;
+  const view = shell.view;
   if (view.status !== "CONNECTED") {
     return { ...base, preview: null, blocked: blockMessage([connectionBlockCode(view)]) };
   }

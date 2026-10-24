@@ -2,6 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { engineFor } from "#lib/server/engine.ts";
+import { shellConnection } from "#lib/server/shell-connection.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { LayoutServerLoad } from "./$types";
 
@@ -22,6 +23,10 @@ export const load: LayoutServerLoad = async (event) => {
   // one gets 403. Pages and actions guard themselves too (SvelteKit runs loads in parallel).
   if (!event.locals.user) redirect(303, resolve("/acceso"));
   const { user } = requireUser(event);
+  // Reading the URL makes SvelteKit rerun this load on every navigation, so a screen reached by
+  // a client-side link never shows a connection older than the visit; a refresh that keeps the
+  // URL (the chain's `app:chain`) leaves it alone.
+  void event.url.href;
   const [result, unusedCodes] = await Promise.all([
     engineFor(env.ENGINE, event)
       .connection({ mode: "SIM" })
@@ -29,13 +34,14 @@ export const load: LayoutServerLoad = async (event) => {
     unusedRecoveryCodes(user.id),
   ]);
   const shell = { isAdmin: user.role === "admin", unusedCodes };
-  if (result === null || !result.ok) return { ...shell, health: undefined, account: null };
-  // The account is shown only while there is a connection to show it for.
-  return result.value.status === "CONNECTED"
-    ? {
-        ...shell,
-        health: result.value.health,
-        account: result.value.accounts[0]?.accountId ?? null,
-      }
-    : { ...shell, health: null, account: null };
+  // The pages read this through `await parent()` instead of asking the engine again.
+  const connection = shellConnection(result);
+  const view = connection?.ok ? connection.view : null;
+  return {
+    ...shell,
+    connection,
+    // Unreadable: no indicator (undefined). Connected: the health and the account to show.
+    health: connection?.ok ? (view?.status === "CONNECTED" ? view.health : null) : undefined,
+    account: view?.status === "CONNECTED" ? (view.accounts[0]?.accountId ?? null) : null,
+  };
 };
