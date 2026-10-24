@@ -9,8 +9,9 @@
 
   let { data }: PageProps = $props();
 
-  // Ask the engine again every few seconds until the order ends or the client leaves. The bound
-  // keeps a forgotten tab from polling for ever; the engine keeps reconciling either way.
+  // Ask the engine again every few seconds while the screen is visible, until the order ends or
+  // the client leaves. A hidden tab neither asks nor counts: the bound is for a forgotten visible
+  // tab, and the engine keeps reconciling either way.
   const POLL_MS = 3_000;
   const MAX_POLLS = 200;
   let polls = $state(0);
@@ -22,11 +23,18 @@
 
   $effect(() => {
     if (!watching) return;
-    const timer = setInterval(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
       polls += 1;
       void invalidate("app:order");
-    }, POLL_MS);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(tick, POLL_MS);
+    // Catch up as soon as the tab returns.
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
   });
 </script>
 

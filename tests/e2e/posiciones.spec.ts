@@ -260,6 +260,95 @@ test("switches between two positions", async ({ context, page }) => {
   await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
 });
 
+test("selects a position from the loaded data, without asking the engine again", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, {
+    positions: [
+      { id: "pos-a", symbol: "AAA", qty: 10 },
+      { id: "pos-b", symbol: "BBB", qty: 20, soldQty: 5 },
+    ],
+  });
+  // Count only the loads a selection causes: the 3 s poller never starts.
+  await page.addInitScript(() => {
+    const setIntervalOriginal = window.setInterval.bind(window);
+    window.setInterval = ((handler: TimerHandler, ms?: number, ...args: unknown[]) =>
+      ms === 3_000 ? 0 : setIntervalOriginal(handler, ms, ...args)) as typeof window.setInterval;
+  });
+  await page.goto("/posiciones", { waitUntil: "networkidle" });
+  const loads: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("__data.json")) loads.push(request.url());
+  });
+  const link = page.getByRole("link", { name: "BBB" });
+  await link.hover();
+  await page.waitForTimeout(500);
+  expect(loads, "hover preload").toEqual([]);
+  await link.click();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await expect(page.getByText("15 acciones restantes", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/posiciones\?p=pos-b$/);
+  await expect(page.getByRole("link", { name: "BBB" })).toHaveAttribute("aria-current", "page");
+  expect(loads).toEqual([]);
+  await shoot(page, "selected-second");
+
+  // A reload or a shared link keeps the choice, and the form actions still carry it.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await page.getByRole("link", { name: "AAA" }).click();
+  await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
+  await expect(page).toHaveURL(/p=pos-a$/);
+  // Selecting replaces the history entry: back leaves the page instead of stepping through picks.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/posiciones/);
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
+  // The shell's own link loads the first position again, even though the page is reused.
+  await page.getByRole("link", { name: "BBB" }).click();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await page.getByRole("link", { name: "Posiciones", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "AAA" })).toBeVisible();
+});
+
+test("keeps a picked position when the 3 s poll reloads the page", async ({ context, page }) => {
+  await seedTradingClient(context, {
+    positions: [
+      { id: "pos-a", symbol: "AAA", qty: 10 },
+      { id: "pos-b", symbol: "BBB", qty: 20 },
+    ],
+  });
+  await page.goto("/posiciones?p=pos-a", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "BBB" }).click();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  // Wait for a poll that starts after the click, then give the page a moment to apply it.
+  await page.waitForResponse(
+    (response) =>
+      response.url().includes("__data.json") && response.url().includes("x-sveltekit-invalidated"),
+    { timeout: 8_000 },
+  );
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await expect(page).toHaveURL(/p=pos-b$/);
+});
+
+test("keeps a clicked position after acting on it", async ({ context, page }) => {
+  await seedTradingClient(context, {
+    positions: [
+      { id: "pos-a", symbol: "AAA", qty: 10 },
+      { id: "pos-b", symbol: "BBB", qty: 20 },
+    ],
+  });
+  await page.goto("/posiciones", { waitUntil: "networkidle" });
+  await page.getByRole("link", { name: "BBB" }).click();
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await sell(page, step(page, 1));
+  // The simulation does not know BBB, so the order is refused; the view stays on the pick.
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: SETTLE_MS });
+  await expect(page.getByRole("heading", { name: "BBB" })).toBeVisible();
+  await expect(page).toHaveURL(/p=pos-b/);
+});
+
 test("keeps the selected position after acting on it", async ({ context, page }) => {
   await seedTradingClient(context, {
     positions: [
