@@ -77,3 +77,22 @@ test("shows no connection as unconnected with a way to connect", async ({ contex
   await expect(topbar).toContainText("TradeStation sin conectar");
   await expect(topbar.getByRole("link", { name: "Conectar con TradeStation" })).toBeVisible();
 });
+
+test("shows the stored connection, not the one from the first load, after a client-side navigation", async ({
+  context,
+  page,
+}) => {
+  const userId = await seedSignedInUser(context);
+  d1(
+    `INSERT INTO broker_connection (user_id, client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status, last_ok_at)
+     VALUES ('${userId}', 'e2e-client', 'x', 'x', 'k', NULL, 'CONNECTED', 0)`,
+  );
+  await page.goto("/posiciones");
+  const topbar = page.locator("header.topbar");
+  await expect(topbar).toContainText("TradeStation conectado");
+
+  d1(`UPDATE broker_connection SET status = 'EXPIRED' WHERE user_id = '${userId}'`);
+  await page.getByRole("link", { name: "Conexión" }).first().click();
+  await expect(page).toHaveURL(/\/conexion$/);
+  await expect(topbar).toContainText("TradeStation venció");
+});

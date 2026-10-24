@@ -25,21 +25,20 @@ const expiry = new Intl.DateTimeFormat("es", {
 });
 
 export const load: PageServerLoad = async (event) => {
-  const { locals, url, setHeaders } = event;
+  const { locals, url, setHeaders, parent } = event;
   if (!locals.user || locals.user.banned) redirect(303, resolve("/acceso"));
   // Accounts of one client: never cached by a shared proxy.
   setHeaders({ "cache-control": "no-store" });
 
-  const result = await engineFor(env.ENGINE, event)
-    .connection({ mode: "SIM" })
-    .catch(() => null);
+  // Read once by the layout; this page only formats it.
+  const { connection: result } = await parent();
   if (result === null) {
     const error = connectionErrorFor("BROKER_UNAVAILABLE")?.message ?? null;
     return { connection: null, callbackUrl: callbackUrl(), error };
   }
   if (!result.ok) return { connection: null, callbackUrl: callbackUrl(), error: result.message };
 
-  const view = result.value;
+  const view = result.view;
   return {
     connection:
       view.status === "CONNECTED"

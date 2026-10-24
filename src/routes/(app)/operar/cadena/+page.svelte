@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invalidateAll } from "$app/navigation";
+  import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import Notice from "#lib/ui/Notice.svelte";
@@ -34,7 +34,7 @@
     event.preventDefault();
     refreshing = true;
     try {
-      await invalidateAll();
+      await invalidate("app:chain");
     } finally {
       refreshing = false;
     }

@@ -23,6 +23,8 @@ export const load: PageServerLoad = async (event) => {
   requireUser(event);
   // A chain snapshot is a moment in time: never cached or replayed.
   event.setHeaders({ "cache-control": "no-store" });
+  // The page refreshes by invalidating this key, so the layout does not rerun.
+  event.depends("app:chain");
 
   const query = decode(Query, Object.fromEntries(event.url.searchParams));
   const underlying = (query.subyacente ?? "").trim().toUpperCase();
