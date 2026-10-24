@@ -348,7 +348,7 @@
   .instrument {
     margin: 0 0 1.5rem;
     font-size: 32px;
-    font-weight: 700;
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
   .summary dl {

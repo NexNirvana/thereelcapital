@@ -391,7 +391,7 @@
   }
   .symbol {
     font-size: clamp(32px, 4vw, 38px);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.02em;
   }
   .instrument {
