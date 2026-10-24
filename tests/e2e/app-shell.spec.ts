@@ -154,6 +154,27 @@ test("does not load the passkey client on signed-in pages without a passkey prom
   expect(await loadedScriptsWithPasskeyClient(page, ["/operar", "/posiciones"])).toBe(0);
 });
 
+test("starts loading the passkey client when the reauth prompt appears, before any click", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { sessionAgeMs: 11 * 60 * 1000 });
+  await page.goto("/operar", { waitUntil: "networkidle" });
+  const checks: Promise<boolean>[] = [];
+  page.on("response", (response) => {
+    if (response.url().endsWith(".js")) {
+      checks.push(response.text().then((code) => code.includes(PASSKEY_CLIENT_MARKER)));
+    }
+  });
+  await page.getByRole("button", { name: "Generar códigos" }).click();
+  const confirm = page.getByRole("button", { name: "Confirmar con passkey" });
+  await expect(confirm).toBeVisible();
+  // Nothing has been clicked on the prompt: the chunk comes from mounting it.
+  await expect
+    .poll(async () => (await Promise.all(checks)).filter(Boolean).length)
+    .toBeGreaterThan(0);
+});
+
 test("signing out from the shell returns to the access screen", async ({ context, page }) => {
   seedCodes(await seedSignedInUser(context), 8);
   // The button does nothing until the page hydrates, so wait for that before clicking.

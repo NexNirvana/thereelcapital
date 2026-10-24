@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invalidateAll } from "$app/navigation";
-  import { signInWithPasskey } from "#lib/passkey-sign-in.ts";
+  import { signInWithPasskey, warmPasskeyClient } from "#lib/passkey-sign-in.ts";
   import Button from "./Button.svelte";
   import Notice from "./Notice.svelte";
 
@@ -8,6 +9,8 @@
   // `refresh` re-runs every load after the sign-in; a caller whose own state must survive it (the
   // recovery-code prompt shows codes that make a layout load see them as existing) turns it off.
   let { onconfirmed, refresh = true }: { onconfirmed: () => void; refresh?: boolean } = $props();
+
+  onMount(warmPasskeyClient);
 
   let reauthenticating = $state(false);
   let failure = $state<string | null>(null);
