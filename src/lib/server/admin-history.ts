@@ -4,6 +4,7 @@
 import { Schema } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { ORDER_STATES } from "#lib/domain/order-states.ts";
+import { withTimeout } from "./admin-operations.ts";
 
 export const ADMIN_HISTORY_PAGE_SIZE = 25;
 export const ADMIN_EVENTS_SHOWN = 50;
@@ -104,13 +105,14 @@ const newestFirst = (a: ClientIntent, b: ClientIntent) =>
 /**
  * Asks every client (or the one filtered) in parallel and merges. The global page is contained in
  * the union of each client's own page after the same cursor, so the merged cursor never skips a
- * row; a client that fails is reported and the rest still show.
+ * row; a client that fails or exceeds the fan-out timeout is reported and the rest still show.
  */
 export async function readAdminHistory(
   clients: readonly ClientRef[],
   filters: AdminHistoryFilters,
   cursor: string | undefined,
   read: HistoryReader,
+  timeoutMs?: number,
 ): Promise<AdminHistoryPage> {
   const targets =
     filters.cliente === "" ? clients : clients.filter((c) => c.id === filters.cliente);
@@ -127,7 +129,7 @@ export async function readAdminHistory(
 
   const settled = await Promise.all(
     targets.map(async (client) => {
-      const result = await read(client.id, args).catch(() => null);
+      const result = await withTimeout(() => read(client.id, args), timeoutMs);
       return { client, result };
     }),
   );
@@ -167,6 +169,8 @@ export async function readAdminHistory(
     failures,
     nextCursor:
       showOrders &&
+      // A failed client's rows newer than the cursor would fall behind the next page: reload retries them.
+      failures.length === 0 &&
       (clientHasMore || intents.length > ADMIN_HISTORY_PAGE_SIZE) &&
       last !== undefined
         ? `${last.created_at}:${last.id}`

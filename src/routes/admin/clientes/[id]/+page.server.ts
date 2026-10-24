@@ -28,7 +28,8 @@ export const load: PageServerLoad = async (event) => {
   event.setHeaders({ "cache-control": "no-store" });
   // Asked after the client is known to exist, so an arbitrary id never wakes a Durable Object.
   const client = await getClientDetail(env.DB, event.params.id);
-  const operations = await settled(() =>
+  // Streamed: the client's details paint at once and the engine's answer fills its section.
+  const operations = settled(() =>
     engineForClient(env.ENGINE, event, client.id).overview({ mode: "SIM" }),
   );
   return { client, operations };

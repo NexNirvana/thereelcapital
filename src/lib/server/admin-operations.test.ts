@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ClientOverview } from "#lib/domain/overview.ts";
-import { fetchOverviews, settled } from "./admin-operations.ts";
+import { settled, startOverviews } from "./admin-operations.ts";
 
 const overview: ClientOverview = {
   connection: { status: "NOT_CONNECTED" },
@@ -32,7 +32,7 @@ describe("settled", () => {
   });
 });
 
-describe("fetchOverviews", () => {
+describe("startOverviews", () => {
   test("one failing and one hanging object still render the others, in order", async () => {
     const clients = [
       { id: "a", email: "a@x.test" },
@@ -41,7 +41,7 @@ describe("fetchOverviews", () => {
       { id: "d", email: "d@x.test" },
     ];
     const asked: unknown[] = [];
-    const rows = await fetchOverviews(
+    const started = startOverviews(
       clients,
       (id) => ({
         overview: (input) => {
@@ -53,6 +53,9 @@ describe("fetchOverviews", () => {
       }),
       20,
     );
+    const rows = await Promise.all(
+      started.map(async (row) => ({ ...row, overview: await row.overview })),
+    );
     expect(rows.map((r) => [r.id, r.overview.status])).toEqual([
       ["a", "ok"],
       ["b", "unavailable"],
@@ -60,5 +63,38 @@ describe("fetchOverviews", () => {
       ["d", "ok"],
     ]);
     expect(asked).toEqual(Array(4).fill({ mode: "SIM" }));
+  });
+
+  test("a call that throws synchronously reads as unavailable", async () => {
+    expect(
+      await settled(() => {
+        throw new Error("no namespace");
+      }),
+    ).toEqual({ status: "unavailable" });
+  });
+
+  test("returns the rows before any object answers, and one slow object delays only its row", async () => {
+    let release: () => void = () => {};
+    const slow = new Promise<{ ok: true; value: ClientOverview }>((resolve) => {
+      release = () => resolve({ ok: true, value: overview });
+    });
+    const started = startOverviews(
+      [
+        { id: "fast", email: "f@x.test" },
+        { id: "slow", email: "s@x.test" },
+      ],
+      (id) => ({
+        overview: () => (id === "slow" ? slow : Promise.resolve({ ok: true, value: overview })),
+      }),
+      1_000,
+    );
+    expect(started.map((r) => r.id)).toEqual(["fast", "slow"]);
+    expect((await started[0]!.overview).status).toBe("ok");
+    let slowDone = false;
+    void started[1]!.overview.then(() => (slowDone = true));
+    await Promise.resolve();
+    expect(slowDone).toBe(false);
+    release();
+    expect((await started[1]!.overview).status).toBe("ok");
   });
 });

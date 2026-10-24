@@ -4,7 +4,7 @@ import { createUserWith } from "#lib/server/activation.ts";
 import { listOtherAdmins } from "#lib/server/admin-client-access.ts";
 import { createClientFromForm, listClients } from "#lib/server/admin-clients.ts";
 import { createAuth } from "#lib/server/auth.ts";
-import { fetchOverviews } from "#lib/server/admin-operations.ts";
+import { startOverviews } from "#lib/server/admin-operations.ts";
 import { engineForClient } from "#lib/server/engine.ts";
 import { connectionKey } from "#lib/domain/overview.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
@@ -18,18 +18,20 @@ export const load: PageServerLoad = async (event) => {
     listOtherAdmins(env.DB, user.id),
   ]);
   // Only clients with a stored connection are asked; the rest are «Sin conectar» without waking
-  // their Durable Object. A slow or failing object shows as «No disponible» for that row alone.
-  const asked = await fetchOverviews(
-    clients.filter((client) => client.hasConnection === 1),
-    (id) => engineForClient(env.ENGINE, event, id),
+  // their Durable Object. The rows paint at once and each connection streams in; a slow or failing
+  // object shows as «No disponible» for that row alone.
+  const asked = new Map(
+    startOverviews(
+      clients.filter((client) => client.hasConnection === 1),
+      (id) => engineForClient(env.ENGINE, event, id),
+    ).map((row) => [row.id, row.overview.then(connectionKey)]),
   );
-  const overviewById = new Map(asked.map((row) => [row.id, row.overview]));
   return {
     clients: clients.map((client) => ({
       id: client.id,
       email: client.email,
       access: client.access,
-      connection: connectionKey(overviewById.get(client.id) ?? null),
+      connection: asked.get(client.id) ?? connectionKey(null),
     })),
     admins,
   };
