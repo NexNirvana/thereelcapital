@@ -46,3 +46,11 @@ test("narrow viewport shows the mobile header and bottom nav, not the sidebar", 
   );
   await expect(page.locator("aside.sidebar")).toBeHidden();
 });
+
+test("preloads the main fonts and serves font files as immutable", async ({ request }) => {
+  const page = await (await request.get("/acceso")).text();
+  expect(page).toContain('href="/fonts/ibm-plex-mono-latin-400-normal.woff2"');
+  expect(page).toContain('href="/fonts/ibm-plex-mono-latin-600-normal.woff2"');
+  const font = await request.get("/fonts/ibm-plex-mono-latin-400-normal.woff2");
+  expect(font.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+});

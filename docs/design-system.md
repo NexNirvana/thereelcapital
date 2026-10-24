@@ -39,6 +39,8 @@ Single theme (dark only). No light mode.
 
 **One family: IBM Plex Mono, weights 400 / 500 / 600** (decision D23; the PNGs show a condensed display face, which this replaces). SIL Open Font License, **self-hosted** from the app (WOFF2 in `static/fonts/` with `@font-face`, `font-display: swap`; include the OFL text). Not loaded from a third-party CDN. Include Latin Extended for Spanish (á é í ó ú ñ ¿ ¡).
 
+**Loading** (issue #231): `src/app.html` preloads the latin 400 and 600 faces (`rel=preload as=font crossorigin`, allowed by the CSP's `font-src 'self'`), so the fetch starts with the document instead of after the CSS parses. 400 is the inherited body weight and 600 the headings, buttons and emphasis; the 500 and latin-ext faces load on demand. `/fonts/*` is served `Cache-Control: public, max-age=31536000, immutable` (`_headers` at the repository root, which the Cloudflare adapter merges into the build output; Cloudflare serves static assets without running the Worker, so the security headers in `hooks.server.ts` are not involved). Because of that, **a font file is renamed when its content changes** (for example `ibm-plex-mono-latin-400-normal.v2.woff2`), updating `base.css` and the preload links together; a file with an unchanged name must never change. `font-weight: 700` is not used: there is no 700 face, and `600` renders the same.
+
 ```css
 --font: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 font-variant-numeric: tabular-nums;
