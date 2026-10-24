@@ -4,6 +4,8 @@
   import { connectionLabel } from "#lib/ui/admin-operations.ts";
   import ClientOperations from "#lib/ui/ClientOperations.svelte";
   import Notice from "#lib/ui/Notice.svelte";
+  import type { ClientOverview } from "#lib/domain/overview.ts";
+  import type { Fetched } from "#lib/server/admin-operations.ts";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
@@ -21,19 +23,29 @@
   <Notice title="Aún no hay clientes">Crea el primero desde Clientes.</Notice>
 {/if}
 
+{#snippet body(row: { email: string }, overview: Fetched<ClientOverview>)}
+  <p class="status">Conexión: {connectionLabel(connectionKey(overview))}</p>
+  {#if overview.status === "unavailable"}
+    <Notice title="No disponible" role="alert">
+      No pudimos leer el estado de este cliente. Vuelve a intentarlo en unos segundos.
+    </Notice>
+  {:else}
+    <ClientOperations overview={overview.value} label={row.email} />
+  {/if}
+{/snippet}
+
 {#each data.rows as row (row.id)}
   <section aria-labelledby={`client-${row.id}`}>
     <h2 id={`client-${row.id}`}>
       <a href={resolve("/admin/clientes/[id]", { id: row.id })}>{row.email}</a>
     </h2>
-    <p class="status">Conexión: {connectionLabel(connectionKey(row.overview))}</p>
-    {#if row.overview.status === "unavailable"}
-      <Notice title="No disponible" role="alert">
-        No pudimos leer el estado de este cliente. Vuelve a intentarlo en unos segundos.
-      </Notice>
-    {:else}
-      <ClientOperations overview={row.overview.value} label={row.email} />
-    {/if}
+    <div aria-live="polite">
+      {#await row.overview}
+        <p class="status pending">Cargando estado…</p>
+      {:then overview}
+        {@render body(row, overview)}
+      {/await}
+    </div>
   </section>
 {/each}
 

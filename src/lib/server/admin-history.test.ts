@@ -153,6 +153,29 @@ describe("readAdminHistory", () => {
     expect(JSON.stringify(page)).not.toContain("secret-detail");
   });
 
+  test("a client that does not answer in time is reported and the rest still show", async () => {
+    const good = readerOf({ c2: [intent("y", 6)] });
+    const read: HistoryReader = (id, args) =>
+      id === "c1" ? new Promise(() => {}) : good(id, args);
+    const page = await readAdminHistory(clients, none, undefined, read, 20);
+    expect(page.intents.map((r) => r.id)).toEqual(["y"]);
+    expect(page.failures).toEqual([
+      { clientEmail: "a@example.com", message: "No pudimos leer su historial." },
+    ]);
+  });
+
+  test("emits no next cursor while a client read failed, so no rows are skipped later", async () => {
+    const rows = {
+      c2: Array.from({ length: ADMIN_HISTORY_PAGE_SIZE + 5 }, (_, i) => intent(`y${i}`, 100 + i)),
+    };
+    const good = readerOf(rows);
+    const read: HistoryReader = (id, args) =>
+      id === "c1" ? Promise.reject(new Error("down")) : good(id, args);
+    const page = await readAdminHistory(clients, none, undefined, read);
+    expect(page.intents.length).toBe(ADMIN_HISTORY_PAGE_SIZE);
+    expect(page.nextCursor).toBeNull();
+  });
+
   test("an engine refusal is reported with the engine's own Spanish message", async () => {
     const read: HistoryReader = async () => ({
       ok: false,

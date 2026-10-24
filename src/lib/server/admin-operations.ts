@@ -9,21 +9,34 @@ export type Fetched<T> =
 
 type EngineAnswer<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
 
-/** Runs one engine call; a rejection, an engine error or a timeout all read as "unavailable". */
-export async function settled<T>(
-  call: () => Promise<EngineAnswer<T>>,
+/** Runs one engine call; a rejection (or a synchronous throw) or a timeout reads as null. */
+export async function withTimeout<T>(
+  call: () => Promise<T>,
   timeoutMs = ADMIN_FANOUT_TIMEOUT_MS,
-): Promise<Fetched<T>> {
+): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), timeoutMs);
   });
   try {
-    const answer = await Promise.race([call().catch(() => null), timeout]);
-    return answer?.ok ? { status: "ok", value: answer.value } : { status: "unavailable" };
+    return await Promise.race([
+      Promise.resolve()
+        .then(call)
+        .catch(() => null),
+      timeout,
+    ]);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Runs one engine call; a rejection, an engine error or a timeout all read as "unavailable". */
+export async function settled<T>(
+  call: () => Promise<EngineAnswer<T>>,
+  timeoutMs?: number,
+): Promise<Fetched<T>> {
+  const answer = await withTimeout(call, timeoutMs);
+  return answer?.ok ? { status: "ok", value: answer.value } : { status: "unavailable" };
 }
 
 export interface OverviewEngine {
@@ -35,16 +48,18 @@ export interface ClientRef {
   readonly email: string;
 }
 
-/** Every client's overview in parallel, in the order of `clients`. */
-export function fetchOverviews(
+/**
+ * Starts every client's overview at once and returns the rows at once, each with its own promise
+ * (never rejecting: a failure or a timeout settles as "unavailable"). The page streams them, so
+ * the slowest object delays only its own row.
+ */
+export function startOverviews(
   clients: readonly ClientRef[],
   engineOf: (clientId: string) => OverviewEngine,
   timeoutMs?: number,
-): Promise<ReadonlyArray<ClientRef & { readonly overview: Fetched<ClientOverview> }>> {
-  return Promise.all(
-    clients.map(async (client) => ({
-      ...client,
-      overview: await settled(() => engineOf(client.id).overview({ mode: "SIM" }), timeoutMs),
-    })),
-  );
+): ReadonlyArray<ClientRef & { readonly overview: Promise<Fetched<ClientOverview>> }> {
+  return clients.map((client) => ({
+    ...client,
+    overview: settled(() => engineOf(client.id).overview({ mode: "SIM" }), timeoutMs),
+  }));
 }

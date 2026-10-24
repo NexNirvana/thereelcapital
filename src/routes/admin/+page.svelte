@@ -119,7 +119,17 @@
                 <a href={resolve("/admin/clientes/[id]", { id: client.id })}>{client.email}</a>
               </th>
               <td data-label="Acceso">{access[client.access]}</td>
-              <td data-label="Conexión">{connectionLabel(client.connection)}</td>
+              <td data-label="Conexión" aria-live="polite">
+                {#if typeof client.connection === "string"}
+                  {connectionLabel(client.connection)}
+                {:else}
+                  {#await client.connection}
+                    <span class="pending">Cargando…</span>
+                  {:then connection}
+                    {connectionLabel(connection)}
+                  {/await}
+                {/if}
+              </td>
             </tr>
           {/each}
         </tbody>
@@ -175,6 +185,9 @@
   }
   .scroll {
     overflow-x: auto;
+  }
+  .pending {
+    color: var(--text-muted);
   }
   .admins {
     margin: 0;

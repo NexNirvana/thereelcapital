@@ -337,44 +337,54 @@
 
 <section aria-labelledby="operations">
   <h2 id="operations">Conexión y posiciones</h2>
-  {#if data.operations.status === "unavailable"}
-    <Notice title="No disponible" role="alert">
-      No pudimos leer el estado de este cliente. Recarga la página en unos segundos.
-    </Notice>
-  {:else}
-    {@const connection = data.operations.value.connection}
-    <dl>
-      <DefinitionRow label="Estado" value={connectionLabel(connectionKey(data.operations))} />
-      {#if connection.status === "CONNECTED"}
-        <DefinitionRow
-          label="Cuentas"
-          value={connection.accounts.length === 0
-            ? "Ninguna"
-            : connection.accounts
-                .map((account) => `${account.accountId} (${account.accountType})`)
-                .join(", ")}
-        />
-        <DefinitionRow
-          label="Vence"
-          value={connection.refreshExpiresAt === null
-            ? "Desconocido"
-            : formatWhen(connection.refreshExpiresAt)}
-        />
-        <DefinitionRow
-          label="Última conexión correcta"
-          value={connection.lastOkAt === null ? "Nunca" : formatWhen(connection.lastOkAt)}
-        />
-        <DefinitionRow
-          label="Conexión para operar"
-          value={connection.entriesBlocked ? "No utilizable" : "Utilizable"}
-        />
+  <div aria-live="polite">
+    {#await data.operations}
+      <p class="pending">Cargando estado…</p>
+    {:then operations}
+      {#if operations.status === "unavailable"}
+        <Notice title="No disponible" role="alert">
+          No pudimos leer el estado de este cliente. Recarga la página en unos segundos.
+        </Notice>
+      {:else}
+        {@const connection = operations.value.connection}
+        <dl>
+          <DefinitionRow label="Estado" value={connectionLabel(connectionKey(operations))} />
+          {#if connection.status === "CONNECTED"}
+            <DefinitionRow
+              label="Cuentas"
+              value={connection.accounts.length === 0
+                ? "Ninguna"
+                : connection.accounts
+                    .map((account) => `${account.accountId} (${account.accountType})`)
+                    .join(", ")}
+            />
+            <DefinitionRow
+              label="Vence"
+              value={connection.refreshExpiresAt === null
+                ? "Desconocido"
+                : formatWhen(connection.refreshExpiresAt)}
+            />
+            <DefinitionRow
+              label="Última conexión correcta"
+              value={connection.lastOkAt === null ? "Nunca" : formatWhen(connection.lastOkAt)}
+            />
+            <DefinitionRow
+              label="Conexión para operar"
+              value={connection.entriesBlocked ? "No utilizable" : "Utilizable"}
+            />
+          {/if}
+        </dl>
+        <ClientOperations overview={operations.value} label={client.email} />
       {/if}
-    </dl>
-    <ClientOperations overview={data.operations.value} label={client.email} />
-  {/if}
+    {/await}
+  </div>
 </section>
 
 <style>
+  .pending {
+    margin: 0;
+    color: var(--text-muted);
+  }
   h1 {
     /* An email is read as typed; the global uppercase makes it hard to scan. */
     text-transform: none;
