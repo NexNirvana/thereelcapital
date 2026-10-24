@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { authClient } from "#lib/auth-client.ts";
 
   let pending = $state(false);
   let failed = $state(false);
@@ -9,9 +8,17 @@
   async function signOut() {
     pending = true;
     failed = false;
-    const { error } = await authClient.signOut();
+    // Plain POST instead of the Better Auth client, so the passkey client chunk is not loaded on
+    // every signed-in page. The browser adds `Origin`, which the origin check needs.
+    const signedOut = await fetch("/api/auth/sign-out", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+      .then((response) => response.ok)
+      .catch(() => false);
     pending = false;
-    if (error) {
+    if (!signedOut) {
       failed = true;
       return;
     }

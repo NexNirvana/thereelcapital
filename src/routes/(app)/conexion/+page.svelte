@@ -2,8 +2,7 @@
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { authClient } from "#lib/auth-client.ts";
-  import { passkeyErrorMessage } from "#lib/auth-messages.ts";
+  import { signInWithPasskey } from "#lib/passkey-sign-in.ts";
   import Badge from "#lib/ui/Badge.svelte";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
@@ -38,12 +37,9 @@
   async function confirmIdentity() {
     confirming = true;
     confirmFailure = null;
-    const { error } = await authClient.signIn.passkey();
+    confirmFailure = await signInWithPasskey();
     confirming = false;
-    if (error) {
-      confirmFailure = passkeyErrorMessage("code" in error ? error.code : undefined);
-      return;
-    }
+    if (confirmFailure) return;
     await goto(resolve("/(app)/conexion"), { invalidateAll: true });
   }
 </script>

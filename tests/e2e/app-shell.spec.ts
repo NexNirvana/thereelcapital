@@ -125,6 +125,35 @@ test("keeps three tabs on mobile with Admin and sign-out below the content", asy
   await expect(extras.getByRole("button", { name: "Cerrar sesión" })).toBeVisible();
 });
 
+// Issue #233: the Better Auth browser client is only needed where a passkey is used.
+const PASSKEY_CLIENT_MARKER = "generate-authenticate-options";
+
+async function loadedScriptsWithPasskeyClient(
+  page: import("@playwright/test").Page,
+  paths: string[],
+) {
+  const checks: Promise<boolean>[] = [];
+  page.on("response", (response) => {
+    if (response.url().endsWith(".js")) {
+      checks.push(response.text().then((code) => code.includes(PASSKEY_CLIENT_MARKER)));
+    }
+  });
+  for (const path of paths) await page.goto(path, { waitUntil: "networkidle" });
+  return (await Promise.all(checks)).filter(Boolean).length;
+}
+
+test("loads the passkey client on the access page, so the marker is valid", async ({ page }) => {
+  expect(await loadedScriptsWithPasskeyClient(page, ["/acceso"])).toBeGreaterThan(0);
+});
+
+test("does not load the passkey client on signed-in pages without a passkey prompt", async ({
+  context,
+  page,
+}) => {
+  seedCodes(await seedSignedInUser(context), 8);
+  expect(await loadedScriptsWithPasskeyClient(page, ["/operar", "/posiciones"])).toBe(0);
+});
+
 test("signing out from the shell returns to the access screen", async ({ context, page }) => {
   seedCodes(await seedSignedInUser(context), 8);
   // The button does nothing until the page hydrates, so wait for that before clicking.
