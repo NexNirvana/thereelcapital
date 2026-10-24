@@ -197,3 +197,32 @@ test("returns to Nueva entrada when the review has no instrument", async ({ cont
   await page.goto("/operar/revisar");
   await expect(page).toHaveURL(/\/operar$/);
 });
+
+test("stops polling the order while the tab is hidden and resumes on return", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await openReview(page, "PART");
+  await send(page);
+  await expect(state(page)).toContainText("Ejecución parcial", { timeout: SETTLE_MS });
+  await page.waitForLoadState("networkidle");
+
+  const setVisibility = (value: "hidden" | "visible") =>
+    page.evaluate((visibility) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: visibility });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, value);
+  let polls = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("__data.json")) polls += 1;
+  });
+
+  await setVisibility("hidden");
+  const hiddenFrom = polls;
+  await page.waitForTimeout(7_500);
+  expect(polls).toBe(hiddenFrom);
+
+  await setVisibility("visible");
+  await expect.poll(() => polls, { timeout: 8_000 }).toBeGreaterThan(hiddenFrom);
+});

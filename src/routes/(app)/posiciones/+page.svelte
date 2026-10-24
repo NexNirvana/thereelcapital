@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { invalidate } from "$app/navigation";
+  import { afterNavigate, invalidate, replaceState } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { DEFAULT_TRAILING_PCT, TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
   import Button from "#lib/ui/Button.svelte";
@@ -55,7 +55,28 @@
   const positionHref = (id: string) =>
     `${resolve("/(app)/posiciones")}?${new URLSearchParams({ p: id })}`;
   const positions = $derived(data.view?.positions ?? []);
-  const position = $derived(positions.find((p) => p.id === data.selectedId));
+  // A click picks from the positions already loaded: no new engine call. replaceState does not
+  // update SvelteKit's own URL, so the poll reloads with the original `?p=`: the pick must survive
+  // invalidations and reset only on a real navigation (the shell link, back/forward), to what the
+  // server chose. A pick that is no longer open falls back to the server's choice. Without
+  // JavaScript the link is a plain `?p=` navigation, and a reload or shared link takes the same path.
+  let pickedId = $state<string | null>(null);
+  afterNavigate(({ type }) => {
+    // An enhanced form submit is a "form" navigation: acting on a picked position keeps it.
+    if (type !== "form") pickedId = null;
+  });
+  const position = $derived(
+    positions.find((p) => p.id === pickedId) ?? positions.find((p) => p.id === data.selectedId),
+  );
+  const select = (event: MouseEvent, id: string) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    pickedId = id;
+    confirming = false;
+    // eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() is applied in positionHref
+    replaceState(positionHref(id), {});
+  };
   const steps = $derived(position ? stepViews(position) : []);
   const pending = $derived(
     data.view?.pending.filter((order) => order.positionId === position?.id) ?? [],
@@ -110,11 +131,12 @@
     <p class="empty">No tienes posiciones abiertas.</p>
     <p><Button variant="link" href={resolve("/(app)/operar")}>Nueva entrada</Button></p>
   {:else}
-    <nav class="switcher" aria-label="Posiciones abiertas">
+    <nav class="switcher" aria-label="Posiciones abiertas" data-sveltekit-preload-data="off">
       {#each positions as other (other.id)}
         <!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() is applied in positionHref -->
         <a
           href={positionHref(other.id)}
+          onclick={(event) => select(event, other.id)}
           aria-current={other.id === position.id ? "page" : undefined}
         >
           {switcherLabel(other)}
