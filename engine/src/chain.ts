@@ -7,11 +7,13 @@ import { Effect } from "effect";
 import type { BrokerAdapterShape, ChainRow } from "./broker/adapter.ts";
 import type { BrokerError } from "./broker/errors.ts";
 import { logEvent } from "./events.ts";
+import { cachedSymbolDetails } from "./symbol-details.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { MISSING_SCOPE_CODE } from "./tradestation/http.ts";
 
 interface ChainContext {
   readonly sql: SqlStorage;
+  readonly storage: DurableObjectStorage;
   readonly broker: BrokerAdapterShape;
   readonly now: number;
 }
@@ -119,7 +121,7 @@ export async function optionContract(
   ctx: ChainContext,
   args: { readonly symbol: string },
 ): Promise<EngineResult<OptionContractView>> {
-  const details = await attempt(ctx.broker.symbolDetails(args.symbol));
+  const details = await cachedSymbolDetails(ctx, args.symbol);
   if (!details.ok) return brokerFailure(ctx, "contract", details.error);
   const { option } = details.value;
   if (option === null) return failure("NOT_FOUND");

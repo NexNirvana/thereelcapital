@@ -28,6 +28,7 @@ import {
   reconciliationTicket,
 } from "./refresh.ts";
 import { monitorProtection } from "./protection.ts";
+import { cachedSymbolDetails } from "./symbol-details.ts";
 import { logEvent, pruneEvents, type EventLevel } from "./events.ts";
 import { logOnce } from "./reconcile.ts";
 
@@ -161,7 +162,7 @@ async function readSnapshot(
 
   const details = new Map<string, SymbolDetails>();
   for (const symbol of symbolsNeedingDetails(ctx.sql, positions.value)) {
-    const found = await attempt(broker.symbolDetails(symbol));
+    const found = await cachedSymbolDetails(ctx, symbol);
     if (!found.ok) return found;
     details.set(symbol, found.value);
   }

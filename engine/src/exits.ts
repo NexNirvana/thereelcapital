@@ -14,6 +14,7 @@ import { allOutQty, scaleOutQty } from "#lib/domain/scaleout.ts";
 import { checkOrder, type RejectionReason } from "#lib/domain/guards.ts";
 import type { ConnectionHealth } from "#lib/domain/connection.ts";
 import type { BrokerAdapterShape, OrderRequest } from "./broker/adapter.ts";
+import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import type { BrokerAccount } from "./tradestation/accounts.ts";
@@ -271,7 +272,7 @@ async function placeExit(
   const account = view.accounts.find((candidate) => candidate.accountId === position.account_id);
   if (account === undefined) return blocked("ACCOUNT_NOT_OWNED");
 
-  const details = await attempt(ctx.broker.symbolDetails(position.symbol));
+  const details = await cachedSymbolDetails(ctx, position.symbol);
   if (!details.ok) {
     logEvent(ctx, "warn", "exit.details_failed", { failure: details.error._tag });
     return failure("BROKER_UNAVAILABLE");

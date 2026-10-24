@@ -21,6 +21,7 @@ import {
 } from "#lib/domain/guards.ts";
 import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/domain/sizing.ts";
 import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./broker/adapter.ts";
+import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { logEvent } from "./events.ts";
@@ -234,17 +235,23 @@ async function evaluate(
   const account = view.accounts.find((candidate) => candidate.accountId === args.accountId);
   if (account === undefined) return blocked("ACCOUNT_NOT_OWNED");
 
-  // The client's SIZE, read from D1 where the admin sets it: the browser has no say.
-  const settings = await ctx.db
-    .prepare("SELECT size_usd FROM client_settings WHERE user_id = ?")
-    .bind(ctx.userId)
-    .first<{ size_usd: number }>();
+  // D1 and the broker are read together; the checks below keep the old precedence: SIZE, then
+  // the symbol details, then the quote. The details are cached; the quote is for the requested
+  // symbol, which is the one the details carry.
+  const [settings, details, quotes] = await Promise.all([
+    // The client's SIZE, read from D1 where the admin sets it: the browser has no say.
+    ctx.db
+      .prepare("SELECT size_usd FROM client_settings WHERE user_id = ?")
+      .bind(ctx.userId)
+      .first<{ size_usd: number }>(),
+    cachedSymbolDetails(ctx, args.symbol),
+    attempt(ctx.broker.quotes([args.symbol])),
+  ]);
   if (settings === null || !Number.isSafeInteger(settings.size_usd * MICROS_PER_USD)) {
     return blocked("SIZE_UNAVAILABLE");
   }
   const sizeMicros = settings.size_usd * MICROS_PER_USD;
 
-  const details = await attempt(ctx.broker.symbolDetails(args.symbol));
   if (!details.ok) {
     if (details.error._tag === "Rejected") {
       logEvent(ctx, "info", "entry.symbol_rejected", { code: details.error.code });
@@ -256,7 +263,6 @@ async function evaluate(
   const instrument: SymbolDetails = details.value;
   if (instrument.assetType !== args.assetType) return blocked("INSTRUMENT_OUT_OF_SCOPE");
 
-  const quotes = await attempt(ctx.broker.quotes([instrument.symbol]));
   if (!quotes.ok) {
     logEvent(ctx, "warn", "entry.quote_failed", { failure: quotes.error._tag });
     return failure("BROKER_UNAVAILABLE");
