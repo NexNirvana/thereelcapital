@@ -5,6 +5,7 @@ import type { Handle } from "@sveltejs/kit/hooks";
 import { sveltekitCookies, svelteKitHandler } from "better-auth/svelte-kit";
 import { env } from "cloudflare:workers";
 import { createAuth } from "#lib/server/auth.ts";
+import { mayUseSessionCache } from "#lib/server/session-cache.ts";
 import { sharedAuth } from "#lib/server/shared-auth.ts";
 import { enrollmentGate } from "#lib/server/enrollment.ts";
 import { withSecurityHeaders } from "#lib/server/security-headers.ts";
@@ -19,7 +20,12 @@ const handleRequest: Handle = async ({ event, resolve }) => {
   event.locals.auth = auth;
 
   // The user and role come only from the verified session; routes never read ids from the client.
-  const session = await auth.api.getSession({ headers: event.request.headers });
+  // Reads may use the signed session copy in the cookie (D43); mutations read D1, so a ban or a
+  // revoked session stops them at once.
+  const session = await auth.api.getSession({
+    headers: event.request.headers,
+    query: { disableCookieCache: !mayUseSessionCache(event.request.method, event.url.pathname) },
+  });
   event.locals.session = session?.session ?? null;
   event.locals.user = session?.user ?? null;
   event.locals.enrollment = null;

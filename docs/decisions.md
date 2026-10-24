@@ -55,6 +55,8 @@ D15–D17 were never assigned; numbering continues from D18.
 | D41 | `docs/` rank above `designs/`; designs win only on screen copy (owner, 2026-10-23) | the docs are the spec for behavior and layout rules; the design images are mock-ups whose exact Spanish copy is the part that is final |
 | D42 | The trailing caption reads «Disponible desde N% vendido» on desktop and mobile (owner, 2026-10-23) | one wording across layouts, the one the code already shows |
 
+| D43 | Better Auth's session cookie cache is on, `SESSION_COOKIE_CACHE_SECONDS` = 30 (owner, 2026-10-24) | authenticated reads skip the D1 session and user lookups (2 statements per request); a ban, role change or revocation may take up to 30 s to reach a browser that holds a cached copy, and only on reads: every mutating request reads D1 |
+
 ### Delegated decisions of 2026-10-21
 
 The owner delegated D19–D22, asking for free, feasible options that keep every confirmed feature. The email question was then settled by the owner: no Cloudflare email option is free for arbitrary recipients (Email Sending needs Workers Paid; Email Routing only reaches verified destination addresses), so **the app sends no email**. The admin hands each client a single-use activation link (72 hours) in person, which replaces the email-OTP step; passkey-only sign-in and recovery codes are unchanged. Resend, Postmark and SES are not needed.

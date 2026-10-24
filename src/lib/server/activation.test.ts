@@ -332,6 +332,7 @@ describe("no email, no sign-up", () => {
     });
     expect(auth.options.emailAndPassword?.enabled).toBe(false);
     expect(auth.options.plugins?.map((plugin) => plugin.id)).toEqual([
+      "session-cache-policy",
       "endpoint-policy",
       "admin",
       "passkey",
