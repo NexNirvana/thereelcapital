@@ -35,11 +35,16 @@ const sim = makeLocalSim({
 
 async function inside<T>(
   broker: BrokerAdapterShape,
-  body: (ctx: { sql: SqlStorage; broker: BrokerAdapterShape; now: number }) => Promise<T>,
+  body: (ctx: {
+    sql: SqlStorage;
+    storage: DurableObjectStorage;
+    broker: BrokerAdapterShape;
+    now: number;
+  }) => Promise<T>,
 ) {
   const stub = env.COORDINATOR.getByName("chain-direct");
   return runInDurableObject(stub, (_i, state) =>
-    body({ sql: state.storage.sql, broker, now: NOW - 20_000 }),
+    body({ sql: state.storage.sql, storage: state.storage, broker, now: NOW - 20_000 }),
   );
 }
 
