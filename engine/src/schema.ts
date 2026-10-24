@@ -168,6 +168,14 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `CREATE INDEX intents_by_position ON intents (position_id) WHERE position_id IS NOT NULL`,
     `CREATE INDEX intents_by_mode_account ON intents (mode, account_id)`,
   ],
+  [
+    // Every sync tick and /posiciones poll reads the few working intents; `intents_by_mode_state`
+    // only served a `mode` prefix because the queries say `state NOT IN (...)`. The predicate must
+    // match the queries' text for SQLite to use the partial index. History pages by
+    // (created_at, id) descending within a mode. Indexes only: no row changes.
+    `CREATE INDEX intents_open ON intents (mode, created_at, id) WHERE state NOT IN ('FILLED', 'CANCELED', 'REJECTED')`,
+    `CREATE INDEX intents_by_mode_created ON intents (mode, created_at, id)`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */
