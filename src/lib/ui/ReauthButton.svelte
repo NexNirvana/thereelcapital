@@ -1,7 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
-  import { authClient } from "#lib/auth-client.ts";
-  import { passkeyErrorMessage } from "#lib/auth-messages.ts";
+  import { signInWithPasskey } from "#lib/passkey-sign-in.ts";
   import Button from "./Button.svelte";
   import Notice from "./Notice.svelte";
 
@@ -16,12 +15,9 @@
   async function confirmIdentity() {
     reauthenticating = true;
     failure = null;
-    const { error } = await authClient.signIn.passkey();
+    failure = await signInWithPasskey();
     reauthenticating = false;
-    if (error) {
-      failure = passkeyErrorMessage("code" in error ? error.code : undefined);
-      return;
-    }
+    if (failure) return;
     onconfirmed();
     if (refresh) await invalidateAll();
   }
