@@ -3,7 +3,6 @@ import { env } from "cloudflare:workers";
 import { createUserWith } from "#lib/server/activation.ts";
 import { listOtherAdmins } from "#lib/server/admin-client-access.ts";
 import { createClientFromForm, listClients } from "#lib/server/admin-clients.ts";
-import { createAuth } from "#lib/server/auth.ts";
 import { startOverviews } from "#lib/server/admin-operations.ts";
 import { engineForClient } from "#lib/server/engine.ts";
 import { connectionKey } from "#lib/domain/overview.ts";
@@ -46,7 +45,7 @@ export const actions: Actions = {
       {
         db: env.DB,
         origin: env.APP_ORIGIN,
-        createUser: createUserWith(createAuth(env)),
+        createUser: createUserWith(event.locals.auth),
       },
       Object.fromEntries(await event.request.formData()),
     );

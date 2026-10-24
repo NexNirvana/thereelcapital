@@ -1,39 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { serializeSignedCookie } from "better-call";
-import { createAuth, type Auth, type AuthEnv } from "./auth.ts";
+import { createAuth, type Auth } from "./auth.ts";
 import { sharedAuth } from "./shared-auth.ts";
-import { sqliteD1 } from "./sqlite-d1.test.ts";
-
-const SECRET = "s".repeat(40);
-const APP_ORIGIN = "https://thereelcapital.com";
-
-// A D1-shaped database over the real migrations that counts the statements it runs.
-function countingD1() {
-  const base = sqliteD1();
-  const statements: string[] = [];
-  const DB = {
-    prepare: (sql: string) => {
-      statements.push(sql);
-      const statement = base.prepare(sql);
-      return {
-        bind: (...bindings: never[]) => {
-          const bound = statement.bind(...bindings);
-          return {
-            ...bound,
-            all: async () => ({ results: (await bound.all()).results, meta: { changes: 0 } }),
-          };
-        },
-      };
-    },
-    batch: base.batch,
-    exec: async () => ({}),
-  };
-  return {
-    sqlite: base.sqlite,
-    statements,
-    env: { DB, BETTER_AUTH_SECRET: SECRET, APP_ORIGIN } as unknown as AuthEnv,
-  };
-}
+import { countingD1, SECRET } from "./counting-d1.test.ts";
 
 async function signedIn(auth: Auth, name: string) {
   const { internalAdapter, authCookies } = await auth.$context;
