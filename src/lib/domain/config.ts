@@ -28,6 +28,13 @@ export const ENROLLMENT_SESSION_MINUTES = 15;
  */
 export const RECOVERY_REDEEM_RATE_LIMIT = { windowSeconds: 600, max: 5 } as const;
 
+/**
+ * How long a browser may keep using the signed session copy in its cookie before Better Auth
+ * reads D1 again (decision D43). A ban, role change or revocation reaches a browser that holds a
+ * cached copy within this time, on reads only; mutating requests always read D1.
+ */
+export const SESSION_COOKIE_CACHE_SECONDS = 30;
+
 /** How long an activation link works (docs/auth-and-security.md#flows). */
 export const ACTIVATION_LINK_LIFETIME_HOURS = 72;
 export const ACTIVATION_LINK_LIFETIME_MS = ACTIVATION_LINK_LIFETIME_HOURS * 60 * 60 * 1000;

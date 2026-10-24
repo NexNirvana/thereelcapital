@@ -216,7 +216,10 @@ test("opening the link in another browser ends the earlier session", async ({ br
   await resendDroppedPosts(other);
   const otherPage = await other.newPage();
   expect((await open(otherPage, token)).status()).toBe(200);
-  expect(await sessionOf(page)).toBeNull();
+  // D43: a read may still be served from the earlier browser's cached copy for 30 s, but
+  // anything that changes state reads D1 and is refused at once.
+  const stale = await page.request.post("/api/auth/enrollment/complete", { data: {} });
+  expect(stale.status()).toBe(401);
   expect((await sessionOf(otherPage)).session.enrollment).toBe(true);
   expect(sessionCount(userId)).toBe(1);
   await other.close();

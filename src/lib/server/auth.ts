@@ -6,6 +6,8 @@ import { bannedUserMessage, requireUserVerified } from "./passkey-policy.ts";
 import { activationPlugin } from "./activation-plugin.ts";
 import { claimActivationOnRegistration } from "./activation.ts";
 import { endpointPolicyPlugin } from "./endpoint-policy.ts";
+import { SESSION_COOKIE_CACHE_SECONDS } from "#lib/domain/config.ts";
+import { sessionCachePolicyPlugin } from "./session-cache.ts";
 import { sessionAuditPlugin } from "./auth-audit.ts";
 import { recoveryPlugin } from "./recovery-plugin.ts";
 
@@ -39,6 +41,8 @@ export function createAuth(
     // A session created from a recovery code (or activation link) that may only register a
     // passkey; src/lib/server/enrollment.ts is its single enforcement point.
     session: {
+      // Reads skip D1 for SESSION_COOKIE_CACHE_SECONDS (D43); session-cache.ts keeps mutations off it.
+      cookieCache: { enabled: true, maxAge: SESSION_COOKIE_CACHE_SECONDS },
       additionalFields: {
         enrollment: { type: "boolean", defaultValue: false, input: false },
         // The activation link the enrollment session came from (migration 0006).
@@ -49,6 +53,7 @@ export function createAuth(
     rateLimit: { enabled: true, storage: "database" },
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
     plugins: [
+      sessionCachePolicyPlugin(),
       endpointPolicyPlugin(),
       admin({ adminRoles: ["admin"], bannedUserMessage }),
       passkey({

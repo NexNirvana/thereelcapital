@@ -48,6 +48,28 @@ test("keeps the endpoints the app uses reachable", async ({ page }) => {
   expect((await page.request.get("/api/auth/get-session")).status()).toBe(200);
 });
 
+// D43: a browser holding the cached session copy keeps reading for up to 30 s after its session is
+// deleted, but a request that changes state is refused at once (hooks.server.ts and the
+// session-cache-policy plugin).
+test("refuses mutations at once for a revoked session that still has a cached copy", async ({
+  context,
+  page,
+}) => {
+  const userId = await seedSignedInUser(context);
+  expect((await page.request.get("/api/auth/get-session")).status()).toBe(200);
+  const cookies = await context.cookies();
+  expect(cookies.some((cookie) => cookie.name.endsWith("session_data"))).toBe(true);
+
+  d1(`DELETE FROM "session" WHERE "userId" = '${userId}'`);
+
+  const read = await (await page.request.get("/api/auth/get-session")).json();
+  expect(read.user.id).toBe(userId);
+  const post = await page.request.post("/api/recovery-codes", { headers: { origin } });
+  expect(post.status()).toBe(401);
+  const options = await page.request.get("/api/auth/passkey/generate-register-options");
+  expect(options.status()).toBe(401);
+});
+
 // Issue #104 item 2: passkey changes are sensitive actions, so a stale session (older than the
 // 10-minute window) must sign in again with a passkey first.
 test("asks a stale session to re-authenticate before changing passkeys", async ({
