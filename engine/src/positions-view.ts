@@ -35,7 +35,10 @@ export function readPositionsView(sql: SqlStorage, now: number): PositionsView {
   const steps = new Map<string, ScaleOutStepState[]>();
   for (const row of sql
     .exec<StepRow>(
-      `SELECT position_id, state FROM scaleout_steps WHERE mode = 'SIM' ORDER BY position_id, idx`,
+      `SELECT s.position_id, s.state
+         FROM scaleout_steps s JOIN positions p ON p.id = s.position_id
+        WHERE p.mode = 'SIM' AND p.status != 'CLOSED'
+        ORDER BY s.position_id, s.idx`,
     )
     .toArray()) {
     steps.set(row.position_id, [...(steps.get(row.position_id) ?? []), row.state]);
