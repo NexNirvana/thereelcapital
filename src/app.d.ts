@@ -11,6 +11,9 @@ declare global {
       code?: string;
     }
     interface Locals {
+      // The per-isolate Better Auth instance of this request (shared-auth.ts): server code that needs
+      // Better Auth uses it instead of building another one.
+      auth: Auth;
       session: AuthSession["session"] | null;
       user: AuthSession["user"] | null;
       // Set instead of session/user while the request carries a live enrollment-only session.

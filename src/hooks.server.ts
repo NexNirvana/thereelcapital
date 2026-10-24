@@ -16,6 +16,8 @@ const handleRequest: Handle = async ({ event, resolve }) => {
     createAuth(env, { trailingPlugins: [sveltekitCookies(getRequestEvent)] }),
   );
 
+  event.locals.auth = auth;
+
   // The user and role come only from the verified session; routes never read ids from the client.
   const session = await auth.api.getSession({ headers: event.request.headers });
   event.locals.session = session?.session ?? null;
