@@ -5,12 +5,16 @@ import type { Handle } from "@sveltejs/kit/hooks";
 import { sveltekitCookies, svelteKitHandler } from "better-auth/svelte-kit";
 import { env } from "cloudflare:workers";
 import { createAuth } from "#lib/server/auth.ts";
+import { sharedAuth } from "#lib/server/shared-auth.ts";
 import { enrollmentGate } from "#lib/server/enrollment.ts";
 import { withSecurityHeaders } from "#lib/server/security-headers.ts";
 
 const handleRequest: Handle = async ({ event, resolve }) => {
-  // sveltekitCookies goes last so cookies set by Better Auth reach SvelteKit responses.
-  const auth = createAuth(env, { trailingPlugins: [sveltekitCookies(getRequestEvent)] });
+  // sveltekitCookies goes last so cookies set by Better Auth reach SvelteKit responses; it looks the
+  // request event up when it runs, so the instance is shared by every request of the isolate.
+  const auth = sharedAuth(env, () =>
+    createAuth(env, { trailingPlugins: [sveltekitCookies(getRequestEvent)] }),
+  );
 
   // The user and role come only from the verified session; routes never read ids from the client.
   const session = await auth.api.getSession({ headers: event.request.headers });
