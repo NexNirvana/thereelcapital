@@ -94,7 +94,7 @@
   .label {
     margin: 0;
     font-size: 28px;
-    font-weight: 700;
+    font-weight: 600;
     text-transform: uppercase;
   }
   .detail {
