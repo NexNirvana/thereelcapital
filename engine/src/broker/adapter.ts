@@ -140,6 +140,11 @@ export interface BrokerAdapterShape {
   readonly placeOrder: (request: OrderRequest) => Op<PlacedOrder>;
   /** Never retried. Success means "cancel request sent", not CANCELED. */
   readonly cancelOrder: (accountId: string, orderId: string) => Op<PlacedOrder>;
+  /**
+   * Lets the adapter's SIM account guard learn the accounts ahead of the first order. Optional:
+   * adapters without a guard (the local simulator) have nothing to warm. Never required for safety.
+   */
+  readonly warmAccountGuard?: (accountIds: ReadonlyArray<string>) => Op<void>;
   readonly orders: (accountIds: ReadonlyArray<string>) => Op<ReadonlyArray<BrokerOrder>>;
   /** Closed orders only, from `since` (epoch ms). */
   readonly historicalOrders: (

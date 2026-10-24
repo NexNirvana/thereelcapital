@@ -152,12 +152,18 @@ async function readSnapshot(
   const { broker } = ctx;
   // Orders first, then positions: a fill that lands between the two reads is then seen in the
   // positions, never missing from them (a position missing would be read as closed).
+  // The first pass on this adapter also proves the accounts to the SIM guard, in parallel, so the
+  // first order after a restart does not pay for it. Errors are dropped: the guard checks again.
+  const warming = warmAccountGuard(broker, accounts);
   const orders = await attempt(broker.orders(accounts));
+  await warming;
   if (!orders.ok) return orders;
-  const positions = await attempt(broker.positions(accounts));
+  // Started together once the orders are in; the error precedence stays orders, positions, history.
+  const [positions, historical] = await Promise.all([
+    attempt(broker.positions(accounts)),
+    readHistory(ctx, accounts, orders.value),
+  ]);
   if (!positions.ok) return positions;
-
-  const historical = await readHistory(ctx, accounts, orders.value);
   if (!historical.ok) return historical;
 
   const details = new Map<string, SymbolDetails>();
@@ -175,6 +181,18 @@ async function readSnapshot(
       details,
     },
   };
+}
+
+const warmed = new WeakSet<BrokerAdapterShape>();
+
+/** Once per adapter; awaited inside the pass (never floating) and its failure changes nothing. */
+async function warmAccountGuard(
+  broker: BrokerAdapterShape,
+  accounts: readonly string[],
+): Promise<void> {
+  if (warmed.has(broker) || broker.warmAccountGuard === undefined) return;
+  warmed.add(broker);
+  await attempt(broker.warmAccountGuard(accounts));
 }
 
 /** Closed orders are read only when an intent's order is not among the current ones. */

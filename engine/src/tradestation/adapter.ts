@@ -51,6 +51,8 @@ export function makeTradeStationAdapter(
       placeOrder: (request) => trading.placeOrder(transport, guard, request),
       cancelOrder: (accountId, orderId) =>
         trading.cancelOrder(transport, guard, accountId, orderId),
+      warmAccountGuard: (accountIds) =>
+        Effect.forEach(accountIds, (id) => guard.require("accounts", id), { discard: true }),
       orders: (accountIds) => orders.orders(transport, accountIds),
       historicalOrders: (accountIds, since) =>
         orders.historicalOrders(transport, accountIds, since),
