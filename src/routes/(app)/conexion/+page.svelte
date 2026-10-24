@@ -2,7 +2,7 @@
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
-  import { signInWithPasskey } from "#lib/passkey-sign-in.ts";
+  import { signInWithPasskey, warmPasskeyClient } from "#lib/passkey-sign-in.ts";
   import Badge from "#lib/ui/Badge.svelte";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
@@ -32,6 +32,11 @@
   let reconnect = $state(false);
   let confirming = $state(false);
   let confirmFailure = $state<string | null>(null);
+
+  // The passkey button only appears after a REAUTH_REQUIRED answer; warm the client as it does.
+  $effect(() => {
+    if (needsLogin) warmPasskeyClient();
+  });
 
   // A session older than 10 minutes cannot save credentials: a passkey sign-in opens a fresh one.
   async function confirmIdentity() {
