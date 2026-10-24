@@ -234,6 +234,32 @@ describe("the SIM account guard", () => {
     expect(mutations(calls)).toHaveLength(2);
   });
 
+  it("makes no accounts call on the first order when the sync warmed it", async () => {
+    const { adapter, calls } = adapterWith(() => json(placeFixture));
+    await run(adapter.warmAccountGuard?.([ACCOUNT]) ?? Effect.void);
+    const warmCalls = calls.length;
+    await run(adapter.placeOrder(request));
+    expect(
+      calls.slice(warmCalls).filter((call) => call.url.endsWith("/brokerage/accounts")),
+    ).toHaveLength(0);
+    expect(mutations(calls)).toHaveLength(1);
+  });
+
+  it("still checks before sending when the warm-up did not happen or found no such account", async () => {
+    const cold = adapterWith(() => json(placeFixture));
+    await run(cold.adapter.placeOrder(request));
+    expect(cold.calls.filter((call) => call.url.endsWith("/brokerage/accounts"))).toHaveLength(1);
+
+    const { adapter, calls } = adapterWith(() => json(placeFixture));
+    await failureOf(adapter.warmAccountGuard?.(["11111111"]) ?? Effect.void);
+    expect(
+      await failureOf(adapter.placeOrder({ ...request, accountId: "11111111" })),
+    ).toMatchObject({
+      code: "ACCOUNT_NOT_SIM",
+    });
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
   it("refuses an account the SIM API did not list, and sends no order", async () => {
     const { adapter, calls } = adapterWith(() => json(placeFixture));
     expect(
