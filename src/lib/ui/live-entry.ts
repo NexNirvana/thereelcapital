@@ -1,5 +1,9 @@
-// What the live price endpoint (/operar/cotizacion) answers and how a screen reads it. The numbers
-// are display only (D46): the engine sizes the order itself when it is sent.
+// What the live price endpoint (/operar/cotizacion) answers and how a screen reads it, by polling
+// (D46) or from the socket's pushes (D47). The numbers are display only: the engine sizes the order
+// itself when it is sent.
+
+import type { LiveMessage } from "#lib/domain/live-protocol.ts";
+import { blockMessage } from "./new-entry.ts";
 
 export interface LiveEntryPreview {
   readonly symbol: string;
@@ -50,4 +54,28 @@ export async function readLiveEntry(
   } catch {
     return null;
   }
+}
+
+/**
+ * What a pushed message does to the entry on screen: the new answer, or `null` for no change. A
+ * heartbeat only refreshes the time of a price that is still current.
+ */
+export function entryFromMessage(
+  message: LiveMessage,
+  current: LiveEntry | null,
+): LiveEntry | null {
+  if (message.type === "alive") {
+    return current?.status === "ready" ? { ...current, receivedAt: message.receivedAt } : null;
+  }
+  if (message.type !== "entry") return null;
+  const { update } = message;
+  if (update.status === "blocked") {
+    return { status: "blocked", message: blockMessage(update.reasons) };
+  }
+  const { symbol, qty, sizeMicros, askMicros, assetType } = update;
+  return {
+    status: "ready",
+    preview: { symbol, qty, sizeMicros, askMicros, assetType },
+    receivedAt: message.receivedAt,
+  };
 }

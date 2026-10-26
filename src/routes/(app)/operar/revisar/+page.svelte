@@ -11,7 +11,7 @@
   } from "#lib/domain/config.ts";
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
   import { readLiveEntry } from "#lib/ui/live-entry.ts";
-  import { startLivePoll } from "#lib/ui/live-poll.ts";
+  import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import { formatPrice, formatQuantity, formatSize } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
 
@@ -43,16 +43,34 @@
     liveAsk = null;
     if (data.preview === null) return;
     const href = quoteHref;
-    return startLivePoll({
-      intervalMs: LIVE_QUOTE_POLL_MS,
-      maxPolls: LIVE_QUOTE_MAX_POLLS,
-      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
-      run: async (signal) => {
-        const answer = await readLiveEntry(href, fetch, signal);
-        if (answer?.status === "ready" && !signal.aborted) {
-          liveAsk = { askMicros: answer.preview.askMicros, receivedAt: answer.receivedAt };
+    // The socket pushes every tick (D47); the poll of D46 runs only while it is not delivering.
+    return startLiveFeed({
+      watch: {
+        type: "watch",
+        entry: {
+          accountId: data.accountId,
+          symbol: data.symbol,
+          assetType: data.tipo === "opciones" ? "option" : "equity",
+        },
+      },
+      onMessage: (message) => {
+        if (message.type === "entry" && message.update.status === "ready") {
+          liveAsk = { askMicros: message.update.askMicros, receivedAt: message.receivedAt };
+        } else if (message.type === "alive" && liveAsk !== null) {
+          liveAsk = { ...liveAsk, receivedAt: message.receivedAt };
         }
-        return answer !== null;
+      },
+      poll: {
+        intervalMs: LIVE_QUOTE_POLL_MS,
+        maxPolls: LIVE_QUOTE_MAX_POLLS,
+        maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+        run: async (signal) => {
+          const answer = await readLiveEntry(href, fetch, signal);
+          if (answer?.status === "ready" && !signal.aborted) {
+            liveAsk = { askMicros: answer.preview.askMicros, receivedAt: answer.receivedAt };
+          }
+          return answer !== null;
+        },
       },
     });
   });

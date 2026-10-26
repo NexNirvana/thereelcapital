@@ -167,3 +167,8 @@ export const LIVE_ENTRY_MIN_GAP_MS = 250;
  * restarted. (verify) The heartbeat interval is documented as 5 s; this leaves room for six.
  */
 export const LIVE_STREAM_IDLE_MS = 30 * 1000;
+/**
+ * While a chain is on the stream, it is still read whole this many times slower than the poll: a
+ * contract that had no market when the chain opened is not watched, and this read brings it in (D47).
+ */
+export const LIVE_CHAIN_REFRESH_FACTOR = 15;
