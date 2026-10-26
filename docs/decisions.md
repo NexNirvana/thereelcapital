@@ -86,5 +86,5 @@ The owner delegated D19–D22, asking for free, feasible options that keep every
 | T10 | **Enrollment session from an activation link** (replaces email OTP, 2026-10-21) | Better Auth needs a session to register a passkey; without email or password, a validated activation link creates a 15-minute session restricted to passkey registration |
 | T11 | **Admin overview by fan-out RPC** to client DOs, no read model | a few pilot clients; avoids keeping order state in two places |
 | T12 | **One production environment** (SIM) + local | YAGNI; add staging when REAL is prepared |
-| T13 | Stop/trailing are **engine-held**: the DO monitors fresh bids and sends a MARKET exit (D36) | decided 2026-10-22; broker-held stops may follow if the spike shows options support them |
+| T13 | Stop/trailing are **engine-held**: the DO monitors fresh bids and sends a MARKET exit (D36) | decided 2026-10-22; the 2026-10-26 spike confirmed broker `StopMarket` and trailing stops work on options, so a broker-held stop may follow |
 | T14 | **Bun** for installs, scripts, unit tests (`bun test`) and ops scripts with Bun-native APIs; Node CLIs (Vite, Wrangler, Vitest, Playwright) launched by Bun but run on Node; no Bun APIs in Worker code | user decision; production runs in workerd, and Wrangler and Playwright require Node |
