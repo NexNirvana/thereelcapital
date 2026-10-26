@@ -1,7 +1,14 @@
 <script lang="ts">
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
+  import {
+    LIVE_QUOTE_MAX_BACKOFF_MS,
+    LIVE_QUOTE_MAX_POLLS,
+    LIVE_QUOTE_POLL_MS,
+  } from "#lib/domain/config.ts";
   import Button from "#lib/ui/Button.svelte";
+  import { readLiveChain, type LiveChain } from "#lib/ui/live-chain.ts";
+  import { startLivePoll } from "#lib/ui/live-poll.ts";
   import Notice from "#lib/ui/Notice.svelte";
   import {
     formatAge,
@@ -16,12 +23,54 @@
   let { data }: PageProps = $props();
 
   let typedUnderlying = $derived(data.underlying);
+  const withAccount = (params: Record<string, string>) =>
+    new URLSearchParams(data.accountId === null ? params : { ...params, cuenta: data.accountId });
+
+  // The bid and ask keep updating while the screen is open (D46). They are display only: picking a
+  // contract carries just its symbol, and the order is priced when it is sent. A newer load
+  // (`Actualizar`, another expiration) replaces what the poll last showed.
+  let live = $state<{ loaded: string; chain: LiveChain } | null>(null);
+  // Names the load the poll started from; a plain string, since $state would proxy an object.
+  const loaded = $derived(
+    data.chain === null ? null : `${data.underlying} ${data.expiration} ${data.chain.receivedAt}`,
+  );
+  const shown = $derived(live !== null && live.loaded === loaded ? live.chain : data.chain);
+  const quotesHref = $derived(
+    data.chain === null
+      ? null
+      : `${resolve("/(app)/operar/cadena/cotizaciones")}?${withAccount({
+          subyacente: data.underlying,
+          vencimiento: data.expiration,
+        })}`,
+  );
+  // The quotes of a chain cost one request per 100 contracts, so a long chain polls proportionally
+  // slower and one open screen stays inside the quotes budget.
+  const pollMs = $derived(
+    LIVE_QUOTE_POLL_MS * Math.max(1, Math.ceil(((data.chain?.strikes.length ?? 0) * 2) / 100)),
+  );
+  $effect(() => {
+    const href = quotesHref;
+    const source = loaded;
+    if (href === null || source === null) return;
+    return startLivePoll({
+      intervalMs: pollMs,
+      maxPolls: LIVE_QUOTE_MAX_POLLS,
+      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+      run: async (signal) => {
+        const answer = await readLiveChain(href, fetch, signal);
+        // An answer for a chain that is no longer on screen is dropped.
+        if (answer !== null && !signal.aborted) live = { loaded: source, chain: answer };
+        return answer !== null;
+      },
+    });
+  });
 
   // The age counts from the moment this snapshot reached the page. It is a local clock for the
-  // label only: nothing is fetched until the client asks (`Actualizar`).
+  // label only.
   let elapsedMs = $state(0);
   $effect(() => {
-    if (data.chain === null) return;
+    if (shown === null) return;
+    void shown.receivedAt;
     elapsedMs = 0;
     const startedAt = Date.now();
     const timer = setInterval(() => (elapsedMs = Date.now() - startedAt), 1000);
@@ -42,8 +91,6 @@
 
   const chainPath = resolve("/(app)/operar/cadena");
   const entryPath = resolve("/(app)/operar");
-  const withAccount = (params: Record<string, string>) =>
-    new URLSearchParams(data.accountId === null ? params : { ...params, cuenta: data.accountId });
   const expirationHref = (expiration: string) =>
     `${chainPath}?${withAccount({ subyacente: data.underlying, vencimiento: expiration })}`;
   // The symbol is the exact one TradeStation listed; /operar asks the engine what it stands for.
@@ -112,7 +159,7 @@
     </section>
   {/if}
 
-  {#if data.chain}
+  {#if data.chain && shown}
     <section class="chain" aria-label="Contratos">
       <div class="chain-head">
         <h2>{data.underlying} <span>· {formatExpiration(data.expiration)}</span></h2>
@@ -130,10 +177,11 @@
         </form>
       </div>
       <p class="freshness" class:stale>
-        <span>Datos de las {formatSnapshotTime(data.chain.receivedAt)} (Nueva York)</span>
+        <span>Datos de las {formatSnapshotTime(shown.receivedAt)} (Nueva York)</span>
         <span>· {formatAge(elapsedMs)}</span>
         <span aria-live="polite"
-          >{#if stale}· desactualizados, actualiza para ver precios vigentes{/if}</span
+          >{#if stale}· desactualizados, actualiza para ver precios vigentes{:else}· se actualizan
+            solos{/if}</span
         >
       </p>
 
@@ -150,7 +198,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each data.chain.strikes as row (row.strike)}
+          {#each shown.strikes as row (row.strike)}
             <tr>
               <th scope="row">{formatStrike(row.strike)}</th>
               {#each [{ side: row.call, name: "Call" }, { side: row.put, name: "Put" }] as { side, name } (name)}

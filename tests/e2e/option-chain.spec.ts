@@ -93,6 +93,8 @@ test("calls the snapshot out of date as it ages and refreshes on demand", async 
   page,
 }) => {
   await seedTradingClient(context);
+  // The live poll would keep the snapshot fresh; failing it leaves the screen's own ageing.
+  await page.route(/\/operar\/cadena\/cotizaciones\?/, (route) => route.abort());
   await page.clock.install();
   await openChain(page);
   const freshness = page.locator(".freshness");
@@ -122,4 +124,70 @@ test("does not describe an equity as a contract", async ({ context, page }) => {
   await seedTradingClient(context);
   await page.goto("/operar?tipo=opciones&simbolo=MSFT");
   await expect(page.locator(".summary .contract-name")).toHaveCount(0);
+});
+
+const setVisibility = (page: Page, value: "hidden" | "visible") =>
+  page.evaluate((visibility) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: visibility });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, value);
+
+test("keeps the bid and ask live without reloading, and stops while the tab is hidden", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  // The simulated quotes never move, so the poll's answer is rewritten: what matters is that the
+  // open screen shows what the endpoint last said, with no navigation.
+  let polls = 0;
+  await page.route(/\/operar\/cadena\/cotizaciones\?/, async (route) => {
+    polls += 1;
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const row of body.chain.strikes) {
+      if (row.strike === 400_000_000) row.call = { ...row.call, bid: 7_250_000, ask: 7_350_000 };
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await openChain(page);
+  await expect(page.locator("tbody tr").nth(1)).toContainText("7.25 / 7.35", { timeout: 8_000 });
+  await expect(page.getByText("se actualizan solos")).toBeVisible();
+  await shoot(page, "cadena-viva");
+
+  await setVisibility(page, "hidden");
+  const hiddenFrom = polls;
+  await page.waitForTimeout(5_000);
+  expect(polls).toBe(hiddenFrom);
+  await setVisibility(page, "visible");
+  await expect.poll(() => polls, { timeout: 8_000 }).toBeGreaterThan(hiddenFrom);
+});
+
+test("the live chain endpoint needs a session, rejects extra inputs and never lacks a side as 0", async ({
+  context,
+  page,
+  request,
+}) => {
+  const href = "/operar/cadena/cotizaciones?subyacente=MSFT&vencimiento=";
+  expect((await request.get(`${href}2026-11-06`)).status()).toBe(401);
+
+  await seedTradingClient(context);
+  await page.goto("/operar/cadena?subyacente=MSFT");
+  const first = await page
+    .getByLabel("Vencimientos")
+    .getByRole("link")
+    .first()
+    .getAttribute("href");
+  const expiration = new URL(first ?? "", origin).searchParams.get("vencimiento") ?? "";
+  const ok = await page.request.get(`${href}${expiration}`);
+  expect(ok.status()).toBe(200);
+  expect(ok.headers()["cache-control"]).toBe("no-store");
+  const body = await ok.json();
+  expect(body.status).toBe("ready");
+  expect(body.chain.strikes).toHaveLength(3);
+  expect(body.chain.strikes[2].put).toBeNull();
+
+  for (const extra of ["simbolo=MSFT", "precio=1", "qty=5"]) {
+    expect((await page.request.get(`${href}${expiration}&${extra}`)).status()).toBe(400);
+  }
+  expect((await page.request.get(`${href}ayer`)).status()).toBe(400);
 });
