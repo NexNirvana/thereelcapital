@@ -100,6 +100,18 @@ export const ORDER_MATCH_SKEW_MS = 60 * 1000;
  */
 export const CHAIN_STALE_AFTER_MS = 30 * 1000;
 
+/**
+ * Decided (D46): how the screens keep a quote live. The prices are display only; the order is
+ * always sized from a fresh ask when it is sent. A poll every `LIVE_QUOTE_POLL_MS` while the tab
+ * is visible, at most `LIVE_QUOTE_MAX_POLLS` in a row (20 min at the base pace), slower after a
+ * failure (doubling up to `LIVE_QUOTE_MAX_BACKOFF_MS`, which also protects the quotes budget of
+ * 500 requests / 5 min), and a price older than `LIVE_QUOTE_STALE_AFTER_MS` is called out of date.
+ */
+export const LIVE_QUOTE_POLL_MS = 2 * 1000;
+export const LIVE_QUOTE_MAX_POLLS = 600;
+export const LIVE_QUOTE_MAX_BACKOFF_MS = 16 * 1000;
+export const LIVE_QUOTE_STALE_AFTER_MS = 10 * 1000;
+
 /** Decided (D33): how long the admin overview waits for one client's Durable Object. */
 export const ADMIN_FANOUT_TIMEOUT_MS = 4 * 1000;
 
