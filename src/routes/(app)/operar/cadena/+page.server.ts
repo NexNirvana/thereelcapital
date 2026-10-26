@@ -32,6 +32,8 @@ export const load: PageServerLoad = async (event) => {
   const base = {
     underlying,
     expiration,
+    // Epoch ms the days to expiry count from (America/New_York market day).
+    now: Date.now(),
     accountId: query.cuenta ?? null,
     expirations: null as ReadonlyArray<string> | null,
     chain: null as {

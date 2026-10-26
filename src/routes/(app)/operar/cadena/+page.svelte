@@ -2,6 +2,8 @@
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
+  import ExpirationPicker from "#lib/ui/ExpirationPicker.svelte";
+  import { groupExpirations } from "#lib/ui/expirations.ts";
   import Notice from "#lib/ui/Notice.svelte";
   import {
     formatAge,
@@ -49,6 +51,7 @@
   // The symbol is the exact one TradeStation listed; /operar asks the engine what it stands for.
   const contractHref = (symbol: string) =>
     `${entryPath}?${withAccount({ tipo: "opciones", simbolo: symbol })}`;
+  const months = $derived(groupExpirations(data.expirations ?? [], new Date(data.now)));
   const backHref = $derived(`${entryPath}?${withAccount({ tipo: "opciones" })}`);
 
   function pickLabel(name: string, strike: number, side: { bid: number; ask: number }): string {
@@ -96,19 +99,7 @@
   {#if data.expirations}
     <section class="step" aria-label="Vencimientos">
       <p class="label">Vencimiento</p>
-      <ul class="expirations">
-        {#each data.expirations as expiration (expiration)}
-          <li>
-            <!-- eslint-disable svelte/no-navigation-without-resolve -- built with resolve() above -->
-            <a
-              href={expirationHref(expiration)}
-              aria-current={expiration === data.expiration ? "page" : undefined}
-              >{formatExpiration(expiration)}</a
-            >
-            <!-- eslint-enable svelte/no-navigation-without-resolve -->
-          </li>
-        {/each}
-      </ul>
+      <ExpirationPicker {months} selected={data.expiration} href={expirationHref} />
     </section>
   {/if}
 
@@ -191,6 +182,10 @@
     gap: 2rem;
     max-width: 760px;
   }
+  /* A grid item grows to its content; the expiration strip scrolls inside instead. */
+  .step {
+    min-width: 0;
+  }
   .crumb {
     margin: 0 0 1rem;
     color: var(--text-dim);
@@ -234,29 +229,6 @@
   }
   .step form :global(.button) {
     min-width: 11rem;
-  }
-
-  .expirations {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .expirations a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--target);
-    padding: 0 1rem;
-    border: 1px solid var(--rule-strong);
-    color: var(--text-muted);
-    text-decoration: none;
-  }
-  .expirations a[aria-current="page"] {
-    border-color: var(--text);
-    color: var(--text);
-    font-weight: 500;
   }
 
   .chain-head {
