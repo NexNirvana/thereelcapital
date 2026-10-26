@@ -24,6 +24,8 @@ export function applySecurityHeaders(headers: Headers): void {
 
 /** The response with the headers applied; redirects and `fetch` results have immutable headers. */
 export function withSecurityHeaders(response: Response): Response {
+  // A WebSocket upgrade (101) has no body to re-wrap, and copying it would drop the socket.
+  if (response.status === 101) return response;
   const secured = new Response(response.body, response);
   applySecurityHeaders(secured.headers);
   return secured;
