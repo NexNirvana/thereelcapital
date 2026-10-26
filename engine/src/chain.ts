@@ -100,7 +100,7 @@ export async function optionChain(
   if (!strikes.ok) return brokerFailure(ctx, "strikes", strikes.error);
   if (!snapshot.ok) return brokerFailure(ctx, "snapshot", snapshot.error);
 
-  // The chain stream may carry other expirations; this screen shows the one it was asked for.
+  // Only the asked expiration is shown, whatever else a broker (or the local simulator) returns.
   const rows = snapshot.value.filter((row) => row.expiration === expiration);
   const listed = [...new Set([...strikes.value, ...rows.map((row) => row.strike)])].sort(
     (a, b) => a - b,

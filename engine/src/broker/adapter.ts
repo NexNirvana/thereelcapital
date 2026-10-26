@@ -133,7 +133,7 @@ export interface BrokerAdapterShape {
   /** ISO dates, ascending. */
   readonly optionExpirations: (underlying: string) => Op<ReadonlyArray<string>>;
   readonly optionStrikes: (underlying: string, expiration: string) => Op<ReadonlyArray<number>>;
-  /** One snapshot of the chain with bid/ask; the stream is read until EndSnapshot, then closed. */
+  /** One snapshot of the chain with bid/ask for the contracts of one expiration (strikes, then quotes). */
   readonly chainSnapshot: (underlying: string, expiration: string) => Op<ReadonlyArray<ChainRow>>;
   readonly confirmOrder: (request: OrderRequest) => Op<OrderPreview>;
   /** Never retried: Timeout and Unknown mean the order may exist. */

@@ -7,7 +7,6 @@ import quotesFixture from "../fixtures/quotes.json";
 import strikesFixture from "../fixtures/strikes.json";
 import symbolEquity from "../fixtures/symbol-details-equity.json";
 import symbolOption from "../fixtures/symbol-details-option.json";
-import chainStream from "../fixtures/chain-stream.ndjson?raw";
 import { SIM_BASE, failureOf, json, okToken, run, scriptedFetch } from "./helpers.ts";
 import type { FetchFn } from "../../src/tradestation/http.ts";
 
@@ -240,94 +239,102 @@ describe("option expirations and strikes", () => {
   });
 });
 
-function streamResponse(chunks: string[], keepOpen = false): Response {
-  const encoder = new TextEncoder();
-  let sent = 0;
-  return new Response(
-    new ReadableStream({
-      pull(controller) {
-        const chunk = chunks[sent++];
-        if (chunk !== undefined) controller.enqueue(encoder.encode(chunk));
-        else if (!keepOpen) controller.close();
-      },
-    }),
-  );
-}
+const optionQuote = (symbol: string, bid: string | null, ask: string | null) => ({
+  Symbol: symbol,
+  ...(bid === null ? {} : { Bid: bid }),
+  ...(ask === null ? {} : { Ask: ask }),
+});
 
 describe("chainSnapshot", () => {
-  it("reads rows until EndSnapshot and ignores what follows", async () => {
-    const script = scriptedFetch(() => streamResponse([chainStream]));
-    const rows = await run(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17"));
+  // The SIM chain stream of 2026-10-26 never sent EndSnapshot (docs/tradestation-integration.md),
+  // so the chain is the strikes plus one quotes snapshot, with no stream.
+  it("quotes both sides of every listed strike and never opens a stream", async () => {
+    const script = scriptedFetch(
+      () => json({ Strikes: [["11.5"], ["12"]] }),
+      () =>
+        json({
+          Quotes: [
+            optionQuote("F 261030C11.5", "0.4", "0.47"),
+            optionQuote("F 261030P11.5", "0.1", "0.15"),
+            optionQuote("F 261030C12", "0.03", "0.05"),
+          ],
+          Errors: [{ Symbol: "F 261030P12", Error: "SymbolNotFound" }],
+        }),
+    );
+    const rows = await run(market.chainSnapshot(transportFor(script.fetch), "F", "2026-10-30"));
     expect(rows).toEqual([
       {
-        symbol: "MSFT 211217P332.5",
-        expiration: "2021-12-17",
-        strike: 332_500_000,
-        right: "put",
-        bid: 100_000,
-        ask: 700_000,
+        symbol: "F 261030C11.5",
+        expiration: "2026-10-30",
+        strike: 11_500_000,
+        right: "call",
+        bid: 400_000,
+        ask: 470_000,
       },
       {
-        symbol: "MSFT 211217C332.5",
-        expiration: "2021-12-17",
-        strike: 332_500_000,
+        symbol: "F 261030P11.5",
+        expiration: "2026-10-30",
+        strike: 11_500_000,
+        right: "put",
+        bid: 100_000,
+        ask: 150_000,
+      },
+      {
+        symbol: "F 261030C12",
+        expiration: "2026-10-30",
+        strike: 12_000_000,
         right: "call",
-        bid: 3_000_000,
-        ask: 3_200_000,
+        bid: 30_000,
+        ask: 50_000,
       },
     ]);
-    expect(script.calls[0]?.url).toBe(
-      `${SIM_BASE}/marketdata/stream/options/chains/MSFT?expiration=2021-12-17&spreadType=Single&optionType=All&enableGreeks=false`,
+    const symbols = ["F 261030C11.5", "F 261030P11.5", "F 261030C12", "F 261030P12"];
+    expect(script.calls.map((call) => call.url)).toEqual([
+      `${SIM_BASE}/marketdata/options/strikes/F?expiration=2026-10-30&spreadType=Single`,
+      `${SIM_BASE}/marketdata/quotes/${symbols.map(encodeURIComponent).join(",")}`,
+    ]);
+  });
+
+  it("leaves out a side with a missing or one-sided quote, never as 0", async () => {
+    const script = scriptedFetch(
+      () => json({ Strikes: [["11.5"]] }),
+      () =>
+        json({
+          Quotes: [
+            optionQuote("F 261030C11.5", "0.4", null),
+            optionQuote("F 261030P11.5", null, "0.15"),
+          ],
+        }),
+    );
+    expect(await run(market.chainSnapshot(transportFor(script.fetch), "F", "2026-10-30"))).toEqual(
+      [],
     );
   });
 
-  it("handles messages split across chunks at arbitrary bytes", async () => {
-    const chunks = chainStream.match(/[\s\S]{1,37}/g) ?? [];
-    const script = scriptedFetch(() => streamResponse(chunks));
-    const rows = await run(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17"));
-    expect(rows.map((r) => r.symbol)).toEqual(["MSFT 211217P332.5", "MSFT 211217C332.5"]);
+  it("splits the symbols into requests of at most 100", async () => {
+    const strikes = Array.from({ length: 60 }, (_, index) => [`${10 + index}`]);
+    const script = scriptedFetch(
+      () => json({ Strikes: strikes }),
+      () => json({ Quotes: [] }),
+    );
+    await run(market.chainSnapshot(transportFor(script.fetch), "F", "2026-10-30"));
+    const sizes = script.calls
+      .slice(1)
+      .map((call) => decodeURIComponent(call.url).split(",").length);
+    expect(sizes).toEqual([100, 20]);
   });
 
-  it("closes the stream after EndSnapshot", async () => {
-    let cancelled = false;
-    const body = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"StreamStatus":"EndSnapshot"}\n'));
-      },
-      cancel() {
-        cancelled = true;
-      },
-    });
-    const script = scriptedFetch(() => new Response(body));
+  it("fails like the underlying calls when the strikes or the quotes fail", async () => {
+    const strikesDown = scriptedFetch(() => json({ Error: "TooManyRequests" }, 429));
     expect(
-      await run(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17")),
-    ).toEqual([]);
-    expect(cancelled).toBe(true);
-  });
-
-  it("times out when EndSnapshot never comes, and closes the stream", async () => {
-    const script = scriptedFetch(() => streamResponse(['{"Heartbeat":1}\n'], true));
+      await failureOf(market.chainSnapshot(transportFor(strikesDown.fetch), "F", "2026-10-30")),
+    ).toMatchObject({ _tag: "RateLimited" });
+    const quotesDown = scriptedFetch(
+      () => json({ Strikes: [["11.5"]] }),
+      () => json({ Error: "TooManyRequests" }, 429),
+    );
     expect(
-      await failureOf(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17", 30)),
-    ).toMatchObject({ _tag: "Timeout", operation: "chainSnapshot" });
-  });
-
-  it.each([
-    ["the stream ends before EndSnapshot", ['{"Heartbeat":1}\n'], "stream_ended_early"],
-    ["a stream error arrives", ['{"Error":"DualLogon"}\n'], "stream_error:DualLogon"],
-    ["GoAway arrives first", ['{"StreamStatus":"GoAway"}\n'], "stream_go_away"],
-    ["a line is not JSON", ["nope\n"], "invalid_response"],
-  ])("fails as Unknown when %s", async (_name, chunks, detail) => {
-    const script = scriptedFetch(() => streamResponse(chunks));
-    expect(
-      await failureOf(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17")),
-    ).toMatchObject({ _tag: "Unknown", detail });
-  });
-
-  it("maps a refused stream to the usual errors", async () => {
-    const script = scriptedFetch(() => json({ Error: "TooManyRequests" }, 429));
-    expect(
-      await failureOf(market.chainSnapshot(transportFor(script.fetch), "MSFT", "2021-12-17")),
+      await failureOf(market.chainSnapshot(transportFor(quotesDown.fetch), "F", "2026-10-30")),
     ).toMatchObject({ _tag: "RateLimited" });
   });
 });
