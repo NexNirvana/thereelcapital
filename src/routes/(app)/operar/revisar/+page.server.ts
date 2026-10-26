@@ -32,7 +32,14 @@ export const load: PageServerLoad = async (event) => {
   const prepared = await engineFor(env.ENGINE, event)
     .prepareEntry({ mode: "SIM", accountId, symbol, assetType: ASSET_TYPE[tipo] })
     .catch(() => null);
-  const base = { tipo, accountId, symbol, underlying: underlyingOf(symbol), mode: "SIM" } as const;
+  const base = {
+    tipo,
+    accountId,
+    symbol,
+    underlying: underlyingOf(symbol),
+    mode: "SIM",
+    quotedAt: null as number | null,
+  } as const;
   if (prepared === null) {
     return { ...base, preview: null, blocked: "No pudimos comunicarnos con TradeStation." };
   }
@@ -41,7 +48,12 @@ export const load: PageServerLoad = async (event) => {
     return { ...base, preview: null, blocked: blockMessage(prepared.value.reasons) };
   }
   const { intentId, qty, sizeMicros, askMicros, assetType } = prepared.value;
-  return { ...base, blocked: null, preview: { intentId, qty, sizeMicros, askMicros, assetType } };
+  return {
+    ...base,
+    blocked: null,
+    preview: { intentId, qty, sizeMicros, askMicros, assetType },
+    quotedAt: Date.now(),
+  };
 };
 
 // The only things a send form carries. SIZE, price and any other field are not read, so adding

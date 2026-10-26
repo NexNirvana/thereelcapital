@@ -4,6 +4,14 @@
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
   import Notice from "#lib/ui/Notice.svelte";
+  import {
+    LIVE_QUOTE_MAX_BACKOFF_MS,
+    LIVE_QUOTE_MAX_POLLS,
+    LIVE_QUOTE_POLL_MS,
+  } from "#lib/domain/config.ts";
+  import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
+  import { readLiveEntry } from "#lib/ui/live-entry.ts";
+  import { startLivePoll } from "#lib/ui/live-poll.ts";
   import { formatPrice, formatQuantity, formatSize } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
 
@@ -19,6 +27,36 @@
   const sendAction = $derived(
     `?${new URLSearchParams({ tipo: data.tipo, cuenta: data.accountId, simbolo: data.symbol })}&/enviar`,
   );
+
+  // The ask keeps updating while the order is under review (D46). Only the ask and its time:
+  // the quantity stays the one being confirmed, and the send compares it with the engine's own
+  // quantity from a fresh ask (RECONFIRM above), so a price the screen showed never sizes an order.
+  let liveAsk = $state<{ askMicros: number; receivedAt: number } | null>(null);
+  const quoteHref = $derived(
+    `${resolve("/(app)/operar/cotizacion")}?${new URLSearchParams({
+      tipo: data.tipo,
+      cuenta: data.accountId,
+      simbolo: data.symbol,
+    })}`,
+  );
+  $effect(() => {
+    liveAsk = null;
+    if (data.preview === null) return;
+    const href = quoteHref;
+    return startLivePoll({
+      intervalMs: LIVE_QUOTE_POLL_MS,
+      maxPolls: LIVE_QUOTE_MAX_POLLS,
+      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+      run: async (signal) => {
+        const answer = await readLiveEntry(href, fetch, signal);
+        if (answer?.status === "ready" && !signal.aborted) {
+          liveAsk = { askMicros: answer.preview.askMicros, receivedAt: answer.receivedAt };
+        }
+        return answer !== null;
+      },
+    });
+  });
+  const quotedAt = $derived(liveAsk?.receivedAt ?? data.quotedAt);
 
   let sending = $state(false);
   const isOption = $derived(data.tipo === "opciones");
@@ -62,13 +100,17 @@
         {/if}
         <DefinitionRow label="Acción" value="Comprar para abrir" />
         <DefinitionRow label="SIZE por entrada" value={formatSize(shown.sizeMicros)} />
-        <DefinitionRow label="Ask de referencia" value={formatPrice(shown.askMicros)} />
+        <DefinitionRow
+          label="Ask de referencia"
+          value={formatPrice(liveAsk?.askMicros ?? shown.askMicros)}
+        />
         <DefinitionRow label="Cantidad" value={formatQuantity(shown.qty, shown.assetType)} />
         <DefinitionRow label="Tipo de orden" value="Market" />
       </dl>
       <p class="note">
         Orden de mercado: se ejecuta al precio disponible, que puede diferir del ask de referencia.
       </p>
+      {#if quotedAt}<LiveQuoteNote receivedAt={quotedAt} />{/if}
     </section>
 
     <form
