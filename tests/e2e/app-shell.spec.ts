@@ -185,15 +185,14 @@ test("signing out from the shell returns to the access screen", async ({ context
   expect(response.status()).toBe(401);
 });
 
-test("signing out from the admin header returns to the access screen", async ({
-  context,
-  page,
-}) => {
+test("the admin panel uses the app shell and signs out from it", async ({ context, page }) => {
   await seedSignedInUser(context, { role: "admin" });
   await page.goto("/admin", { waitUntil: "networkidle" });
-  const header = page.getByRole("banner");
-  await expect(header.getByText("SIM")).toBeVisible();
+  await expect(page.getByRole("banner").getByText("SIM")).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "Administración" }).first();
+  await expect(nav.getByRole("link", { name: "Clientes" })).toHaveAttribute("aria-current", "page");
+  await expect(nav.getByRole("link", { name: "Operar" })).toHaveAttribute("href", "/operar");
   await snapshot(page, "admin-header");
-  await header.getByRole("button", { name: "Cerrar sesión" }).click();
+  await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
   await expect(page).toHaveURL(/\/acceso$/);
 });
