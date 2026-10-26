@@ -94,7 +94,7 @@
     <div class="combo">
       <input
         id="vencimiento"
-        class="symbol"
+        class="field-input"
         name="vencimiento"
         role="combobox"
         aria-expanded={listed}
@@ -166,20 +166,6 @@
   .combo {
     position: relative;
   }
-  .symbol {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 64px;
-    margin: 0;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--rule-strong);
-    border-radius: 0;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-size: 28px;
-    font-weight: 600;
-  }
   .list {
     position: absolute;
     z-index: 5;
@@ -224,11 +210,5 @@
   }
   form :global(.button) {
     min-width: 11rem;
-  }
-
-  @media (max-width: 480px) {
-    .symbol {
-      font-size: 18px;
-    }
   }
 </style>

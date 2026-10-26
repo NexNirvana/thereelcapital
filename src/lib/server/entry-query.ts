@@ -9,6 +9,15 @@ export const EntryQuery = Schema.Struct({
   simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
 });
 
+/** The /operar page also takes the chain to show on the Opciones tab (all plain text the server validates again). */
+export const OperarQuery = Schema.Struct({
+  ...EntryQuery.fields,
+  subyacente: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16))),
+  vencimiento: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(40))),
+  strike: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16))),
+  strikes: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(8))),
+});
+
 /** Equity tickers and option symbols ("MSFT 261120C400"): letters, digits, space, dot, dash, slash. */
 export const SYMBOL = /^[A-Z0-9][A-Z0-9 ./-]*$/;
 

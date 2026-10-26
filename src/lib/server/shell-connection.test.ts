@@ -58,8 +58,8 @@ describe("one connection read per trader page load", () => {
   });
 
   test("the chain refresh invalidates its own key, not the whole page", async () => {
-    expect(await read("operar/cadena/+page.server.ts")).toContain('depends("app:chain")');
-    const view = await read("operar/cadena/+page.svelte");
+    expect(await read("operar/+page.server.ts")).toContain('depends("app:chain")');
+    const view = await read("../../lib/ui/OptionChainPanel.svelte");
     expect(view).toContain('invalidate("app:chain")');
     expect(view).not.toContain("invalidateAll");
   });

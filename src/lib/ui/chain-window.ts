@@ -144,9 +144,13 @@ export function isInTheMoney(right: "call" | "put", strike: number, price: numbe
   return right === "call" ? strike < price : strike > price;
 }
 
-/** Where the price line goes: before the first shown strike at or above the price. */
+/**
+ * Where the price line goes: before the first shown strike at or above the price. A price outside
+ * the strikes on screen has no line.
+ */
 export function priceLineBefore(shown: ReadonlyArray<number>, price: number | null): number | null {
-  if (price === null) return null;
+  const first = shown[0];
+  if (price === null || first === undefined || price < first) return null;
   const index = shown.findIndex((strike) => strike >= price);
   return index < 0 ? null : index;
 }

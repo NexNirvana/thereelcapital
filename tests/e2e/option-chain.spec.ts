@@ -2,8 +2,9 @@ import { expect, test } from "./test.ts";
 import { type Page } from "@playwright/test";
 import { seedTradingClient, origin } from "./support.ts";
 
-// The engine runs the local simulation (tests/e2e/engine.env). Its dev MSFT chain has two
-// Friday expirations with 395, 400 and 405 calls and puts; the 405 put is listed with no market.
+// The engine runs the local simulation (tests/e2e/engine.env). Its dev MSFT trades at 100 / 101 and
+// its chain has two Friday expirations with 100, 105, 395, 400 and 405 calls and puts; the 405 put
+// is listed with no market.
 // Set SCREENSHOT_DIR to also write desktop and mobile screenshots of each state.
 const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR;
 
@@ -23,37 +24,50 @@ async function shoot(page: Page, name: string) {
   }
 }
 
+async function shoot360(page: Page) {
+  if (SCREENSHOT_DIR)
+    await page.screenshot({ path: `${SCREENSHOT_DIR}/opciones-360.png`, fullPage: true });
+}
+
 async function openChain(page: Page) {
-  await page.goto("/operar/cadena");
+  // Typing before the page hydrates is lost when it takes over the field.
+  await page.goto("/operar?tipo=opciones", { waitUntil: "networkidle" });
+  // No Buscar click: the search starts by itself once the typing stops.
   await page.getByRole("textbox", { name: "Subyacente" }).fill("msft");
-  await page.getByRole("button", { name: "Buscar" }).click();
-  await expect(page).toHaveURL(/subyacente=msft/i);
+  await expect(page).toHaveURL(/subyacente=MSFT/);
   // With no date typed the chain opens on today's expiration, or on the next one.
   await expect(page.getByRole("table")).toBeVisible();
 }
 
-test("picks a CALL from the chain and returns to /operar with the exact option symbol", async ({
+test("picks a CALL from the chain without leaving /operar and fills the summary", async ({
   context,
   page,
 }) => {
   await seedTradingClient(context);
-  await page.goto("/operar?tipo=opciones");
-  await page.getByRole("link", { name: /Elegir contrato/ }).click();
-  await expect(page).toHaveURL(/\/operar\/cadena/);
-  await expect(page.getByRole("heading", { name: "Cadena de opciones" })).toBeVisible();
-
   await openChain(page);
   await expect(page.getByText("Datos de las 10:00:00")).toBeVisible();
+  // The price line comes from TradeStation's quote (the simulated MSFT trades at 100 / 101).
   const rows = page.locator("tbody tr");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(1)).toContainText("400");
-  await expect(rows.nth(1)).toContainText("7.00 / 7.10");
-  await shoot(page, "cadena");
+  await expect(rows).toHaveCount(6);
+  await expect(rows.nth(1)).toContainText("MSFT 101.00");
+  await expect(page.locator("tbody tr.spot")).toHaveCount(1);
+  await expect(rows.nth(4)).toContainText("400");
+  await expect(rows.nth(4)).toContainText("7.00 / 7.10");
+  await expect(page.getByText(/^Mostrando los 5 strikes \(100–405\)/)).toBeVisible();
+  await shoot(page, "opciones-cadena");
 
   await page.getByRole("link", { name: /^Elegir Call 400/ }).click();
   await expect(page).toHaveURL(/\/operar\?.*tipo=opciones/);
+  await expect(page).toHaveURL(/simbolo=/);
+  await expect(page).not.toHaveURL(/\/cadena/);
   const symbol = new URL(page.url()).searchParams.get("simbolo") ?? "";
   expect(symbol).toMatch(/^MSFT \d{6}C400$/);
+  // The chain stays on screen with the picked price marked.
+  await expect(page.getByRole("table")).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Elegir Call 400/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
 
   // The underlying and the contract are shown apart, never as one name.
   const summary = page.locator(".summary");
@@ -66,26 +80,78 @@ test("picks a CALL from the chain and returns to /operar with the exact option s
   await expect(page.locator(".form")).toContainText(`Símbolo del contrato: ${symbol}`);
   await expect(page.locator(".form dl")).toContainText("US$7.10");
   await expect(page.locator(".form dl")).toContainText("28 contratos");
-  await shoot(page, "operar-contrato");
-
-  // Back to the chain keeps the way out.
-  await page.getByRole("link", { name: /Cambiar contrato/ }).click();
-  await expect(page).toHaveURL(/\/operar\/cadena/);
+  await expect(page.getByRole("link", { name: /Revisar orden/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Cambiar contrato/ })).toHaveCount(0);
+  await shoot(page, "opciones-contrato");
 });
 
+test("the old chain address redirects to the Opciones tab", async ({ context, page }) => {
+  await seedTradingClient(context);
+  await page.goto("/operar/cadena?subyacente=MSFT&cuenta=SIM-1");
+  await expect(page).toHaveURL(/\/operar\?tipo=opciones&cuenta=SIM-1&subyacente=MSFT/);
+  await expect(page.getByRole("table")).toBeVisible();
+});
+
+test("shades the money side of each strike by the price and shows the price line", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  // Price 101: calls are in the money below it, puts above it.
+  const first = page.locator("tbody tr").first();
+  await expect(first).toContainText("100");
+  await expect(first.locator("td.call.itm")).toHaveCount(1);
+  await expect(first.locator("td.put.itm")).toHaveCount(0);
+  // The strikes above the price are the other way round.
+  const last = page.locator("tbody tr").last();
+  await expect(last.locator("td.put.itm")).toHaveCount(1);
+  await expect(last.locator("td.call.itm")).toHaveCount(0);
+});
+
+test("the Strike field suggests matching strikes by distance to the price and highlights the pick", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  const field = page.getByRole("combobox", { name: "Strike" });
+  await field.fill("40");
+  const options = page.getByRole("listbox", { name: "Strike" }).getByRole("option");
+  await expect(options).toHaveText(["400", "405"]);
+  await field.press("ArrowDown");
+  await expect(field).toHaveAttribute("aria-activedescendant", /-1$/);
+  await field.press("Enter");
+  await expect(field).toHaveValue("405");
+  await expect(page).toHaveURL(/strike=405/);
+  await expect(page.locator("tbody tr.hit")).toContainText("405");
+  await expect(page.getByText(/con el 405 resaltado\.$/)).toBeVisible();
+
+  // Nothing matches: the nearest strike below and above.
+  await field.fill("300");
+  await expect(options).toContainText(["105", "395"]);
+  await expect(page.getByText("más cercano")).toHaveCount(2);
+  // Clearing the field centers on the price again.
+  await field.fill("");
+  await field.press("Enter");
+  await expect(page).not.toHaveURL(/strike=/);
+  await expect(
+    page.getByText(/centrados en el precio actual|Mostrando los 5 strikes \(100–405\)\.$/),
+  ).toBeVisible();
+});
 test("shows a side without a market as missing and does not offer it", async ({
   context,
   page,
 }) => {
   await seedTradingClient(context);
   await openChain(page);
-  const last = page.locator("tbody tr").nth(2);
+  const last = page.locator("tbody tr").nth(5);
   await expect(last).toContainText("405");
   await expect(last.getByText("Sin dato")).toHaveCount(1);
   await expect(last).not.toContainText("0.00");
   await expect(last.getByRole("link")).toHaveCount(1);
   await expect(page.getByRole("link", { name: /^Elegir Put 405/ })).toHaveCount(0);
-  await shoot(page, "cadena-sin-dato");
+  await shoot(page, "opciones-sin-dato");
 });
 
 test("calls the snapshot out of date as it ages and refreshes on demand", async ({
@@ -103,7 +169,7 @@ test("calls the snapshot out of date as it ages and refreshes on demand", async 
 
   await page.clock.fastForward(45_000);
   await expect(freshness).toContainText("desactualizados");
-  await shoot(page, "cadena-desactualizada");
+  await shoot(page, "opciones-desactualizada");
 
   await page.getByRole("button", { name: "Actualizar" }).click();
   await expect(freshness).toContainText("hace 0 s");
@@ -112,12 +178,16 @@ test("calls the snapshot out of date as it ages and refreshes on demand", async 
 
 test("refuses unknown parameters and underlyings without options", async ({ context, page }) => {
   await seedTradingClient(context);
-  const response = await page.goto("/operar/cadena?subyacente=MSFT&precio=1");
+  const response = await page.goto("/operar?tipo=opciones&subyacente=MSFT&precio=1");
   expect(response?.status()).toBe(400);
-  await page.goto("/operar/cadena?subyacente=ZZZZ");
+  await page.goto("/operar?tipo=opciones&subyacente=ZZZZ");
   await expect(page.getByRole("alert")).toContainText("No encontramos eso en TradeStation.");
-  await page.goto("/operar/cadena?subyacente=%3Cscript%3E");
+  await page.goto("/operar?tipo=opciones&subyacente=%3Cscript%3E");
   await expect(page.getByRole("alert")).toContainText("Escribe el ticker");
+  // The search also starts on its own for a symbol that does not exist.
+  await page.goto("/operar?tipo=opciones", { waitUntil: "networkidle" });
+  await page.getByRole("textbox", { name: "Subyacente" }).fill("zzzz");
+  await expect(page.getByRole("alert")).toContainText("No encontramos eso en TradeStation.");
 });
 
 test("opens on the next expiration when there is none today and says so", async ({
@@ -130,7 +200,7 @@ test("opens on the next expiration when there is none today and says so", async 
     page.getByRole("status").filter({ hasText: "Hoy no hay vencimiento para MSFT" }),
   ).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Vencimiento" })).toHaveValue(/ · en \d+ días$/);
-  await shoot(page, "cadena-vencimiento");
+  await shoot(page, "opciones-vencimiento");
 });
 
 test("the Vencimiento field suggests only listed dates and explains a date that is not listed", async ({
@@ -152,7 +222,7 @@ test("the Vencimiento field suggests only listed dates and explains a date that 
 
   await field.fill("2020-01-02");
   await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
-  await shoot(page, "cadena-vencimiento-inexistente");
+  await shoot(page, "opciones-vencimiento-inexistente");
   await field.fill("");
   await field.press("ArrowDown");
   await field.press("ArrowDown");
@@ -176,10 +246,10 @@ test("works as a plain GET form and the server refuses a date it does not list",
   page,
 }) => {
   await seedTradingClient(context);
-  await page.goto("/operar/cadena?subyacente=MSFT&vencimiento=2020-01-02");
+  await page.goto("/operar?tipo=opciones&subyacente=MSFT&vencimiento=2020-01-02");
   await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(0);
-  await page.goto("/operar/cadena?subyacente=MSFT&vencimiento=abc");
+  await page.goto("/operar?tipo=opciones&subyacente=MSFT&vencimiento=abc");
   await expect(page.getByText(/^No reconozco esa fecha/)).toBeVisible();
 });
 
@@ -213,9 +283,9 @@ test("keeps the bid and ask live without reloading, and stops while the tab is h
     await route.fulfill({ response, json: body });
   });
   await openChain(page);
-  await expect(page.locator("tbody tr").nth(1)).toContainText("7.25 / 7.35", { timeout: 8_000 });
+  await expect(page.locator("tbody tr").nth(4)).toContainText("7.25 / 7.35", { timeout: 8_000 });
   await expect(page.getByText("se actualizan solos")).toBeVisible();
-  await shoot(page, "cadena-viva");
+  await shoot(page, "opciones-viva");
 
   await setVisibility(page, "hidden");
   const hiddenFrom = polls;
@@ -234,7 +304,7 @@ test("the live chain endpoint needs a session, rejects extra inputs and never la
   expect((await request.get(`${href}2026-11-06`)).status()).toBe(401);
 
   await seedTradingClient(context);
-  await page.goto("/operar/cadena?subyacente=MSFT");
+  await page.goto("/operar?tipo=opciones&subyacente=MSFT");
   await page.getByRole("combobox", { name: "Vencimiento" }).click();
   await page.getByRole("option").first().click();
   await expect(page).toHaveURL(/vencimiento=\d{4}-\d{2}-\d{2}/);
@@ -245,11 +315,73 @@ test("the live chain endpoint needs a session, rejects extra inputs and never la
   expect(ok.headers()["cache-control"]).toBe("no-store");
   const body = await ok.json();
   expect(body.status).toBe("ready");
-  expect(body.chain.strikes).toHaveLength(3);
-  expect(body.chain.strikes[2].put).toBeNull();
+  expect(body.chain.strikes).toHaveLength(5);
+  expect(body.chain.strikes[4].put).toBeNull();
 
   for (const extra of ["simbolo=MSFT", "precio=1", "qty=5"]) {
     expect((await page.request.get(`${href}${expiration}&${extra}`)).status()).toBe(400);
   }
   expect((await page.request.get(`${href}ayer`)).status()).toBe(400);
+});
+
+test("shows every field in full at 360 px, with one style and no sideways scroll", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openChain(page);
+  await page.getByRole("combobox", { name: "Strike" }).fill("400");
+  const fields = page.locator("input.field-input");
+  expect(await fields.count()).toBeGreaterThanOrEqual(4);
+  const boxes = await fields.evaluateAll((els) =>
+    els.map((el) => {
+      const input = el as HTMLInputElement;
+      const style = getComputedStyle(input);
+      return {
+        height: Math.round(input.getBoundingClientRect().height),
+        border: style.borderTopWidth + style.borderTopStyle + style.borderTopColor,
+        id: input.id,
+        value: input.value,
+        scroll: input.scrollWidth + "/" + input.clientWidth,
+        overflowing: input.scrollWidth > input.clientWidth,
+        right: Math.round(input.getBoundingClientRect().right),
+      };
+    }),
+  );
+  expect(new Set(boxes.map((box) => box.height)).size).toBe(1);
+  expect(new Set(boxes.map((box) => box.border)).size).toBe(1);
+  for (const box of boxes) {
+    expect(box.overflowing, JSON.stringify(box)).toBe(false);
+    expect(box.right).toBeLessThanOrEqual(360);
+  }
+  const sideways = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(sideways).toBeLessThanOrEqual(0);
+  await shoot360(page);
+});
+
+test("a client with two accounts picks one on the Opciones tab and the chain keeps its state", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context, { accounts: ["SIM-1", "SIM-2"] });
+  await page.goto("/operar?tipo=opciones&subyacente=MSFT", { waitUntil: "networkidle" });
+  const account = page.getByLabel("Cuenta");
+  await expect(account).toHaveValue("SIM-1");
+  await page.getByRole("link", { name: /^Elegir Call 400/ }).click();
+  await expect(page).toHaveURL(/simbolo=/);
+  const before = new URL(page.url()).searchParams;
+  await account.selectOption("SIM-2");
+  await expect(page).toHaveURL(/cuenta=SIM-2/);
+  const after = new URL(page.url()).searchParams;
+  for (const name of ["subyacente", "vencimiento", "simbolo"]) {
+    expect(after.get(name)).toBe(before.get(name));
+  }
+  await expect(page.getByRole("link", { name: /^Elegir Call 400/ })).toHaveAttribute(
+    "href",
+    /cuenta=SIM-2/,
+  );
+  await expect(page.getByRole("link", { name: /Revisar orden/ })).toBeVisible();
 });

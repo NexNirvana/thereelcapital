@@ -77,9 +77,9 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 - **Badge (mode)**: black fill, 1px off-white/grey outline, mono caps `SIM` / `REAL`. Always visible.
 - **Primary button**: off-white fill, black label (Plex Mono 600), right arrow `→`, square corners, full column width. Exactly one per view.
 - **Outline button**: 1px `--text` border, transparent fill (e.g. `Activar trailing`).
-- **Text link**: underlined (`Cambiar contrato →`, `Usar código de recuperación`).
+- **Text link**: underlined (`Usar código de recuperación`).
 - **Tabs**: text only; selected = brighter + underline (`Acciones | Opciones`).
-- **Instrument selector**: 1px outlined box: large `SPY` | divider | `Call 600 · 20 nov 2026` | chevron. Opens the option chain.
+- **Option chain (Opciones tab)**: four fields in one style (`.field-input`: 1px outlined box, same height, ellipsis instead of clipping): `Subyacente`, `Vencimiento`, `Strike` and `Mostrar` (comboboxes with arrow-key, Enter and Escape handling), above a `Call bid/ask | Strike | Put bid/ask` table with a price line at the underlying price, shading on the in-the-money side and `Sin dato` for a side with no market. Picking a price fills the order summary on the same page.
 - **Definition row**: label left (body), value right (mono), hairline below. Read-only values look read-only (no input chrome).
 - **Progress bar**: thin; filled `--text`, track `--rule`; right label `70% vendido`.
 - **Scale-out bar**: 7 compact square-cornered buttons in one row (`30% 20% 10% 10% 10% 10% 10%`). Available = outlined; used = dimmed + ✓ (mobile: `--done` fill with ✓, label below); pending = distinct label (e.g. `…` / `Enviando`), never re-clickable; used with zero quantity = dimmed + caption «0 contratos por redondeo». Wraps 4+3 on narrow screens.
