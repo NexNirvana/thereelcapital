@@ -33,6 +33,9 @@ export const GET: RequestHandler = async (event) => {
     const status = chain.code === "BROKER_UNAVAILABLE" ? 502 : 200;
     return json({ status: "unavailable", message: chain.message }, { status, headers: noStore });
   }
-  const { receivedAt, strikes } = chain.value;
-  return json({ status: "ready", chain: { receivedAt, strikes } }, { headers: noStore });
+  const { receivedAt, underlyingPrice, strikes } = chain.value;
+  return json(
+    { status: "ready", chain: { receivedAt, underlyingPrice, strikes } },
+    { headers: noStore },
+  );
 };

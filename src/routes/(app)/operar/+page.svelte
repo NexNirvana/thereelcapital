@@ -8,6 +8,8 @@
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
+  import OptionChainPanel from "#lib/ui/OptionChainPanel.svelte";
+  import type { ChainView } from "#lib/ui/chain-view.ts";
   import { entryFromMessage, readLiveEntry, type LiveEntry } from "#lib/ui/live-entry.ts";
   import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
@@ -82,13 +84,19 @@
     { id: "acciones", label: "Acciones", href: `${resolve("/(app)/operar")}?tipo=acciones` },
     { id: "opciones", label: "Opciones", href: `${resolve("/(app)/operar")}?tipo=opciones` },
   ]);
-  // The chain hands back the exact option symbol as `simbolo`; the account travels along.
-  const chainHref = $derived(
-    data.accountId === null
-      ? resolve("/(app)/operar/cadena")
-      : `${resolve("/(app)/operar/cadena")}?${new URLSearchParams({ cuenta: data.accountId })}`,
-  );
   const contract = $derived(data.contract);
+  // Before any underlying is typed there is no chain, only the empty field.
+  const emptyChain: ChainView = {
+    underlying: "",
+    expiration: "",
+    expirationText: "",
+    nowMs: 0,
+    choice: null,
+    notice: null,
+    expirations: null,
+    chain: null,
+    problem: null,
+  };
 
   // The review step prepares its own preview; this only says which entry to review.
   const reviewHref = $derived(
@@ -131,26 +139,25 @@
       {/each}
     </nav>
 
-    <form method="GET" action={resolve("/(app)/operar")}>
-      <input type="hidden" name="tipo" value={data.tipo} />
-      {#if data.accounts.length > 1}
-        <label class="field">
-          <span>Cuenta</span>
-          <select name="cuenta" bind:value={chosenAccount}>
-            {#each data.accounts as account (account)}
-              <option value={account}>{account}</option>
-            {/each}
-          </select>
-        </label>
-      {:else if data.accountId}
-        <input type="hidden" name="cuenta" value={data.accountId} />
-      {/if}
-
-      {#if data.tipo === "acciones"}
+    {#if data.tipo === "acciones"}
+      <form method="GET" action={resolve("/(app)/operar")}>
+        <input type="hidden" name="tipo" value={data.tipo} />
+        {#if data.accounts.length > 1}
+          <label class="field">
+            <span>Cuenta</span>
+            <select name="cuenta" bind:value={chosenAccount}>
+              {#each data.accounts as account (account)}
+                <option value={account}>{account}</option>
+              {/each}
+            </select>
+          </label>
+        {:else if data.accountId}
+          <input type="hidden" name="cuenta" value={data.accountId} />
+        {/if}
         <label class="field">
           <span>Símbolo</span>
           <input
-            class="symbol"
+            class="field-input"
             name="simbolo"
             bind:value={typedSymbol}
             maxlength="32"
@@ -161,27 +168,28 @@
           />
         </label>
         <div class="actions"><Button type="submit" variant="outline">Consultar</Button></div>
-      {:else}
-        <div class="field">
-          <span>Contrato</span>
-          {#if contract}
-            <p class="selector">
-              <span class="underlying">{contract.underlying}</span>
-              <span class="divider" aria-hidden="true"></span>
-              <span class="contract">{contractLabel(contract)}</span>
-            </p>
-            <p class="symbol-line">Símbolo del contrato: <strong>{contract.symbol}</strong></p>
-          {:else}
-            <p class="selector">{data.symbol === "" ? "Sin contrato" : data.symbol}</p>
-          {/if}
+      </form>
+    {:else}
+      <OptionChainPanel
+        view={data.chainView ?? emptyChain}
+        accountId={data.accountId}
+        accounts={data.accounts}
+        initialStrike={data.strike}
+        initialCount={data.strikeCount}
+        chosenSymbol={data.symbol}
+      />
+      {#if contract}
+        <div class="field chosen">
+          <span>Contrato elegido</span>
+          <p class="selector">
+            <span class="underlying">{contract.underlying}</span>
+            <span class="divider" aria-hidden="true"></span>
+            <span class="contract">{contractLabel(contract)}</span>
+          </p>
+          <p class="symbol-line">Símbolo del contrato: <strong>{contract.symbol}</strong></p>
         </div>
-        <input type="hidden" name="simbolo" value={data.symbol} />
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- built with resolve() above -->
-        <a class="change" href={chainHref}>
-          {data.symbol === "" ? "Elegir contrato" : "Cambiar contrato"} →
-        </a>
       {/if}
-    </form>
+    {/if}
 
     <dl>
       <DefinitionRow
@@ -202,7 +210,7 @@
     {#if preview && quotedAt}<LiveQuoteNote receivedAt={quotedAt} />{/if}
   </section>
 
-  <section class="summary" aria-label="Resumen">
+  <section class="summary" id="resumen" aria-label="Resumen">
     <p class="label">Resumen</p>
     {#if contract}
       <p class="instrument">{contract.underlying}</p>
@@ -327,7 +335,6 @@
     color: var(--text-dim);
     font-size: 14px;
   }
-  .symbol,
   .selector,
   select {
     box-sizing: border-box;
@@ -341,7 +348,6 @@
     color: var(--text);
     font: inherit;
   }
-  .symbol,
   .selector {
     font-size: 28px;
     font-weight: 600;
@@ -378,18 +384,14 @@
     color: var(--text-muted);
     font-size: 18px;
   }
+  .chosen {
+    margin-top: 1.5rem;
+  }
   .actions {
     margin-bottom: 1rem;
   }
   .actions :global(.button) {
     min-width: 11rem;
-  }
-  .change {
-    display: inline-block;
-    color: var(--text);
-    margin-bottom: 1rem;
-    text-decoration: underline;
-    text-underline-offset: 4px;
   }
   dl {
     margin: 1.5rem 0 0;

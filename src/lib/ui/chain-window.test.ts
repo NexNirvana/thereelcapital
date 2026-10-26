@@ -146,7 +146,10 @@ describe("price line and shading", () => {
 
   test("the price line goes before the first strike at or above the price", () => {
     expect(priceLineBefore([usd(1), usd(2), usd(3)], usd(2.5))).toBe(2);
+    expect(priceLineBefore([usd(1), usd(2), usd(3)], usd(1))).toBe(0);
+    // A price outside the strikes on screen has no line.
     expect(priceLineBefore([usd(1), usd(2)], usd(5))).toBeNull();
+    expect(priceLineBefore([usd(2), usd(3)], usd(1))).toBeNull();
     expect(priceLineBefore([usd(1)], null)).toBeNull();
   });
 

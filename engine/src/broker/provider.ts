@@ -31,14 +31,22 @@ function developmentExpirations(now: number): ReadonlyArray<Date> {
   return [first, new Date(first.getTime() + 7 * 24 * 60 * 60 * 1000)];
 }
 
-/** MSFT options: 395 to 405 calls and puts, the 405 put listed but with no market. */
+/**
+ * MSFT options: 100, 105 and 395 to 405 calls and puts, the 405 put listed but with no market. The
+ * first two sit around the simulated MSFT price (100 / 101), so a screen has a price to draw.
+ */
 function developmentOptions(now: number): ReadonlyArray<SimSymbol> {
   const two = (value: number) => String(value).padStart(2, "0");
   return developmentExpirations(now).flatMap((date) =>
-    [395, 400, 405].flatMap((strike) =>
+    [100, 105, 395, 400, 405].flatMap((strike) =>
       (["call", "put"] as const).map((right) => {
         const yymmdd = `${two(date.getUTCFullYear() % 100)}${two(date.getUTCMonth() + 1)}${two(date.getUTCDate())}`;
-        const premium = right === "call" ? usd(405 - strike + 2) : usd(strike - 395 + 2);
+        // The near strikes are priced from the simulated MSFT (101), the far ones from 405 / 395.
+        const near = strike < 200;
+        const premium =
+          right === "call"
+            ? usd(Math.max((near ? 101 : 405) - strike, 0) + 2)
+            : usd(Math.max(strike - (near ? 101 : 395), 0) + 2);
         return {
           symbol: `MSFT ${yymmdd}${right === "call" ? "C" : "P"}${strike}`,
           assetType: "option" as const,

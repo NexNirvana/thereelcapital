@@ -55,8 +55,15 @@ test("has no editable price, SIZE or quantity field", async ({ context, page }) 
     const names = await page
       .locator("form input, form select, form textarea")
       .evaluateAll((els) => els.map((el) => el.getAttribute("name")));
-    expect(names.every((name) => ["tipo", "cuenta", "simbolo"].includes(name ?? ""))).toBe(true);
-    await expect(page.locator("input[type=number], input[inputmode=decimal]")).toHaveCount(0);
+    // The option screen also has the Subyacente, Vencimiento and Mostrar view fields; none of them
+    // is an order value. The Strike field has no name, so it is never submitted.
+    expect(
+      names.every((name) =>
+        ["tipo", "cuenta", "simbolo", "subyacente", "vencimiento", "strikes", null].includes(name),
+      ),
+    ).toBe(true);
+    await expect(page.locator("input[type=number]")).toHaveCount(0);
+    await expect(page.locator("form input[inputmode=decimal][name]")).toHaveCount(0);
   }
 });
 
@@ -123,19 +130,22 @@ test("blocks entries while the connection is unusable or not made", async ({ con
   await expect(page.getByText("Conecta tu cuenta de TradeStation para operar.")).toBeVisible();
 });
 
-test("shows the option entry point without the chain", async ({ context, page }) => {
+test("shows the Opciones tab with only the Subyacente field until one is typed", async ({
+  context,
+  page,
+}) => {
   await seedTradingClient(context);
   await page.goto("/operar?tipo=opciones");
   await expect(page.getByRole("link", { name: "Opciones" })).toHaveAttribute(
     "aria-current",
     "page",
   );
-  await expect(page.getByRole("link", { name: /Elegir contrato/ })).toHaveAttribute(
-    "href",
-    "/operar/cadena?cuenta=SIM-1",
-  );
+  await expect(page.getByRole("textbox", { name: "Subyacente" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Elegir contrato|Cambiar contrato/ })).toHaveCount(0);
   await expect(page.getByLabel("Símbolo")).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.locator("#review-reason")).toHaveText("Elige un contrato para ver tu orden.");
   await shoot(page, "opciones");
 });
 

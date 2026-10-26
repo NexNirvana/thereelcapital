@@ -193,11 +193,19 @@ describe("option RPCs", () => {
 
     const chain = await stub().optionChain({ mode: "SIM", underlying: "MSFT", expiration: first });
     if (!chain.ok) throw new Error("expected a chain");
-    expect(chain.value.strikes.map((s) => s.strike)).toEqual([usd(395), usd(400), usd(405)]);
+    // MSFT trades at 100 / 101 in the simulation; the last trade is the ask.
+    expect(chain.value.underlyingPrice).toBe(usd(101));
+    expect(chain.value.strikes.map((s) => s.strike)).toEqual([
+      usd(100),
+      usd(105),
+      usd(395),
+      usd(400),
+      usd(405),
+    ]);
     // The 405 put is listed but has no market: it is null, not a zero price.
-    expect(chain.value.strikes[2]).toMatchObject({ put: null, call: { bid: usd(2) } });
+    expect(chain.value.strikes[4]).toMatchObject({ put: null, call: { bid: usd(2) } });
 
-    const symbol = chain.value.strikes[1]?.call?.symbol ?? "";
+    const symbol = chain.value.strikes[3]?.call?.symbol ?? "";
     const contract = await stub().optionContract({ mode: "SIM", symbol });
     expect(contract).toEqual({
       ok: true,

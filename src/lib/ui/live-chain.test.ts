@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseLiveChain, readLiveChain } from "./live-chain.ts";
+import { chainWithUnderlying, parseLiveChain, readLiveChain } from "./live-chain.ts";
 
 const side = { symbol: "MSFT 261120C400", bid: 1_000_000, ask: 1_100_000 };
 const ready = {
@@ -94,4 +94,29 @@ test("a side that lost its market comes back when its quote does", async () => {
     reference,
   );
   expect(back?.strikes[0]?.call).toEqual({ symbol: side.symbol, bid: 1, ask: 2 });
+});
+
+test("the underlying's tick moves the price to the middle of its bid and ask", () => {
+  const chain = { receivedAt: 1, underlyingPrice: 100_000_000, strikes: [] };
+  const quote = (symbol: string, bid: number | null, ask: number | null) =>
+    ({ type: "quote", symbol, bid, ask, receivedAt: 5 }) as const;
+  expect(chainWithUnderlying(chain, quote("MSFT", 101_000_000, 102_000_000), "MSFT")).toEqual({
+    receivedAt: 5,
+    underlyingPrice: 101_500_000,
+    strikes: [],
+  });
+  // Another symbol, a one-sided market and other messages leave the price alone.
+  expect(chainWithUnderlying(chain, quote("MSFT 261030C400", 1, 2), "MSFT")).toBeNull();
+  expect(chainWithUnderlying(chain, quote("MSFT", null, 102_000_000), "MSFT")).toBeNull();
+  expect(chainWithUnderlying(chain, { type: "alive", receivedAt: 6 }, "MSFT")).toBeNull();
+});
+
+test("a chain answer carries the underlying price when it has one", () => {
+  const body = (chain: object) => ({ status: "ready", chain });
+  expect(parseLiveChain(body({ receivedAt: 1, underlyingPrice: 5, strikes: [] }))).toEqual({
+    receivedAt: 1,
+    underlyingPrice: 5,
+    strikes: [],
+  });
+  expect(parseLiveChain(body({ receivedAt: 1, strikes: [] }))?.underlyingPrice).toBeUndefined();
 });

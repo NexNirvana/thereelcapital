@@ -3,8 +3,10 @@ import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { blockMessage, connectionBlockCode } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
-import { ASSET_TYPE, EntryQuery, SYMBOL } from "#lib/server/entry-query.ts";
+import { ASSET_TYPE, OperarQuery, SYMBOL } from "#lib/server/entry-query.ts";
+import { loadChainView } from "#lib/server/chain-view.ts";
 import { engineFor } from "#lib/server/engine.ts";
+import { exactStrike, parseStrikeCount } from "#lib/ui/chain-window.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
 
@@ -15,11 +17,17 @@ export const load: PageServerLoad = async (event) => {
   // Quotes and accounts of one client: never cached by a shared proxy.
   event.setHeaders({ "cache-control": "no-store" });
 
-  const query = decode(EntryQuery, Object.fromEntries(event.url.searchParams));
+  const query = decode(OperarQuery, Object.fromEntries(event.url.searchParams));
   const tipo = query.tipo ?? "acciones";
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
   const engine = engineFor(env.ENGINE, event);
+  // A chain snapshot is a moment in time; the live poll and «Actualizar» read it again.
+  event.depends("app:chain");
+  const now = new Date();
+  const typedUnderlying = (query.subyacente ?? "").trim().toUpperCase();
+  const chainOf = (underlying: string, expiration: string) =>
+    loadChainView(engine, underlying, expiration, now);
   // The connection comes from the layout; the other reads start now so they overlap with it.
   const others = Promise.all([
     engine.limits({ mode: "SIM" }).catch(() => null),
@@ -32,16 +40,33 @@ export const load: PageServerLoad = async (event) => {
     tipo === "opciones" && SYMBOL.test(symbol)
       ? engine.optionContract({ mode: "SIM", symbol }).catch(() => null)
       : null,
+    tipo === "opciones" && typedUnderlying !== ""
+      ? chainOf(typedUnderlying, (query.vencimiento ?? "").trim())
+      : null,
   ]);
   const { connection: shell } = await parent();
-  const [limits, settings, contract] = await others;
+  const [limits, settings, contract, typedChain] = await others;
+  // A link from before the chain lived in this tab names only the contract: show its chain.
+  const chosen = contract?.ok ? contract.value : null;
+  const chainView =
+    typedChain ?? (chosen === null ? null : await chainOf(chosen.underlying, chosen.expiration));
+  const strikes = chainView?.chain?.strikes.map((row) => row.strike) ?? [];
+  const typedStrike = query.strike === undefined ? null : exactStrike(strikes, query.strike);
 
   const base = {
     tipo,
     symbol,
     stopPct: settings?.stop_pct ?? null,
     limits: limits?.ok ? limits.value : null,
-    contract: contract?.ok ? contract.value : null,
+    contract: chosen,
+    chainView,
+    // The strike the table is centered on (typed, or the chosen contract's) and how many to show.
+    strike:
+      typedStrike ??
+      (query.subyacente === undefined && query.strike === undefined
+        ? (chosen?.strike ?? null)
+        : null),
+    strikeCount: parseStrikeCount(query.strikes),
     accounts: [] as string[],
     accountId: null as string | null,
     quotedAt: null as number | null,

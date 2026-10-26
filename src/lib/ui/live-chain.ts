@@ -18,6 +18,8 @@ export interface ChainStrike {
 
 export interface LiveChain {
   readonly receivedAt: number;
+  /** The underlying's price, kept live like the rows (D47); null when TradeStation gave none. */
+  readonly underlyingPrice?: number | null;
   readonly strikes: ReadonlyArray<ChainStrike>;
 }
 
@@ -38,7 +40,7 @@ export function parseLiveChain(body: unknown): LiveChain | null {
   if (typeof body !== "object" || body === null) return null;
   const { status, chain } = body as Record<string, unknown>;
   if (status !== "ready" || typeof chain !== "object" || chain === null) return null;
-  const { receivedAt, strikes } = chain as Record<string, unknown>;
+  const { receivedAt, strikes, underlyingPrice } = chain as Record<string, unknown>;
   if (!isNumber(receivedAt) || !Array.isArray(strikes)) return null;
   const parsed: ChainStrike[] = [];
   for (const row of strikes as unknown[]) {
@@ -49,7 +51,9 @@ export function parseLiveChain(body: unknown): LiveChain | null {
     if (!isNumber(strike) || callSide === undefined || putSide === undefined) return null;
     parsed.push({ strike, call: callSide, put: putSide });
   }
-  return { receivedAt, strikes: parsed };
+  return isNumber(underlyingPrice)
+    ? { receivedAt, underlyingPrice, strikes: parsed }
+    : { receivedAt, strikes: parsed };
 }
 
 /** One read of the endpoint: the chain, or `null` when it could not be read. */
@@ -105,5 +109,23 @@ export function chainFromMessage(
       put: putHit ? sideWith(known?.put ?? null, bid, ask) : row.put,
     };
   });
-  return changed ? { receivedAt, strikes } : { ...chain, receivedAt };
+  return changed ? { ...chain, receivedAt, strikes } : { ...chain, receivedAt };
+}
+
+/**
+ * The underlying's own tick moves the price line: the middle of its bid and ask (a pushed quote has
+ * no last trade). `null` for any other message, or when the underlying has no two-sided market.
+ */
+export function chainWithUnderlying(
+  chain: LiveChain,
+  message: LiveMessage,
+  underlying: string,
+): LiveChain | null {
+  if (message.type !== "quote" || message.symbol !== underlying) return null;
+  if (message.bid === null || message.ask === null) return null;
+  return {
+    ...chain,
+    receivedAt: message.receivedAt,
+    underlyingPrice: Math.round((message.bid + message.ask) / 2),
+  };
 }

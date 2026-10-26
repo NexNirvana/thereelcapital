@@ -97,3 +97,42 @@ h2 {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+
+/* The one style of every text field and combobox on the entry screens: the same height and border,
+   the whole value visible, and an ellipsis rather than a clipped value on a narrow screen. */
+.field-input {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  overflow: hidden;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-input::placeholder {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.field-input:disabled {
+  opacity: 0.4;
+}
+@media (max-width: 480px) {
+  .field-input {
+    font-size: 18px;
+  }
+}
+/* The longest value, «vie 13 nov 2026 · en 18 días», needs 16px to fit whole at 360px. */
+@media (max-width: 400px) {
+  .field-input {
+    padding-inline: 0.75rem;
+    font-size: 16px;
+  }
+}
