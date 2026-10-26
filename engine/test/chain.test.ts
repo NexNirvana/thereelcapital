@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
 import { Rejected, Timeout } from "../src/broker/errors.ts";
-import { optionChain } from "../src/chain.ts";
+import { CHAIN_STRIKES_CACHE_MS } from "#lib/domain/config.ts";
+import { optionChain, type StrikesCache } from "../src/chain.ts";
 import { makeLocalSim } from "../src/broker/local-sim/sim.ts";
 
 const usd = (dollars: number) => dollars * 1_000_000;
@@ -73,6 +74,41 @@ describe("option chain", () => {
         ],
       },
     });
+  });
+
+  it("lists the strikes once and reads only the quotes on the refreshes that follow", async () => {
+    const listed: string[] = [];
+    const snapshotStrikes: Array<ReadonlyArray<number> | undefined> = [];
+    const counting: BrokerAdapterShape = {
+      ...sim.adapter,
+      optionStrikes: (underlying, expiration) => {
+        listed.push(`${underlying} ${expiration}`);
+        return sim.adapter.optionStrikes(underlying, expiration);
+      },
+      chainSnapshot: (underlying, expiration, strikes) => {
+        snapshotStrikes.push(strikes);
+        return sim.adapter.chainSnapshot(underlying, expiration, strikes);
+      },
+    };
+    const strikesCache: StrikesCache = new Map();
+    const args = { underlying: "MSFT", expiration: "2026-11-20" };
+    const read = (now: number) =>
+      inside(counting, (ctx) => optionChain({ ...ctx, now, strikesCache, stamp: () => now }, args));
+    const first = await read(NOW);
+    const second = await read(NOW + 2_000);
+    expect(second).toEqual({
+      ok: true,
+      value: { ...(first.ok ? first.value : {}), receivedAt: NOW + 2_000 },
+    });
+    expect(listed).toEqual(["MSFT 2026-11-20"]);
+    expect(snapshotStrikes).toEqual([
+      [usd(400), usd(410)],
+      [usd(400), usd(410)],
+    ]);
+
+    // Once the cached list is old, it is listed again.
+    await read(NOW + CHAIN_STRIKES_CACHE_MS);
+    expect(listed).toHaveLength(2);
   });
 
   it("answers NOT_FOUND for an unknown underlying and BROKER_UNAVAILABLE for a broker failure", async () => {

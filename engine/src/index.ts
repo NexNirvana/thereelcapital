@@ -34,6 +34,7 @@ import {
   optionContract,
   optionExpirations,
   type OptionChain,
+  type StrikesCache,
   type OptionContractView,
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
@@ -95,6 +96,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   readonly #alarms: AlarmScheduler;
   /** A pass already running is shared, so two never apply snapshots out of order. */
   #syncing: Promise<SyncResult> | null = null;
+  /** Strikes of the chains the screens poll, so a refresh reads only quotes (D46). */
+  readonly #strikes: StrikesCache = new Map();
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
@@ -185,7 +188,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   /** One snapshot of an expiration's chain (strikes, then quotes), read on demand. Read-only. */
   optionChain(input: unknown): Promise<EngineResult<OptionChain>> {
     return this.enterWithBroker("optionChain", OptionChainArgs, input, (ctx, args) =>
-      optionChain({ ...ctx, stamp: () => engineNow(this.env) }, args),
+      optionChain({ ...ctx, stamp: () => engineNow(this.env), strikesCache: this.#strikes }, args),
     );
   }
 

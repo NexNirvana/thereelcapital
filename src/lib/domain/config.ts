@@ -96,7 +96,8 @@ export const ORDER_MATCH_SKEW_MS = 60 * 1000;
 
 /**
  * Decided (D33): how old an option chain snapshot may get before the screen
- * calls its prices out of date. The chain is read on demand, never polled.
+ * calls its prices out of date. While the screen is open the chain is read again at the live
+ * pace (D46), so this only shows when the polling stopped or keeps failing.
  */
 export const CHAIN_STALE_AFTER_MS = 30 * 1000;
 
@@ -111,6 +112,12 @@ export const LIVE_QUOTE_POLL_MS = 2 * 1000;
 export const LIVE_QUOTE_MAX_POLLS = 600;
 export const LIVE_QUOTE_MAX_BACKOFF_MS = 16 * 1000;
 export const LIVE_QUOTE_STALE_AFTER_MS = 10 * 1000;
+
+/**
+ * Decided (D46): how long the engine keeps the strikes of an expiration it listed for the chain
+ * screen, so the live refresh reads only the quotes (the options bucket allows 90 requests / min).
+ */
+export const CHAIN_STRIKES_CACHE_MS = 10 * 60 * 1000;
 
 /** Decided (D33): how long the admin overview waits for one client's Durable Object. */
 export const ADMIN_FANOUT_TIMEOUT_MS = 4 * 1000;

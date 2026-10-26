@@ -6,10 +6,17 @@
 import { Effect } from "effect";
 import type { BrokerAdapterShape, ChainRow } from "./broker/adapter.ts";
 import type { BrokerError } from "./broker/errors.ts";
+import { CHAIN_STRIKES_CACHE_MS } from "#lib/domain/config.ts";
 import { logEvent } from "./events.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { MISSING_SCOPE_CODE } from "./tradestation/http.ts";
+
+/** The strikes of one expiration as last listed, kept in memory by the Durable Object. */
+export type StrikesCache = Map<
+  string,
+  { readonly at: number; readonly strikes: ReadonlyArray<number> }
+>;
 
 interface ChainContext {
   readonly sql: SqlStorage;
@@ -89,15 +96,22 @@ function sideOf(rows: ReadonlyArray<ChainRow>, right: "call" | "put"): ChainQuot
 /** Every listed strike appears; a side the snapshot has no market for stays `null`. */
 export async function optionChain(
   // `stamp` reads the engine clock again once the broker answered: the snapshot's age counts from then.
-  ctx: ChainContext & { readonly stamp: () => number },
+  ctx: ChainContext & { readonly stamp: () => number; readonly strikesCache?: StrikesCache },
   args: { readonly underlying: string; readonly expiration: string },
 ): Promise<EngineResult<OptionChain>> {
   const { underlying, expiration } = args;
-  const [strikes, snapshot] = await Promise.all([
-    attempt(ctx.broker.optionStrikes(underlying, expiration)),
-    attempt(ctx.broker.chainSnapshot(underlying, expiration)),
-  ]);
+  // The screen reads the chain again every few seconds (D46): the strikes of an expiration are
+  // listed once per `CHAIN_STRIKES_CACHE_MS` and each later read costs only the quotes.
+  const cacheKey = `${underlying} ${expiration}`;
+  const cached = ctx.strikesCache?.get(cacheKey);
+  const fresh = cached !== undefined && ctx.now - cached.at < CHAIN_STRIKES_CACHE_MS;
+  const strikes = fresh
+    ? { ok: true as const, value: cached.strikes }
+    : await attempt(ctx.broker.optionStrikes(underlying, expiration));
   if (!strikes.ok) return brokerFailure(ctx, "strikes", strikes.error);
+  // The listing's age counts from when it was listed, so polling never keeps it alive.
+  if (!fresh) ctx.strikesCache?.set(cacheKey, { at: ctx.now, strikes: strikes.value });
+  const snapshot = await attempt(ctx.broker.chainSnapshot(underlying, expiration, strikes.value));
   if (!snapshot.ok) return brokerFailure(ctx, "snapshot", snapshot.error);
 
   // Only the asked expiration is shown, whatever else a broker (or the local simulator) returns.

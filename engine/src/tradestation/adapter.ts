@@ -44,8 +44,8 @@ export function makeTradeStationAdapter(
       optionExpirations: (underlying) => market.optionExpirations(transport, underlying),
       optionStrikes: (underlying, expiration) =>
         market.optionStrikes(transport, underlying, expiration),
-      chainSnapshot: (underlying, expiration) =>
-        market.chainSnapshot(transport, underlying, expiration),
+      chainSnapshot: (underlying, expiration, strikes) =>
+        market.chainSnapshot(transport, underlying, expiration, strikes),
       confirmOrder: (request) => trading.confirmOrder(transport, guard, request),
       placeOrder: (request) => trading.placeOrder(transport, guard, request),
       cancelOrder: (accountId, orderId) =>
