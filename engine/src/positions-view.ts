@@ -3,6 +3,7 @@
 
 import type { PendingExitView, PositionView, PositionsView } from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
+import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
 import { entryLimits } from "./entries.ts";
 
 type PositionRow = {
@@ -72,6 +73,10 @@ export function readPositionsView(sql: SqlStorage, now: number): PositionsView {
       stopPct: row.stop_pct,
       trailingUnlockPct: row.trailing_unlock_pct,
       trailingPct: row.trailing_pct,
+      expiryCloseAt:
+        row.expiry !== null && isExpirationDay(row.expiry, new Date(now))
+          ? (expiryCloseAt(row.expiry)?.getTime() ?? null)
+          : null,
       steps: steps.get(row.id) ?? [],
     }));
   const pending: PendingExitView[] = sql

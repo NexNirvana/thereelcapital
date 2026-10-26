@@ -1,9 +1,40 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import { readPositionsView } from "../src/positions-view.ts";
 import { describe, expect, it } from "vitest";
 
 let counter = 0;
 const client = () => env.COORDINATOR.getByName(`positions-view-user-${++counter}`);
+
+describe("positions view expiration day", () => {
+  it("gives the close time only on the expiration day", async () => {
+    const stub = client();
+    await stub.ping();
+    await runInDurableObject(stub, (_i, state) => {
+      const sql = state.storage.sql;
+      sql.exec(
+        `INSERT INTO positions (id, mode, account_id, symbol, underlying, expiry, strike, right, original_qty, sold_qty,
+           avg_entry_price, stop_pct, trailing_unlock_pct, protection_state, status, opened_on)
+         VALUES ('p1', 'SIM', 'SIM-1', 'SPY 261120C600', 'SPY', '2026-11-20', 600000000, 'call', 5, 0, 1, 30, 70, 'none', 'OPEN', '2026-11-04'),
+                ('p2', 'SIM', 'SIM-1', 'AAPL', NULL, NULL, NULL, NULL, 10, 0, 1, 30, 70, 'none', 'OPEN', '2026-11-04')`,
+      );
+      const closeAt = (now: number) =>
+        Object.fromEntries(
+          readPositionsView(sql, now).positions.map((p) => [p.id, p.expiryCloseAt]),
+        );
+      // 23:59 ET the day before, then 00:00 ET and 15:50 ET on the day.
+      expect(closeAt(Date.UTC(2026, 10, 20, 4, 59, 59))).toEqual({ p1: null, p2: null });
+      expect(closeAt(Date.UTC(2026, 10, 20, 5, 0, 0))).toEqual({
+        p1: Date.UTC(2026, 10, 20, 20, 45),
+        p2: null,
+      });
+      expect(closeAt(Date.UTC(2026, 10, 20, 20, 50))).toEqual({
+        p1: Date.UTC(2026, 10, 20, 20, 45),
+        p2: null,
+      });
+    });
+  });
+});
 
 describe("positions view", () => {
   it("lists open positions with their steps, and only working orders of a position", async () => {
