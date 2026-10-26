@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "#lib/ui/PageHeader.svelte";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import ActivationLink from "#lib/ui/ActivationLink.svelte";
@@ -23,8 +24,11 @@
 
 <svelte:head><title>{admin.email} · Admin · Reel Capital</title></svelte:head>
 
-<p><a href={resolve("/admin")}>← Clientes</a></p>
-<h1>{admin.email}</h1>
+<PageHeader
+  crumb={[{ label: "Admin" }, { label: "Clientes", href: resolve("/admin") }]}
+  title={admin.email}
+  verbatim
+/>
 
 <div class="messages" aria-live="polite">
   {#if submitFailure}
@@ -103,23 +107,12 @@
 </section>
 
 <style>
-  h1 {
-    text-transform: none;
-    font-size: clamp(22px, 4vw, 32px);
-    overflow-wrap: anywhere;
-  }
   h2 {
     margin: 2.5rem 0 0.75rem;
     font-size: 1.125rem;
   }
   p {
     margin: 0 0 0.75rem;
-  }
-  p a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--target);
-    color: var(--text-muted);
   }
   .hint {
     max-width: 40rem;

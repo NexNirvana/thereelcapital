@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "#lib/ui/PageHeader.svelte";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import { connectionLabel } from "#lib/ui/admin-operations.ts";
@@ -24,7 +25,7 @@
 
 <svelte:head><title>Clientes · Admin · Reel Capital</title></svelte:head>
 
-<h1>Clientes</h1>
+<PageHeader crumb={[{ label: "Admin" }, { label: "Clientes" }]} title="Clientes" />
 
 <section aria-labelledby="new-client">
   <h2 id="new-client">Nuevo cliente</h2>
@@ -152,9 +153,6 @@
 {/if}
 
 <style>
-  h1 {
-    font-size: clamp(28px, 4vw, 40px);
-  }
   h2 {
     margin: 2.5rem 0 0.75rem;
     font-size: 1.125rem;

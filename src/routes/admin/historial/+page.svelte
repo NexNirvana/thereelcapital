@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "#lib/ui/PageHeader.svelte";
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import Notice from "#lib/ui/Notice.svelte";
@@ -25,8 +26,11 @@
 
 <svelte:head><title>Historial · Admin · Reel Capital</title></svelte:head>
 
-<h1>Historial</h1>
-<p class="lead">Órdenes, ejecuciones, eventos y errores de todos los clientes, en simulación.</p>
+<PageHeader crumb={[{ label: "Admin" }, { label: "Historial" }]} title="Historial">
+  {#snippet lead()}
+    Órdenes, ejecuciones, eventos y errores de todos los clientes, en simulación.
+  {/snippet}
+</PageHeader>
 
 <form class="filters" method="GET" action={base} aria-label="Filtros">
   <label>
@@ -209,28 +213,16 @@
 <p class="note">SIM · Simulación, sin dinero real</p>
 
 <style>
-  h1 {
-    margin: 0;
-    font-size: clamp(32px, 4vw, 42px);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-  }
   h2 {
     margin: 0 0 1rem;
     font-size: 18px;
     font-weight: 600;
     text-transform: uppercase;
   }
-  .lead,
   .note {
     margin: 0.75rem 0 0;
     color: var(--text-dim);
     font-size: 14px;
-  }
-  .lead {
-    font-size: inherit;
-    color: var(--text-muted);
   }
   .filters {
     display: grid;
