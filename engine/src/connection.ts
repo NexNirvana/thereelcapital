@@ -1,7 +1,6 @@
 // The client's TradeStation connection: authorize, link, list accounts, disconnect.
 // docs/tradestation-integration.md#credentials-and-oauth. Secrets and tokens are decrypted here
 // and nowhere else; nothing this module returns or logs contains one.
-import { ROTATING_REFRESH_LIFETIME_MS } from "#lib/domain/config.ts";
 import type { CredentialCipher } from "./crypto.ts";
 import {
   connectionHealth,
@@ -42,7 +41,7 @@ export type ConnectionView =
       /** True while a new entry would be refused: unusable connection or reconciliation pending. */
       readonly entriesBlocked: boolean;
       readonly accounts: readonly BrokerAccount[];
-      /** Connect time + 24 h until the SIM spike (#21) verifies it; null only on rows stored before that. */
+      /** now + 24 h from the first observed rotation (D44); null while unknown, the normal state of a non-rotating key. */
       readonly refreshExpiresAt: number | null;
       readonly lastOkAt: number | null;
     };
@@ -201,9 +200,9 @@ export async function completeConnection(
 
   const refreshTokenEnc = await cipher.encrypt(tokens.refreshToken, refreshContext(ctx.userId));
   const secretEnc = await cipher.encrypt(clientSecret, secretContext(ctx.userId));
-  // Conservative: assume the key rotates and the 24 h absolute lifetime counts from the
-  // authorization (docs/tradestation-integration.md#token-lifetime, (verify) in #21).
-  const refreshExpiresAt = ctx.now + ROTATING_REFRESH_LIFETIME_MS;
+  // Unknown (NULL) until the first rotation: only a rotating key has the 24 h absolute lifetime, and
+  // the refresh starts that countdown when it sees a new token (D44, docs/tradestation-integration.md#token-lifetime).
+  const refreshExpiresAt = null;
   await ctx.db
     .prepare(
       `INSERT INTO broker_connection

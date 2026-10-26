@@ -350,7 +350,7 @@ describe("completeConnection", () => {
         { accountId: "SIM1001", accountType: "Margin" },
         { accountId: "SIM1002", accountType: "Cash" },
       ],
-      refreshExpiresAt: expect.any(Number),
+      refreshExpiresAt: null,
       lastOkAt: expect.any(Number),
     });
     expectNoSecrets(JSON.stringify(result));
@@ -371,10 +371,9 @@ describe("completeConnection", () => {
     expect(row).toMatchObject({
       client_id: CLIENT_ID,
       status: "CONNECTED",
-      refresh_expires_at: expect.any(Number),
+      // Unknown until a rotation is seen: a non-rotating key has no countdown (D44).
+      refresh_expires_at: null,
     });
-    // Conservative 24 h from the connect time until the SIM spike (#21) shows how the key behaves.
-    expect(Number(row.refresh_expires_at)).toBe(Number(row.last_ok_at) + 24 * 60 * 60 * 1000);
     const cipher = await createCipher(env.CREDENTIALS_KEY);
     expect(row.key_id).toBe(cipher.keyId);
     expect(

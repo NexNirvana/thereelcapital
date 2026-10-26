@@ -47,7 +47,7 @@ export const load: PageServerLoad = async (event) => {
             health: view.health,
             entriesBlocked: view.entriesBlocked,
             accounts: view.accounts,
-            // Connecting sets connect time + 24 h (conservative, #21); null only on rows stored before that.
+            // Null until a rotation is seen: a non-rotating key has no expiry (D44).
             expiresAt: view.refreshExpiresAt === null ? null : expiry.format(view.refreshExpiresAt),
           }
         : { status: view.status },

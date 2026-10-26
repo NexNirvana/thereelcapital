@@ -40,7 +40,7 @@ client_settings    user_id PK, size_usd, stop_pct, trailing_unlock_pct, updated_
 invitations        id, user_id, token_hash, expires_at, used_at, revoked_at, created_by   -- activation links, shared by the admin
 recovery_codes     id, user_id, code_hash, used_at
 broker_connection  user_id PK, client_id, client_secret_enc, refresh_token_enc, key_id,
-                   refresh_expires_at (connect time + 24 h until #21 verifies; NULL = unknown), status, last_ok_at
+                   refresh_expires_at (NULL = unknown, set to now + 24 h when a rotation is first seen, D44), status, last_ok_at
 audit_log          id, at, actor_id, action, target_user_id, before_json, after_json   -- no secrets
 ```
 

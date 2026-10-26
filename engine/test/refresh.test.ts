@@ -202,6 +202,29 @@ describe("rotation", () => {
     expect(await refreshTokenOf(client)).toBe(OLD_REFRESH);
   });
 
+  it("keeps refreshing a non-rotating key long after its connect time", async () => {
+    const client = await newClient();
+    await withRefresher(client, async (tokens, time) => {
+      time.now += 25 * HOUR;
+      expect(await tokens.refresh()).toMatchObject({ kind: "ready" });
+    });
+    expect(bodies).toHaveLength(1);
+    const row = await storedRow(client.userId);
+    expect(row).toMatchObject({ status: "CONNECTED", refresh_expires_at: null });
+  });
+
+  it("expires a rotating key 24 h after its first rotation", async () => {
+    const client = await newClient();
+    respond = () => json({ access_token: ACCESS, expires_in: 1200, refresh_token: NEW_REFRESH });
+    await withRefresher(client, async (tokens, time) => {
+      await tokens.refresh();
+      time.now += 24 * HOUR;
+      expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "EXPIRED" });
+    });
+    expect(bodies).toHaveLength(1);
+    expect((await storedRow(client.userId))?.status).toBe("EXPIRED");
+  });
+
   it("drops the result when the client reconnected while the request was out", async () => {
     const client = await newClient();
     respond = async () => {
