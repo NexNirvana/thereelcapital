@@ -17,5 +17,6 @@ Before building a screen, open its PNG in `designs/desktop/` and `designs/mobile
 - Disabled controls state why. Pending order states are visible and not re-clickable.
 - Every value shown comes from the server; components don't compute quantities.
 - Plain Svelte components and CSS; no Effect, no CSS framework.
+- One shell for client and admin screens (`AppShell.svelte`) and one page header (`PageHeader.svelte`: breadcrumb, H1, subtitle); never build a separate admin header.
 - Accessible: semantic buttons, visible focus, `aria-live` for order state changes, ≥44px touch targets.
 - Check at about 1440px and about 390px against the PNGs. Long Spanish strings in a monospace face must wrap cleanly.

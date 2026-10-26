@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "#lib/ui/PageHeader.svelte";
   import { enhance, type SubmitFunction } from "$app/forms";
   import { resolve } from "$app/paths";
   import { connectionKey } from "#lib/domain/overview.ts";
@@ -81,8 +82,11 @@
 
 <svelte:head><title>{client.email} · Admin · Reel Capital</title></svelte:head>
 
-<p><a href={resolve("/admin")}>← Clientes</a></p>
-<h1>{client.email}</h1>
+<PageHeader
+  crumb={[{ label: "Admin" }, { label: "Clientes", href: resolve("/admin") }]}
+  title={client.email}
+  verbatim
+/>
 
 <div class="messages" aria-live="polite">
   {#if submitFailure}
@@ -385,24 +389,12 @@
     margin: 0;
     color: var(--text-muted);
   }
-  h1 {
-    /* An email is read as typed; the global uppercase makes it hard to scan. */
-    text-transform: none;
-    font-size: clamp(22px, 4vw, 32px);
-    overflow-wrap: anywhere;
-  }
   h2 {
     margin: 2.5rem 0 0.75rem;
     font-size: 1.125rem;
   }
   p {
     margin: 0 0 0.75rem;
-  }
-  p a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--target);
-    color: var(--text-muted);
   }
   .hint {
     max-width: 40rem;

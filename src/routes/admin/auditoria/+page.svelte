@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "#lib/ui/PageHeader.svelte";
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import { formatWhen } from "#lib/ui/history.ts";
@@ -12,8 +13,11 @@
 
 <svelte:head><title>Auditoría · Admin · Reel Capital</title></svelte:head>
 
-<h1>Auditoría</h1>
-<p class="lead">Quién cambió qué: accesos, invitaciones, ajustes y recuperaciones.</p>
+<PageHeader crumb={[{ label: "Admin" }, { label: "Auditoría" }]} title="Auditoría">
+  {#snippet lead()}
+    Quién cambió qué: accesos, invitaciones, ajustes y recuperaciones.
+  {/snippet}
+</PageHeader>
 
 <form class="filters" method="GET" action={base} aria-label="Filtros">
   <label>
@@ -112,17 +116,6 @@
 {/if}
 
 <style>
-  h1 {
-    margin: 0;
-    font-size: clamp(32px, 4vw, 42px);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: -0.02em;
-  }
-  .lead {
-    margin: 0.75rem 0 0;
-    color: var(--text-muted);
-  }
   .filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
