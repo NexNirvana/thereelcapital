@@ -9,6 +9,7 @@
   import Button from "#lib/ui/Button.svelte";
   import { readLiveChain, type LiveChain } from "#lib/ui/live-chain.ts";
   import { startLivePoll } from "#lib/ui/live-poll.ts";
+  import ExpirationField from "#lib/ui/ExpirationField.svelte";
   import Notice from "#lib/ui/Notice.svelte";
   import {
     formatAge,
@@ -89,6 +90,10 @@
     }
   }
 
+  const expirationFields = $derived({
+    subyacente: data.underlying,
+    ...(data.accountId === null ? {} : { cuenta: data.accountId }),
+  });
   const chainPath = resolve("/(app)/operar/cadena");
   const entryPath = resolve("/(app)/operar");
   const expirationHref = (expiration: string) =>
@@ -141,21 +146,17 @@
   {/if}
 
   {#if data.expirations}
-    <section class="step" aria-label="Vencimientos">
-      <p class="label">Vencimiento</p>
-      <ul class="expirations">
-        {#each data.expirations as expiration (expiration)}
-          <li>
-            <!-- eslint-disable svelte/no-navigation-without-resolve -- built with resolve() above -->
-            <a
-              href={expirationHref(expiration)}
-              aria-current={expiration === data.expiration ? "page" : undefined}
-              >{formatExpiration(expiration)}</a
-            >
-            <!-- eslint-enable svelte/no-navigation-without-resolve -->
-          </li>
-        {/each}
-      </ul>
+    <section class="step" aria-label="Vencimiento">
+      <ExpirationField
+        action={chainPath}
+        fields={expirationFields}
+        expirations={data.expirations}
+        text={data.expirationText}
+        nowMs={data.nowMs}
+        choice={data.choice}
+        hrefFor={expirationHref}
+      />
+      {#if data.notice}<p class="fallback" role="status">{data.notice}</p>{/if}
     </section>
   {/if}
 
@@ -259,8 +260,7 @@
     display: block;
     margin-bottom: 1rem;
   }
-  .field > span,
-  .label {
+  .field > span {
     display: block;
     margin: 0 0 0.375rem;
     color: var(--text-dim);
@@ -284,27 +284,9 @@
     min-width: 11rem;
   }
 
-  .expirations {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .expirations a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--target);
-    padding: 0 1rem;
-    border: 1px solid var(--rule-strong);
+  .fallback {
+    margin: 0.75rem 0 0;
     color: var(--text-muted);
-    text-decoration: none;
-  }
-  .expirations a[aria-current="page"] {
-    border-color: var(--text);
-    color: var(--text);
-    font-weight: 500;
   }
 
   .chain-head {

@@ -1,10 +1,10 @@
 import { Schema } from "effect";
 
-// The browser names an underlying, an expiration and (to hand it back) an account. Contract
+// The browser names an underlying, an expiration (an ISO date, or the text of the Vencimiento field) and (to hand it back) an account. Contract
 // symbols, prices and strikes only ever come from the engine; unknown parameters are a 400.
 export const ChainQuery = Schema.Struct({
   subyacente: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16))),
-  vencimiento: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(10))),
+  vencimiento: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(40))),
   cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
 });
 
