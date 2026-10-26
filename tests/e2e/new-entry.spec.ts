@@ -201,3 +201,33 @@ test("the live price endpoint needs a session and rejects price and quantity inp
     expect(rejected.status()).toBe(400);
   }
 });
+
+test("the live socket needs a session and the app's own origin, and falls back to polling when the broker has no stream", async ({
+  context,
+  page,
+  request,
+}) => {
+  const anonymous = await request.get("/operar/en-vivo", { headers: { upgrade: "websocket" } });
+  expect(anonymous.status()).toBe(401);
+
+  await seedTradingClient(context);
+  await page.goto("/operar");
+  const foreign = await page.request.get("/operar/en-vivo", {
+    headers: { upgrade: "websocket", origin: "https://evil.example" },
+  });
+  expect(foreign.status()).toBe(403);
+
+  // The local simulation has no quote stream: the socket opens, says so, and the page keeps polling.
+  const first = await page.evaluate(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const socket = new WebSocket(`${location.origin.replace("http", "ws")}/operar/en-vivo`);
+        socket.addEventListener("open", () =>
+          socket.send(JSON.stringify({ type: "watch", symbols: ["MSFT"] })),
+        );
+        socket.addEventListener("message", (event) => resolve(String(event.data)));
+        socket.addEventListener("error", () => reject(new Error("socket error")));
+      }),
+  );
+  expect(JSON.parse(first)).toEqual({ type: "state", state: "unavailable" });
+});

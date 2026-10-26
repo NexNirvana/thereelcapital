@@ -23,3 +23,11 @@ describe("security headers", () => {
     expect(redirect.headers.get("x-frame-options")).toBe("DENY");
   });
 });
+
+describe("security headers on a WebSocket upgrade", () => {
+  it("hands a 101 response through untouched, since its socket cannot be re-wrapped", () => {
+    const upgrade = new Response(null, { status: 200 });
+    Object.defineProperty(upgrade, "status", { value: 101 });
+    expect(withSecurityHeaders(upgrade)).toBe(upgrade);
+  });
+});
