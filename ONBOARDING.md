@@ -106,7 +106,7 @@ La cantidad de entrada se calcula automáticamente: acciones para equities y con
 
 Buscar el ticker del subyacente, seleccionar vencimiento y consultar CALL/PUT por strike. Mostrar bid/ask y el estado o antigüedad de los datos disponibles. Al seleccionar una opción, conservar el símbolo exacto que reconoce TradeStation y mostrar subyacente, vencimiento, strike y CALL/PUT en el resumen de la orden. No confundir el ticker del subyacente con el símbolo del contrato.
 
-El selector de fecha del demo (`expiry`, «Vencimiento») corresponde al vencimiento de la opción elegida por el cliente. En la aplicación, ofrecer vencimientos disponibles en la cadena de TradeStation. Esta fecha identifica el contrato; no programa por sí sola una orden de cierre. Las acciones no utilizan ese campo de vencimiento.
+El selector de fecha del demo (`expiry`, «Vencimiento») corresponde al vencimiento de la opción elegida por el cliente. En la aplicación, ofrecer vencimientos disponibles en la cadena de TradeStation. Esta fecha identifica el contrato; por sí sola no programa un cierre. Decisión del dueño (D45, 2026-10-26): una opción que siga abierta el día de su vencimiento se cierra automáticamente a mercado 15 minutos antes del cierre de la sesión regular; ver docs/decisions.md. Las acciones no utilizan ese campo de vencimiento.
 
 La prima de referencia proviene exclusivamente de las cotizaciones de la API de TradeStation para el contrato seleccionado. Mostrar bid/ask y su actualización, sin input editable ni valor manual de respaldo. Al cambiar de contrato, quitar la cotización anterior hasta disponer de datos del nuevo símbolo. Si faltan datos o están desactualizados, mostrar ese estado explícitamente.
 
