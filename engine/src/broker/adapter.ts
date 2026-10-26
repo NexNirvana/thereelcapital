@@ -36,7 +36,7 @@ export interface SymbolDetails {
   readonly assetType: AssetType;
   /** Null for equities. Lets a positions table show underlying, expiry, strike and right. */
   readonly option: OptionContract | null;
-  /** Price multiplier (100 for standard options, to be verified against SIM). */
+  /** Price multiplier (100 for standard options, observed on SIM). */
   readonly pointValue: number;
   readonly quantityIncrement: number;
   readonly minimumTradeQuantity: number;

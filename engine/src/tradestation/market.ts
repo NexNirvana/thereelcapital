@@ -154,7 +154,7 @@ export const symbolDetails = (
       symbol,
       assetType,
       option,
-      // (verify) the option point value is 100 on SIM; it is read here, never assumed.
+      // The option point value is 100 on SIM (sim/symbols/symbol-option.json); it is read here, never assumed.
       pointValue: yield* integerOf("symbolDetails", "PointValue", found.PriceFormat.PointValue),
       quantityIncrement: yield* integerOf(
         "symbolDetails",
@@ -257,7 +257,7 @@ export const optionStrikes = (
   expiration: string,
 ): Effect.Effect<ReadonlyArray<number>, BrokerError> =>
   Effect.gen(function* () {
-    // (verify) "Single" is the spread type of one contract; the spec lists it in /options/spreadtypes.
+    // "Single" is the spread type of one contract; SIM accepts it (sim/expirations/strikes-single.json).
     const body = yield* transport.get(
       "optionStrikes",
       `/marketdata/options/strikes/${symbolPath([underlying])}`,
@@ -333,7 +333,7 @@ export const chainSnapshot = (
     const stream = yield* transport.openStream(
       "chainSnapshot",
       `/marketdata/stream/options/chains/${symbolPath([underlying])}`,
-      // (verify) the default strikeProximity and that `expiration` accepts a plain date.
+      // `expiration` takes a plain date on SIM; without strikeProximity the chain had 733 rows (sim/chain/chain-stream.json).
       { expiration, spreadType: "Single", optionType: "All", enableGreeks: "false" },
       timeoutMs,
     );

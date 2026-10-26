@@ -126,7 +126,7 @@ const toBrokerOrder = (
     return {
       orderId: order.OrderID,
       // The orders endpoints do not return OrderConfirmID (not in the spec): reconciliation
-      // matches by OrderID, learned from the place response. (verify) on SIM in #21.
+      // matches by OrderID, learned from the place response. The SIM orders listing does not echo it (sim/equity-order/orders-listing.json).
       orderConfirmId: null,
       accountId: order.AccountID,
       symbol: leg.Symbol,

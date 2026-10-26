@@ -93,12 +93,11 @@ const orderBody = (request: OrderRequest, withConfirmId: boolean) => ({
   Symbol: request.symbol,
   Quantity: String(request.quantity),
   OrderType: "Market",
-  // (verify) casing of option actions: the spec's request enum is upper case, its leg examples are not.
+  // Option actions are upper case: SIM accepted BUYTOOPEN (sim/option-order/place-upper.json).
   TradeAction: request.tradeAction,
   TimeInForce: { Duration: "DAY" },
   Route: "Intelligent",
-  // (verify) whether sending the id on orderconfirm reserves it and makes the later place a duplicate.
-  // Until the spike says otherwise only the real order carries it.
+  // Sending the id on orderconfirm does not reserve it on SIM (sim/equity-order/place.json); omitting it stays safer.
   ...(withConfirmId ? { OrderConfirmID: request.orderConfirmId } : {}),
 });
 
