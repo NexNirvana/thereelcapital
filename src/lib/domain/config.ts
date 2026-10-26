@@ -138,3 +138,32 @@ export const PASTE_REDIRECT_URI = "http://localhost:3000";
  * day's regular-session close (15:45 ET on a normal day, 12:45 ET on an early-close day).
  */
 export const EXPIRY_CLOSE_LEAD_MS = 15 * 60 * 1000;
+
+/**
+ * Decided (D47): the live quote stream. One upstream stream per client carries the symbols of
+ * every open screen. The numbers below are ours, not the broker's: the per-stream symbol limit and
+ * the concurrent-stream limit are not stated in the specification we could read (verify on SIM), so
+ * a screen asking for more than `LIVE_STREAM_MAX_SYMBOLS` symbols, or a seventh socket, is simply
+ * left on snapshot polling. The upstream stream is restarted with a doubling delay after a failure
+ * (`LIVE_STREAM_BACKOFF_*`); a socket is closed after `LIVE_STREAM_SOCKET_MAX_MS` and the page
+ * opens a new one, which checks the session again. The page falls back to polling when nothing
+ * arrived on the socket for `LIVE_STREAM_SILENCE_MS` (the broker's heartbeat, forwarded, is every
+ * 5 s when idle: verify).
+ */
+export const LIVE_STREAM_MAX_SYMBOLS = 100;
+export const LIVE_STREAM_MAX_SOCKETS = 6;
+export const LIVE_STREAM_BACKOFF_BASE_MS = 1000;
+export const LIVE_STREAM_BACKOFF_MAX_MS = 30 * 1000;
+export const LIVE_STREAM_SOCKET_MAX_MS = 15 * 60 * 1000;
+export const LIVE_STREAM_SILENCE_MS = 8 * 1000;
+
+/**
+ * A streamed entry is sized at most this often per screen (the latest tick wins), so a busy symbol
+ * does not turn every tick into a database read. Ours, not TradeStation's.
+ */
+export const LIVE_ENTRY_MIN_GAP_MS = 250;
+/**
+ * A stream that delivers nothing, not even a heartbeat, for this long is treated as broken and
+ * restarted. (verify) The heartbeat interval is documented as 5 s; this leaves room for six.
+ */
+export const LIVE_STREAM_IDLE_MS = 30 * 1000;
