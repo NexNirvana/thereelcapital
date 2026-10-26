@@ -1,5 +1,8 @@
 // What the live chain endpoint (/operar/cadena/cotizaciones) answers and how the chain screen reads
-// it. The prices are display only (D46): choosing a contract carries just its symbol.
+// it, by polling (D46) or from the socket's pushes (D47). The prices are display only: choosing a
+// contract carries just its symbol.
+
+import type { LiveMessage } from "#lib/domain/live-protocol.ts";
 
 export interface ChainSide {
   readonly symbol: string;
@@ -61,4 +64,46 @@ export async function readLiveChain(
   } catch {
     return null;
   }
+}
+
+/** The contracts on screen, which the socket is asked to follow. */
+export function chainSymbols(chain: LiveChain): string[] {
+  return chain.strikes
+    .flatMap((row) => [row.call?.symbol, row.put?.symbol])
+    .filter((symbol): symbol is string => symbol !== undefined);
+}
+
+const sideWith = (side: ChainSide | null, bid: number | null, ask: number | null) =>
+  side === null || bid === null || ask === null ? null : { symbol: side.symbol, bid, ask };
+
+/**
+ * What a pushed message does to the chain on screen: the new chain, or `null` for no change. A
+ * contract that loses one side of its market is shown as missing, never as 0 (like the snapshot).
+ * `reference` is the last full read, which names every contract on screen. A side that had no
+ * market in it is not watched; the page's slow full read (`refreshMs` of the feed) brings it in.
+ */
+export function chainFromMessage(
+  chain: LiveChain,
+  message: LiveMessage,
+  reference: LiveChain,
+): LiveChain | null {
+  if (message.type === "alive") return { ...chain, receivedAt: message.receivedAt };
+  if (message.type !== "quote") return null;
+  const { symbol, bid, ask, receivedAt } = message;
+  let changed = false;
+  const strikes = chain.strikes.map((row, index) => {
+    // Matched against the last full read, because a side that lost its market on screen (null)
+    // must still be recognized when its market comes back.
+    const known = reference.strikes[index];
+    const callHit = known?.call?.symbol === symbol;
+    const putHit = known?.put?.symbol === symbol;
+    if (!callHit && !putHit) return row;
+    changed = true;
+    return {
+      ...row,
+      call: callHit ? sideWith(known?.call ?? null, bid, ask) : row.call,
+      put: putHit ? sideWith(known?.put ?? null, bid, ask) : row.put,
+    };
+  });
+  return changed ? { receivedAt, strikes } : { ...chain, receivedAt };
 }

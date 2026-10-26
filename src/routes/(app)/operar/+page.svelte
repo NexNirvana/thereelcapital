@@ -8,8 +8,8 @@
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
-  import { readLiveEntry, type LiveEntry } from "#lib/ui/live-entry.ts";
-  import { startLivePoll } from "#lib/ui/live-poll.ts";
+  import { entryFromMessage, readLiveEntry, type LiveEntry } from "#lib/ui/live-entry.ts";
+  import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
@@ -44,15 +44,29 @@
   $effect(() => {
     const href = quoteHref;
     if (href === null) return;
-    return startLivePoll({
-      intervalMs: LIVE_QUOTE_POLL_MS,
-      maxPolls: LIVE_QUOTE_MAX_POLLS,
-      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
-      run: async (signal) => {
-        const answer = await readLiveEntry(href, fetch, signal);
-        // An answer for an entry that is no longer on screen is dropped.
-        if (answer !== null && !signal.aborted) live = answer;
-        return answer !== null;
+    // The socket pushes every tick (D47); the poll of D46 runs only while it is not delivering.
+    return startLiveFeed({
+      watch: {
+        type: "watch",
+        entry: {
+          accountId: data.accountId ?? "",
+          symbol: data.symbol,
+          assetType: data.tipo === "opciones" ? "option" : "equity",
+        },
+      },
+      onMessage: (message) => {
+        live = entryFromMessage(message, live) ?? live;
+      },
+      poll: {
+        intervalMs: LIVE_QUOTE_POLL_MS,
+        maxPolls: LIVE_QUOTE_MAX_POLLS,
+        maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+        run: async (signal) => {
+          const answer = await readLiveEntry(href, fetch, signal);
+          // An answer for an entry that is no longer on screen is dropped.
+          if (answer !== null && !signal.aborted) live = answer;
+          return answer !== null;
+        },
       },
     });
   });

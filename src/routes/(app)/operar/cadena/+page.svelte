@@ -2,13 +2,19 @@
   import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import {
+    LIVE_CHAIN_REFRESH_FACTOR,
     LIVE_QUOTE_MAX_BACKOFF_MS,
     LIVE_QUOTE_MAX_POLLS,
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
   import Button from "#lib/ui/Button.svelte";
-  import { readLiveChain, type LiveChain } from "#lib/ui/live-chain.ts";
-  import { startLivePoll } from "#lib/ui/live-poll.ts";
+  import {
+    chainFromMessage,
+    chainSymbols,
+    readLiveChain,
+    type LiveChain,
+  } from "#lib/ui/live-chain.ts";
+  import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import ExpirationField from "#lib/ui/ExpirationField.svelte";
   import Notice from "#lib/ui/Notice.svelte";
   import {
@@ -53,17 +59,44 @@
     const href = quotesHref;
     const source = loaded;
     if (href === null || source === null) return;
-    return startLivePoll({
-      intervalMs: pollMs,
-      maxPolls: LIVE_QUOTE_MAX_POLLS,
-      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
-      run: async (signal) => {
-        const answer = await readLiveChain(href, fetch, signal);
-        // An answer for a chain that is no longer on screen is dropped.
-        if (answer !== null && !signal.aborted) live = { loaded: source, chain: answer };
-        return answer !== null;
+    const base = data.chain;
+    // The last full read: it names the contracts to watch and to recognize in the pushes.
+    let reference = base;
+    // The socket pushes every tick of the contracts on screen (D47); the poll of D46 runs only
+    // while it is not delivering.
+    const feed = startLiveFeed({
+      watch: () => ({
+        type: "watch",
+        symbols: reference === null ? [] : chainSymbols(reference),
+      }),
+      onMessage: (message) => {
+        const current = live !== null && live.loaded === source ? live.chain : base;
+        const next =
+          current === null ? null : chainFromMessage(current, message, reference ?? current);
+        if (next !== null) live = { loaded: source, chain: next };
+      },
+      // Contracts with no market at load are not watched; a slow full read brings them in.
+      refreshMs: pollMs * LIVE_CHAIN_REFRESH_FACTOR,
+      poll: {
+        intervalMs: pollMs,
+        maxPolls: LIVE_QUOTE_MAX_POLLS,
+        maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+        run: async (signal) => {
+          const answer = await readLiveChain(href, fetch, signal);
+          // An answer for a chain that is no longer on screen is dropped.
+          if (answer !== null && !signal.aborted) {
+            live = { loaded: source, chain: answer };
+            // A contract that has a market now joins the stream.
+            const changed =
+              reference === null || chainSymbols(answer).join() !== chainSymbols(reference).join();
+            reference = answer;
+            if (changed) feed.rewatch();
+          }
+          return answer !== null;
+        },
       },
     });
+    return feed;
   });
 
   // The age counts from the moment this snapshot reached the page. It is a local clock for the

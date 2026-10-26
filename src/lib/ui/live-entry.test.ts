@@ -49,3 +49,37 @@ test("an error status, a network failure and a malformed body are all no update"
     ready as never,
   );
 });
+
+test("an entry message becomes what the screen shows, and a heartbeat only refreshes its time", async () => {
+  const { entryFromMessage } = await import("./live-entry.ts");
+  const ready = entryFromMessage(
+    {
+      type: "entry",
+      update: {
+        status: "ready",
+        symbol: "A",
+        assetType: "equity",
+        qty: 2,
+        sizeMicros: 10,
+        askMicros: 5,
+      },
+      receivedAt: 7,
+    },
+    null,
+  );
+  expect(ready).toEqual({
+    status: "ready",
+    preview: { symbol: "A", qty: 2, sizeMicros: 10, askMicros: 5, assetType: "equity" },
+    receivedAt: 7,
+  });
+  expect(entryFromMessage({ type: "alive", receivedAt: 9 }, ready)).toMatchObject({
+    receivedAt: 9,
+  });
+  expect(entryFromMessage({ type: "alive", receivedAt: 9 }, null)).toBeNull();
+  expect(entryFromMessage({ type: "state", state: "live" }, ready)).toBeNull();
+  const blocked = entryFromMessage(
+    { type: "entry", update: { status: "blocked", reasons: ["NO_ASK"] }, receivedAt: 7 },
+    ready,
+  );
+  expect(blocked?.status).toBe("blocked");
+});
