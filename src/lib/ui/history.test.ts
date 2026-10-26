@@ -24,6 +24,11 @@ describe("history wording", () => {
     expect(eventLabel("rpc.invalid_input")).toBe("Evento del sistema");
   });
 
+  it("words the expiration-day close events", () => {
+    expect(eventLabel("protection.expiry_triggered")).toBe("Cierre por vencimiento");
+    expect(eventLabel("protection.expiry_close_skipped")).not.toBe("Evento del sistema");
+  });
+
   it("shows market time with daylight saving", () => {
     expect(formatWhen(Date.parse("2026-11-04T15:00:00Z"))).toBe("4 nov 2026, 10:00 ET");
     expect(formatWhen(Date.parse("2026-07-01T15:00:00Z"))).toBe("1 jul 2026, 11:00 ET");

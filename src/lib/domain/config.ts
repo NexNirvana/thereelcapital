@@ -113,3 +113,9 @@ export const CONNECT_REDIRECT_MODE: "paste" | "registered" = "paste";
 
 /** The `redirect_uri` of paste mode: one of TradeStation's default allowed callbacks, no path. */
 export const PASTE_REDIRECT_URI = "http://localhost:3000";
+
+/**
+ * Decided (D45): an option still open on its expiration day is sold at MARKET this long before that
+ * day's regular-session close (15:45 ET on a normal day, 12:45 ET on an early-close day).
+ */
+export const EXPIRY_CLOSE_LEAD_MS = 15 * 60 * 1000;

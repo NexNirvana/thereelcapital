@@ -57,6 +57,7 @@ D15–D17 were never assigned; numbering continues from D18.
 
 | D43 | Better Auth's session cookie cache is on, `SESSION_COOKIE_CACHE_SECONDS` = 30 (owner, 2026-10-24) | authenticated reads skip the D1 session and user lookups (2 statements per request); a ban, role change or revocation may take up to 30 s to reach a browser that holds a cached copy, and only on reads: every mutating request reads D1 |
 | D44 | The 24 h absolute refresh-token lifetime applies only to keys that **rotate** (owner, 2026-10-26). `refresh_expires_at` stays NULL at connect and becomes now + 24 h at the first observed rotation | TradeStation refresh tokens are non-expiring and non-rotating by default and the SIM spikes of 2026-10-22 and 2026-10-26 showed this key returns no new token; a connect-time countdown blocked entries and engine-held stop/trailing for no reason. A refused refresh (403 `invalid_grant`) still marks the connection revoked. Migration 0008 clears the connect-time values stored before |
+| D45 | An option still open on its expiration day is sold whole at MARKET `EXPIRY_CLOSE_LEAD_MS` (15 min) before that day's regular close: 15:45 ET, or 12:45 ET on an early-close day (owner, 2026-10-26; resolves open question 11) | a long option in the money at expiry is exercised into 100 shares per contract (buying power, a stock position the app never opened); out of the money it vanishes. It reuses the engine-held stop's exit path ([domain-rules.md §7](domain-rules.md#expiration-day-close-d45)) |
 
 ### Delegated decisions of 2026-10-21
 

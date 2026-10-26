@@ -61,6 +61,8 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
   "protection.stop_triggered": "Stop activado",
   "protection.trailing_triggered": "Trailing alcanzado",
   "protection.trailing_activated": "Trailing activado",
+  "protection.expiry_triggered": "Cierre por vencimiento",
+  "protection.expiry_close_skipped": "Cierre por vencimiento en espera",
   "protection.quotes_unavailable": "Cotizaciones no disponibles para el stop",
 };
 

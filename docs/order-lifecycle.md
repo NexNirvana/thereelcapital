@@ -59,6 +59,10 @@ Entries are refused (nothing written) while the connection is unusable, a reconc
 6. `cancelIntent`: in the regular session only, and not while another order of the position is UNKNOWN; only an app intent that is ACKNOWLEDGED or PARTIAL with a broker order id. It moves to CANCEL_PENDING first, then `cancelOrder` is called once. Success means "request sent": only the broker's order status ends CANCEL_PENDING (CANCELED, or FILLED if the order won the race). `AuthExpired` and `RateLimited` mean the broker did not take the request, so the previous state is restored; a timeout or refusal leaves CANCEL_PENDING for reconciliation. A repeated cancel returns the state without calling the broker.
 7. After either call the sync loop is scheduled, so fills are applied while anything is pending.
 
+## Expiration-day close
+
+An option still open on its expiration day is closed by the stop monitor 15 minutes before that day's close ([domain-rules.md §7](domain-rules.md#expiration-day-close-d45), D45). It is a `stop`-kind exit: intent persisted before the call, one attempt, UNKNOWN reconciled, never blocked by limits.
+
 ## Reconciliation
 
 When: a client opens the app, reconnects TradeStation, the DO starts, any intent is UNKNOWN, and on every sync-loop tick while something is open.

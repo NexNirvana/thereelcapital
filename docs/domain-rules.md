@@ -71,6 +71,14 @@ Expected results, steps pressed in order (encode as unit tests):
 - The engine holds it (D36): the DO checks fresh bids on the sync tick and sends the MARKET sell through the sell ledger; no broker stop order exists. A stop exit never consumes an entry and limits never block it.
 - It is a trigger, not a loss guarantee; the UI copy says so.
 
+### Expiration-day close (D45)
+
+- An option still open on its expiration day is sold whole at MARKET, `EXPIRY_CLOSE_LEAD_MS` (15 minutes, `config.ts`) before that day's regular-session close: 15:45 ET on a normal day, 12:45 ET on an early-close day. The close comes from the options calendar (`src/lib/domain/expiry.ts`), never a literal. Why: a long option in the money at expiry is exercised into 100 shares per contract (buying power, a stock position the app never opened); out of the money it vanishes.
+- The monitor runs it on the same sync tick and through the same exit path as the stop (intent kind `stop`, event `protection.expiry_triggered`): `available` is sold, limits never block it and no counter moves. Once the intent exists `available` is zero, so ticks, alarms and DO restarts do not fire it again; a REJECTED close waits out `STOP_REJECTED_COOLDOWN_MS`, as a stop does. A timeout is UNKNOWN and is reconciled; nothing is retried.
+- Like the stop, it needs a fresh bid: without one (or with quotes unavailable, or an exit of the position UNKNOWN) the position stays `unverified`, nothing is sent, and `protection.expiry_close_skipped` is logged once. With the connection unusable the exit path blocks (`CONNECTION_UNUSABLE`) and the outcome is logged as for a stop.
+- Sells already working are not canceled: they count as committed, so only the rest is sold. (verify on SIM: a working exit that fills after the close order was placed)
+- From the start of the expiration day (New York) the position shows «Vence hoy · se cierra 15:45 ET». Equities are unaffected. What the broker does at expiry itself (verify on SIM) no longer matters to the app, because the position is closed before.
+
 ## 8. Trailing
 
 - Eligible iff `sold_qty / original_qty ≥ trailing_unlock_pct / 100` and `original_qty − sold_qty > 0`, using the `trailing_unlock_pct` stored on the position.

@@ -1,10 +1,12 @@
 // Engine-held stop (decision D36, docs/domain-rules.md §7): on each sync tick the DO compares fresh
 // bids with each position's exit level and, at or below it, sells `available` at MARKET through the
-// normal exit path. No broker StopMarket exists. `protection_state` is `verified` only while this
+// normal exit path. An option on its expiration day takes the same path 15 minutes before the close
+// (decision D45, docs/domain-rules.md §7). No broker StopMarket exists. `protection_state` is `verified` only while this
 // monitor holds a fresh quote and a working token for the position (docs/order-lifecycle.md#degraded-states).
 
 import { STOP_REJECTED_COOLDOWN_MS } from "#lib/domain/config.ts";
 import { isRegularSession } from "#lib/domain/calendar.ts";
+import { shouldCloseAtExpiry } from "#lib/domain/expiry.ts";
 import { nextTrailing, shouldExit, stopLevel, type TrailingState } from "#lib/domain/stop.ts";
 import { attempt } from "./broker/attempt.ts";
 import type { Quote } from "./broker/adapter.ts";
@@ -90,6 +92,18 @@ function stopCanBeSent(ctx: ExitContext, row: WatchedPosition): boolean {
 }
 
 /**
+ * D45: an expiration-day option the monitor cannot act on (no fresh bid, or no quotes) is not sold
+ * blind: it stays `unverified` like any stop would, and this says so once per position.
+ */
+function noteExpiryClosePending(ctx: ExitContext, row: WatchedPosition, reason: string): void {
+  if (row.expiry === null || !shouldCloseAtExpiry(row.expiry, new Date(ctx.now))) return;
+  const key = `protection_expiry_skipped:${row.id}`;
+  if (ctx.storage.kv.get(key) === reason) return;
+  ctx.storage.kv.put(key, reason);
+  logEvent(ctx, "warn", "protection.expiry_close_skipped", { positionId: row.id, reason });
+}
+
+/**
  * Called after a sync pass that read the broker successfully (so the token works). While a
  * reconciliation hold is pending nothing is verified and nothing is sent: the pass that lifts it
  * runs this next. Reads quotes once, never retries an order.
@@ -108,7 +122,10 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
   const symbols = [...new Set(watched.map((row) => row.symbol))];
   const quotes = await attempt(ctx.broker.quotes(symbols));
   if (!quotes.ok) {
-    for (const row of watched) setState(ctx, row.id, "unverified");
+    for (const row of watched) {
+      setState(ctx, row.id, "unverified");
+      noteExpiryClosePending(ctx, row, "quotes_unavailable");
+    }
     if (ctx.storage.kv.get(QUOTES_DEGRADED_KEY) !== quotes.error._tag) {
       ctx.storage.kv.put(QUOTES_DEGRADED_KEY, quotes.error._tag);
       logEvent(ctx, "warn", "protection.quotes_unavailable", { failure: quotes.error._tag });
@@ -123,20 +140,29 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     // An exit with no known outcome makes the position's protection unverified until reconciled.
     if (bid === null || row.has_unknown > 0) {
       setState(ctx, row.id, "unverified");
+      noteExpiryClosePending(ctx, row, row.has_unknown > 0 ? "unknown_intent" : "no_fresh_bid");
       continue;
     }
     setState(ctx, row.id, "verified");
     const trailing = followTrailing(ctx, row, bid);
-    if (!shouldExit({ avgEntryPrice: row.avg_entry_price, stopPct: row.stop_pct, trailing }, bid)) {
+    const stopHit = shouldExit(
+      { avgEntryPrice: row.avg_entry_price, stopPct: row.stop_pct, trailing },
+      bid,
+    );
+    // D45: from 15 minutes before the close of its expiration day an option is sold whole, as if its stop fired.
+    const expiryDue = row.expiry !== null && shouldCloseAtExpiry(row.expiry, new Date(ctx.now));
+    if (!stopHit && !expiryDue) {
       ctx.storage.kv.delete(`protection_outcome:${row.id}`);
       continue;
     }
     if (!stopCanBeSent(ctx, row)) continue;
+    ctx.storage.kv.delete(`protection_expiry_skipped:${row.id}`);
     // The trailing level is the effective exit level when it is above the stop (domain-rules.md §8).
     const kind =
-      trailing !== null && trailing.level > stopLevel(row.avg_entry_price, row.stop_pct)
+      stopHit && trailing !== null && trailing.level > stopLevel(row.avg_entry_price, row.stop_pct)
         ? "trailing"
         : "stop";
+    const reason = stopHit ? kind : "expiry";
     const result = await stopExit(ctx, row.id, "SIM", kind);
     const outcome = !result.ok
       ? result.code
@@ -150,7 +176,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     const key = `protection_outcome:${row.id}`;
     if (ctx.storage.kv.get(key) !== outcome) {
       ctx.storage.kv.put(key, outcome);
-      logEvent(ctx, "info", `protection.${kind}_triggered`, { positionId: row.id, bid, outcome });
+      logEvent(ctx, "info", `protection.${reason}_triggered`, { positionId: row.id, bid, outcome });
     }
   }
 }
