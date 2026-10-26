@@ -151,7 +151,7 @@
 </div>
 
 {#if step === "passkey"}
-  <a class="back" href={resolve("/acceso")}>Volver al acceso</a>
+  <a class="back" href={resolve("/acceso")} data-sveltekit-reload>Volver al acceso</a>
 {/if}
 
 <style>
