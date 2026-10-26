@@ -8,6 +8,12 @@ import {
   type ConnectionView,
 } from "./connection.ts";
 import {
+  LIVE_ENTRY_MIN_GAP_MS,
+  LIVE_STREAM_BACKOFF_BASE_MS,
+  LIVE_STREAM_BACKOFF_MAX_MS,
+  LIVE_STREAM_MAX_SOCKETS,
+  LIVE_STREAM_MAX_SYMBOLS,
+  LIVE_STREAM_SOCKET_MAX_MS,
   REFRESH_REQUEST_RETRY_DELAY_MS,
   REFRESH_RETRY_DELAY_MS,
   SYNC_RETRY_DELAY_MS,
@@ -38,6 +44,8 @@ import {
   type OptionContractView,
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
+import { LiveSockets } from "./live-sockets.ts";
+import { QuoteHub } from "./quote-hub.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { activateTrailing, type TrailingResult } from "./trailing.ts";
 import { readOverview } from "./overview.ts";
@@ -65,7 +73,7 @@ import {
 } from "./rpc.ts";
 import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
-import type { Schema } from "effect";
+import { Effect, type Schema } from "effect";
 import type { Mode } from "./mode.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
@@ -98,10 +106,49 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   #syncing: Promise<SyncResult> | null = null;
   /** Strikes of the chains the screens poll, so a refresh reads only quotes (D46). */
   readonly #strikes: StrikesCache = new Map();
+  /** The one upstream quote stream of this client and the browser sockets it feeds (D47). */
+  readonly #sockets: LiveSockets;
+  /** The failure last logged for the quote stream, until it delivers again. */
+  #streamFailure: string | null = null;
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
     this.#alarms = new AlarmScheduler(ctx.storage, () => this.#now());
+    this.#sockets = new LiveSockets({
+      hub: new QuoteHub({
+        run: (symbols, onEvent, signal) => this.runQuoteStream(symbols, onEvent, signal),
+        wait: (ms, signal) =>
+          new Promise<void>((resolve) => {
+            const done = () => {
+              clearTimeout(timer);
+              signal.removeEventListener("abort", done);
+              resolve();
+            };
+            const timer = setTimeout(done, ms);
+            signal.addEventListener("abort", done, { once: true });
+          }),
+        maxSymbols: LIVE_STREAM_MAX_SYMBOLS,
+        backoffBaseMs: LIVE_STREAM_BACKOFF_BASE_MS,
+        backoffMaxMs: LIVE_STREAM_BACKOFF_MAX_MS,
+      }),
+      streamAvailable: () => {
+        const connection = this.connectionContext();
+        return connection !== null && this.brokerFor(connection)?.quoteStream !== undefined;
+      },
+      prepare: (entry, streamed) =>
+        this.enterWithBroker(
+          "watchEntry",
+          PrepareEntryArgs,
+          { mode: "SIM", ...entry },
+          (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined),
+        ).catch(() => null),
+      now: () => engineNow(this.env),
+      maxSockets: LIVE_STREAM_MAX_SOCKETS,
+      maxLifetimeMs: LIVE_STREAM_SOCKET_MAX_MS,
+      entryMinGapMs: LIVE_ENTRY_MIN_GAP_MS,
+      setTimer: (callback, ms) => setTimeout(callback, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    });
     // Built before the first request is served, so every RPC sees the full schema.
     void ctx.blockConcurrencyWhile(async () => {
       migrate(ctx.storage);
@@ -117,6 +164,61 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    */
   #now(): number {
     return Date.now();
+  }
+
+  /**
+   * The live-price socket (D47). The web Worker checked the session and addressed this object by
+   * it; the socket carries watches in and quote updates out, never a price or a quantity in.
+   */
+  fetch(request: Request): Response {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Expected a WebSocket", { status: 426 });
+    }
+    if (this.connectionContext() === null) return new Response("Not available", { status: 409 });
+    const pair = new WebSocketPair();
+    const [client, server] = [pair[0], pair[1]];
+    server.accept();
+    if (!this.#sockets.adopt(server)) {
+      server.close(1013, "busy");
+      return new Response("Too many live screens", { status: 429 });
+    }
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Runs one upstream quote stream to its end. The hub restarts it; a failure is logged by kind. */
+  private async runQuoteStream(
+    symbols: ReadonlyArray<string>,
+    onEvent: Parameters<NonNullable<BrokerAdapterShape["quoteStream"]>>[1],
+    signal: AbortSignal,
+  ): Promise<"ended" | "failed"> {
+    const connection = this.connectionContext();
+    const broker = connection === null ? null : this.brokerFor(connection);
+    if (broker?.quoteStream === undefined) return "failed";
+    const result = await Effect.runPromise(
+      Effect.result(
+        broker.quoteStream(
+          symbols,
+          (event) => {
+            // The stream delivers again: the next failure is a new condition worth a row.
+            this.#streamFailure = null;
+            onEvent(event);
+          },
+          signal,
+        ),
+      ),
+    );
+    if (result._tag === "Success") return "ended";
+    // Only the kind and, for a refusal, its code: never the symbols, a token or a body.
+    const kind =
+      result.failure._tag === "Rejected"
+        ? `${result.failure._tag}:${result.failure.code}`
+        : result.failure._tag;
+    // A condition that persists is logged once, not on every retry (order-lifecycle.md degraded states).
+    if (kind !== this.#streamFailure) {
+      this.#streamFailure = kind;
+      this.log("warn", "SIM", "quote_stream.failed", "quoteStream", kind);
+    }
+    return "failed";
   }
 
   ping(): string {

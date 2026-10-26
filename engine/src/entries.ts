@@ -221,6 +221,7 @@ export function entryLimits(ctx: Pick<ConnectionContext, "sql" | "now">): EntryL
 async function evaluate(
   ctx: EntryContext,
   args: PrepareEntryArgs,
+  streamed?: Quote,
 ): Promise<EngineResult<Evaluation>> {
   const blocked = (...reasons: EntryBlockCode[]) =>
     success<Evaluation>({ kind: "blocked", reasons });
@@ -245,7 +246,10 @@ async function evaluate(
       .bind(ctx.userId)
       .first<{ size_usd: number }>(),
     cachedSymbolDetails(ctx, args.symbol),
-    attempt(ctx.broker.quotes([args.symbol])),
+    // A quote the stream just delivered replaces the snapshot read (D47); sendEntry never takes one.
+    streamed === undefined
+      ? attempt(ctx.broker.quotes([args.symbol]))
+      : Promise.resolve({ ok: true as const, value: [streamed] }),
   ]);
   if (settings === null || !Number.isSafeInteger(settings.size_usd * MICROS_PER_USD)) {
     return blocked("SIZE_UNAVAILABLE");
@@ -316,8 +320,9 @@ function previewOf(sized: Sized, intentId: string): EntryPreview {
 export async function prepareEntry(
   ctx: EntryContext,
   args: PrepareEntryArgs,
+  streamed?: Quote,
 ): Promise<EngineResult<PrepareEntryResult>> {
-  const evaluated = await evaluate(ctx, args);
+  const evaluated = await evaluate(ctx, args, streamed);
   if (!evaluated.ok) return evaluated;
   if (evaluated.value.kind === "blocked") {
     return success({ status: "BLOCKED", reasons: evaluated.value.reasons });

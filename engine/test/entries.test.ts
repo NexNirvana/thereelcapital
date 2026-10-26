@@ -165,6 +165,26 @@ describe("prepareEntry", () => {
     expect(rows).toEqual({ counters: [], intents: [] });
   });
 
+  it("sizes from a quote the stream delivered instead of reading a snapshot (D47)", async () => {
+    const client = await newClient();
+    const streamed = {
+      symbol: "AAPL",
+      bid: usd(249),
+      ask: usd(250),
+      last: usd(250),
+      tradeTime: IN_SESSION,
+      receivedAt: IN_SESSION,
+      isDelayed: false,
+      isHalted: false,
+    };
+    const result = await inClient(client, (ctx) => prepareEntry(ctx, target("AAPL"), streamed));
+    // 20,000 / 250 = 80, where the snapshot ask of 200 would give 100.
+    expect(result).toMatchObject({
+      ok: true,
+      value: { status: "READY", qty: 80, askMicros: usd(250) },
+    });
+  });
+
   it("sizes options by the point value", async () => {
     const client = await newClient();
     const result = await inClient(client, (ctx) =>
