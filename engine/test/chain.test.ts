@@ -2,7 +2,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
+import type { BrokerAdapterShape, Quote } from "../src/broker/adapter.ts";
 import { Rejected, Timeout } from "../src/broker/errors.ts";
 import { CHAIN_STRIKES_CACHE_MS } from "#lib/domain/config.ts";
 import { optionChain, type StrikesCache } from "../src/chain.ts";
@@ -27,6 +27,13 @@ const sim = makeLocalSim({
   seed: "chain",
   accounts: [{ accountId: "SIM-1" }],
   symbols: [
+    {
+      symbol: "MSFT",
+      assetType: "equity" as const,
+      bid: usd(404.9),
+      ask: usd(405.1),
+      last: usd(405),
+    },
     option(400, "call"),
     option(400, "put"),
     option(410, "call"),
@@ -60,6 +67,7 @@ describe("option chain", () => {
         underlying: "MSFT",
         expiration: "2026-11-20",
         receivedAt: NOW,
+        underlyingPrice: usd(405),
         strikes: [
           {
             strike: usd(400),
@@ -74,6 +82,30 @@ describe("option chain", () => {
         ],
       },
     });
+  });
+
+  it("takes the underlying price from the last trade, else the middle of bid and ask, else null", async () => {
+    const read = (broker: BrokerAdapterShape) =>
+      inside(broker, (ctx) =>
+        optionChain({ ...ctx, stamp: () => NOW }, { underlying: "MSFT", expiration: "2026-11-20" }),
+      ).then((result) => (result.ok ? result.value.underlyingPrice : "failed"));
+    const quoting = (quote: Partial<Quote>): BrokerAdapterShape => ({
+      ...sim.adapter,
+      quotes: (symbols) =>
+        Effect.map(sim.adapter.quotes(symbols), (found) =>
+          found.map((candidate) => ({ ...candidate, ...quote })),
+        ),
+    });
+    expect(await read(quoting({ last: null }))).toBe(usd(405));
+    expect(await read(quoting({ last: null, ask: null }))).toBeNull();
+
+    expect(await read(quoting({ last: usd(406) }))).toBe(usd(406));
+    // A quote that cannot be read leaves the chain without a price, not without strikes.
+    const down: BrokerAdapterShape = {
+      ...sim.adapter,
+      quotes: () => Effect.fail(new Timeout({ operation: "quotes" })),
+    };
+    expect(await read(down)).toBeNull();
   });
 
   it("lists the strikes once and reads only the quotes on the refreshes that follow", async () => {

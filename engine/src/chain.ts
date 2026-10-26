@@ -4,7 +4,7 @@
 // comes back from the broker, never from the client.
 
 import { Effect } from "effect";
-import type { BrokerAdapterShape, ChainRow } from "./broker/adapter.ts";
+import type { BrokerAdapterShape, ChainRow, Quote } from "./broker/adapter.ts";
 import type { BrokerError } from "./broker/errors.ts";
 import { CHAIN_STRIKES_CACHE_MS } from "#lib/domain/config.ts";
 import { logEvent } from "./events.ts";
@@ -44,6 +44,11 @@ export interface OptionChain {
   readonly expiration: string;
   /** When the engine read the snapshot (epoch ms): the page derives the age from it. */
   readonly receivedAt: number;
+  /**
+   * TradeStation's last trade of the underlying, or the middle of its bid and ask, in micro-dollars.
+   * `null` when the quote could not be read: the screen then draws no price line and shades nothing.
+   */
+  readonly underlyingPrice: number | null;
   readonly strikes: ReadonlyArray<ChainStrike>;
 }
 
@@ -93,6 +98,13 @@ function sideOf(rows: ReadonlyArray<ChainRow>, right: "call" | "put"): ChainQuot
   return row === undefined ? null : { symbol: row.symbol, bid: row.bid, ask: row.ask };
 }
 
+function priceOf(quotes: ReadonlyArray<Quote>, symbol: string): number | null {
+  const quote = quotes.find((candidate) => candidate.symbol === symbol);
+  if (quote === undefined) return null;
+  if (quote.last !== null) return quote.last;
+  return quote.bid !== null && quote.ask !== null ? Math.round((quote.bid + quote.ask) / 2) : null;
+}
+
 /** Every listed strike appears; a side the snapshot has no market for stays `null`. */
 export async function optionChain(
   // `stamp` reads the engine clock again once the broker answered: the snapshot's age counts from then.
@@ -111,7 +123,11 @@ export async function optionChain(
   if (!strikes.ok) return brokerFailure(ctx, "strikes", strikes.error);
   // The listing's age counts from when it was listed, so polling never keeps it alive.
   if (!fresh) ctx.strikesCache?.set(cacheKey, { at: ctx.now, strikes: strikes.value });
-  const snapshot = await attempt(ctx.broker.chainSnapshot(underlying, expiration, strikes.value));
+  const [snapshot, underlyingQuote] = await Promise.all([
+    attempt(ctx.broker.chainSnapshot(underlying, expiration, strikes.value)),
+    // Best effort: a chain without the price is still a chain.
+    attempt(ctx.broker.quotes([underlying])),
+  ]);
   if (!snapshot.ok) return brokerFailure(ctx, "snapshot", snapshot.error);
 
   // Only the asked expiration is shown, whatever else a broker (or the local simulator) returns.
@@ -123,6 +139,7 @@ export async function optionChain(
     underlying,
     expiration,
     receivedAt: ctx.stamp(),
+    underlyingPrice: underlyingQuote.ok ? priceOf(underlyingQuote.value, underlying) : null,
     strikes: listed.map((strike) => {
       const atStrike = rows.filter((row) => row.strike === strike);
       return { strike, call: sideOf(atStrike, "call"), put: sideOf(atStrike, "put") };
