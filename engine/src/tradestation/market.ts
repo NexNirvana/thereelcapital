@@ -295,9 +295,12 @@ export const chainSnapshot = (
   transport: Transport,
   underlying: string,
   expiration: string,
+  knownStrikes?: ReadonlyArray<number>,
 ): Effect.Effect<ReadonlyArray<ChainRow>, BrokerError> =>
   Effect.gen(function* () {
-    const strikes = yield* optionStrikes(transport, underlying, expiration);
+    // A caller that refreshes prices already holds the strikes (they don't change during a
+    // session): only the quotes are read again (D46).
+    const strikes = knownStrikes ?? (yield* optionStrikes(transport, underlying, expiration));
     const datePart = expiration.slice(2).replaceAll("-", "");
     const contracts = strikes.flatMap((strike) =>
       (["call", "put"] as const).map((right) => ({

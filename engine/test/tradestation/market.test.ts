@@ -295,6 +295,19 @@ describe("chainSnapshot", () => {
     ]);
   });
 
+  it("reads only the quotes when the caller already holds the strikes", async () => {
+    const script = scriptedFetch(() =>
+      json({ Quotes: [optionQuote("F 261030C11.5", "0.4", "0.47")] }),
+    );
+    const rows = await run(
+      market.chainSnapshot(transportFor(script.fetch), "F", "2026-10-30", [11_500_000]),
+    );
+    expect(rows.map((row) => row.symbol)).toEqual(["F 261030C11.5"]);
+    expect(script.calls.map((call) => call.url)).toEqual([
+      `${SIM_BASE}/marketdata/quotes/${["F 261030C11.5", "F 261030P11.5"].map(encodeURIComponent).join(",")}`,
+    ]);
+  });
+
   it("leaves out a side with a missing or one-sided quote, never as 0", async () => {
     const script = scriptedFetch(
       () => json({ Strikes: [["11.5"]] }),
