@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto, invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { authClient } from "#lib/auth-client.ts";
@@ -42,9 +41,10 @@
     step = "start";
   }
 
-  async function finish() {
-    await invalidateAll();
-    await goto(resolve("/(app)/conexion"));
+  // A full document load: this page's `no-referrer` policy would otherwise follow a client-side
+  // navigation, and the browser then sends `Origin: null` on /conexion's POSTs (rejected as cross-site).
+  function finish() {
+    location.assign(resolve("/(app)/conexion"));
   }
 </script>
 
@@ -63,7 +63,7 @@
     <div class="failure" aria-live="assertive">
       {#if failure}<Notice title="No pudimos continuar" role="alert">{failure}</Notice>{/if}
     </div>
-    <a class="back" href={resolve("/acceso")}>Ya tengo passkey</a>
+    <a class="back" href={resolve("/acceso")} data-sveltekit-reload>Ya tengo passkey</a>
   {:else}
     <EnrollmentSteps
       way="activation"

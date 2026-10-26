@@ -42,6 +42,23 @@ test("activates through the screen: link, passkey, codes, connection page", asyn
   await expect(page.getByRole("heading", { name: "Conexión" })).toBeVisible();
   expect(count(`SELECT COUNT(*) AS n FROM "passkey" WHERE "userId"='${userId}'`)).toBe(1);
 
+  // No reload since the activation page: the plain form POST of the paste step must carry a real
+  // Origin, not `null` (#256). A foreign address is refused by the server before any broker call.
+  await page.getByLabel("API key (client ID)").fill("e2e-client-id-0123456789");
+  await page.getByLabel("Secreto").fill("e2e-client-secret-0123456789");
+  // The new tab would reach the real TradeStation; the test only needs the page to react.
+  await page.context().route("https://signin.tradestation.com/**", (route) => route.abort());
+  await page.getByRole("button", { name: "Conectar con TradeStation" }).click();
+  await page.getByLabel("Dirección copiada").fill("https://example.com/?code=x&state=y");
+  const paste = page.waitForResponse(
+    (response) =>
+      response.url().includes("/conexion") &&
+      response.request().method() === "POST" &&
+      response.request().url().includes("paste"),
+  );
+  await page.getByRole("button", { name: "Completar conexión" }).click();
+  expect((await paste).status()).toBe(400);
+
   // The spent link now only explains that it no longer works.
   await page.context().clearCookies();
   await page.goto(`/activar/${token}`);
