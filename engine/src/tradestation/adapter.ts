@@ -11,6 +11,7 @@ import {
 } from "./http.ts";
 import * as market from "./market.ts";
 import * as orders from "./orders.ts";
+import * as quoteStream from "./quote-stream.ts";
 import * as trading from "./trading.ts";
 
 export interface TradeStationAdapterConfig extends TransportConfig {
@@ -41,6 +42,8 @@ export function makeTradeStationAdapter(
       accounts: () => market.accounts(transport),
       symbolDetails: (symbol) => market.symbolDetails(transport, symbol),
       quotes: (symbols) => market.quotes(transport, symbols, config.now),
+      quoteStream: (symbols, onEvent, signal) =>
+        quoteStream.quoteStream(transport, symbols, config.now, onEvent, signal),
       optionExpirations: (underlying) => market.optionExpirations(transport, underlying),
       optionStrikes: (underlying, expiration) =>
         market.optionStrikes(transport, underlying, expiration),
