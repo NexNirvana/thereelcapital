@@ -1,8 +1,7 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
-  import Badge from "#lib/ui/Badge.svelte";
-  import SignOutButton from "#lib/ui/SignOutButton.svelte";
+  import AppShell from "#lib/ui/AppShell.svelte";
   import type { LayoutProps } from "./$types";
 
   let { children }: LayoutProps = $props();
@@ -13,91 +12,26 @@
     resolve("/admin/historial"),
     resolve("/admin/auditoria"),
   ];
-  function current(href: string) {
+  const root = resolve("/admin");
+  const current = (href: string) => {
     const path = page.url.pathname;
-    const inSection = sections.some((section) => path.startsWith(section));
-    return href === resolve("/admin")
-      ? inSection
-        ? undefined
-        : "page"
-      : path.startsWith(href)
-        ? "page"
-        : undefined;
-  }
+    return href === root
+      ? !sections.some((section) => path.startsWith(section))
+      : path.startsWith(href);
+  };
+  const link = (href: string, label: string) => ({ href, label, current: current(href) });
+
+  const tabs = $derived([
+    link(root, "Clientes"),
+    link(resolve("/admin/operativa"), "Operativa"),
+    link(resolve("/admin/historial"), "Historial"),
+    link(resolve("/admin/auditoria"), "Auditoría"),
+  ]);
+  // The way back to the client app is a link, never the current section.
+  const operar = { href: resolve("/(app)/operar"), label: "Operar", current: false };
+  const nav = $derived([...tabs, operar]);
 </script>
 
-<div class="admin">
-  <header>
-    <a class="wordmark" href={resolve("/admin")}>REEL CAPITAL</a>
-    <Badge label="Admin" />
-    <Badge label="SIM" />
-    <nav aria-label="Administración">
-      <a href={resolve("/admin")} aria-current={current(resolve("/admin"))}>Clientes</a>
-      <a href={resolve("/admin/operativa")} aria-current={current(resolve("/admin/operativa"))}>
-        Operativa
-      </a>
-      <a href={resolve("/admin/historial")} aria-current={current(resolve("/admin/historial"))}>
-        Historial
-      </a>
-      <a href={resolve("/admin/auditoria")} aria-current={current(resolve("/admin/auditoria"))}>
-        Auditoría
-      </a>
-    </nav>
-    <a class="back" href={resolve("/(app)/operar")}>Operar</a>
-    <span class="signout"><SignOutButton /></span>
-  </header>
-  <main>{@render children()}</main>
-</div>
-
-<style>
-  .admin {
-    min-height: 100dvh;
-    padding: 0 clamp(1rem, 4vw, 2rem);
-  }
-  header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0 1.25rem;
-    min-height: 70px;
-    border-bottom: 1px solid var(--rule);
-  }
-  a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--target);
-    color: var(--text-muted);
-    text-decoration: none;
-  }
-  .wordmark {
-    color: var(--text);
-    font-weight: 600;
-    letter-spacing: -0.04em;
-  }
-  nav a {
-    border-bottom: 2px solid transparent;
-  }
-  nav a[aria-current="page"] {
-    border-bottom-color: var(--text);
-    color: var(--text);
-    font-weight: 500;
-  }
-  .back {
-    margin-left: auto;
-  }
-  .signout {
-    color: var(--text-muted);
-  }
-  main {
-    max-width: 1100px;
-    padding: 2.5rem 0.5rem;
-  }
-  @media (max-width: 900px) {
-    header {
-      gap: 0 0.75rem;
-    }
-    main {
-      padding: 1.5rem 0;
-    }
-  }
-</style>
+<AppShell home={root} label="Administración" {nav} {tabs} extras={[operar]}>
+  {@render children()}
+</AppShell>
