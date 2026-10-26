@@ -1,0 +1,76 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/brokerage/accounts/****703M/orders"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "320",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "318",
+      "x-ratelimit-reset": "3",
+      "x-ratelimit-resource": "sim-get-accounts"
+    },
+    "body": {
+      "Orders": [
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "0",
+          "ClosedDateTime": "2026-10-26T14:03:50Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0",
+          "Legs": [
+            {
+              "QuantityOrdered": "1",
+              "ExecQuantity": "0",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F",
+              "AssetType": "STOCK"
+            }
+          ],
+          "OrderID": "976408994",
+          "OpenedDateTime": "2026-10-26T14:03:50Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.6784",
+          "RejectReason": "duplicate order [976408993]",
+          "Routing": "Intelligent",
+          "Status": "REJ",
+          "StatusDescription": "Rejected",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:50Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "11.68",
+          "Legs": [
+            {
+              "OpenOrClose": "Open",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F",
+              "AssetType": "STOCK",
+              "ExecutionPrice": "11.68"
+            }
+          ],
+          "OrderID": "976408993",
+          "OpenedDateTime": "2026-10-26T14:03:50Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.68",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        }
+      ],
+      "Errors": []
+    }
+  }
+}

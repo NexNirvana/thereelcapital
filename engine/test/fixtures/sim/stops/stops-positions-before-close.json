@@ -1,0 +1,46 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/brokerage/accounts/****703M/positions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "320",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "320",
+      "x-ratelimit-reset": "1",
+      "x-ratelimit-resource": "sim-get-positions"
+    },
+    "body": {
+      "Positions": [
+        {
+          "AccountID": "****703M",
+          "AveragePrice": "0.47",
+          "AssetType": "STOCKOPTION",
+          "Last": "0.43",
+          "Bid": "0.4",
+          "Ask": "0.47",
+          "ExpirationDate": "2026-10-30T00:00:00Z",
+          "ConversionRate": "1",
+          "DayTradeRequirement": "47",
+          "InitialRequirement": "47",
+          "MaintenanceMargin": "0",
+          "PositionID": "190797302",
+          "LongShort": "Long",
+          "Quantity": "1",
+          "Symbol": "F 261030C11.5",
+          "Timestamp": "2026-10-26T14:03:53Z",
+          "TodaysProfitLoss": "-3.5",
+          "TotalCost": "47",
+          "MarketValue": "43.5",
+          "MarkToMarketPrice": "0.47",
+          "UnrealizedProfitLoss": "-3.5",
+          "UnrealizedProfitLossPercent": "-7.447",
+          "UnrealizedProfitLossQty": "-3.5"
+        }
+      ],
+      "Errors": []
+    }
+  }
+}

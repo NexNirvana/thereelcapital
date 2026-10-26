@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/orderexecution/orders",
+    "body": {
+      "AccountID": "****703M",
+      "Symbol": "F 261030C11.5",
+      "Quantity": "1",
+      "OrderType": "Market",
+      "TradeAction": "BUYTOOPEN",
+      "TimeInForce": {
+        "Duration": "DAY"
+      },
+      "Route": "Intelligent",
+      "OrderConfirmID": "spk6808001a236849a594d"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Orders": [
+        {
+          "Message": "Sent order: Buy to Open 1 F 261030C11.5 @ Market",
+          "OrderID": "976409037"
+        }
+      ]
+    }
+  }
+}

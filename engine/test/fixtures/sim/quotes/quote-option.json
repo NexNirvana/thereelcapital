@@ -1,0 +1,53 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/quotes/F%20261030C11.5"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "500",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "500",
+      "x-ratelimit-reset": "1",
+      "x-ratelimit-resource": "quotes"
+    },
+    "body": {
+      "Quotes": [
+        {
+          "Symbol": "F 261030C11.5",
+          "Open": "0.44",
+          "High": "0.49",
+          "Low": "0.41",
+          "PreviousClose": "0.41",
+          "Last": "0.43",
+          "Ask": "0.47",
+          "AskSize": "2190",
+          "Bid": "0.4",
+          "BidSize": "276",
+          "NetChange": "0.02",
+          "NetChangePct": "4.8780487804878",
+          "High52Week": "0",
+          "Low52Week": "0",
+          "Volume": "210",
+          "PreviousVolume": "2658",
+          "Close": "0.43",
+          "DailyOpenInterest": "1906",
+          "Restrictions": [],
+          "TradeTime": "2026-10-26T14:01:47Z",
+          "TickSizeTier": "0",
+          "LastTradingDate": "2026-10-29T23:59:59Z",
+          "MarketFlags": {
+            "IsDelayed": false,
+            "IsHardToBorrow": false,
+            "IsBats": false,
+            "IsHalted": false
+          },
+          "LastSize": "7",
+          "LastVenue": "MIAX",
+          "VWAP": "0"
+        }
+      ]
+    }
+  }
+}

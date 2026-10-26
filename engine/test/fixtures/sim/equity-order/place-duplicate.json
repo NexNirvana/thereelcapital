@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/orderexecution/orders",
+    "body": {
+      "AccountID": "****703M",
+      "Symbol": "F",
+      "Quantity": "1",
+      "OrderType": "Market",
+      "TradeAction": "BUY",
+      "TimeInForce": {
+        "Duration": "DAY"
+      },
+      "Route": "Intelligent",
+      "OrderConfirmID": "spk4e315f190eea427a871"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Orders": [
+        {
+          "Error": "FAILED",
+          "Message": "Order failed. OrderConfirmID must be unique and no longer than 22 characters.",
+          "OrderID": "976408994"
+        }
+      ]
+    }
+  }
+}

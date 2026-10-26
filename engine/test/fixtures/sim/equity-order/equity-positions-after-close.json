@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/brokerage/accounts/****703M/positions"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "320",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "319",
+      "x-ratelimit-reset": "2",
+      "x-ratelimit-resource": "sim-get-positions"
+    },
+    "body": {
+      "Positions": [],
+      "Errors": []
+    }
+  }
+}

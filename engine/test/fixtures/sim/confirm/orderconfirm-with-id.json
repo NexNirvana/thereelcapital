@@ -1,0 +1,41 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/orderexecution/orderconfirm",
+    "body": {
+      "AccountID": "****703M",
+      "Symbol": "F",
+      "Quantity": "1",
+      "OrderType": "Market",
+      "TradeAction": "BUY",
+      "TimeInForce": {
+        "Duration": "DAY"
+      },
+      "Route": "Intelligent",
+      "OrderConfirmID": "spk469cbf0bdc2c404f8fe"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Confirmations": [
+        {
+          "OrderAssetCategory": "EQUITY",
+          "Currency": "USD",
+          "Route": "Intelligent",
+          "TimeInForce": {
+            "Duration": "DAY"
+          },
+          "AccountID": "****703M",
+          "OrderConfirmID": "q50e9Kj+q0O16t4jU86oLA",
+          "EstimatedPrice": "11.68",
+          "EstimatedCost": "11.68",
+          "DebitCreditEstimatedCost": "11.68",
+          "EstimatedCommission": "1",
+          "SummaryMessage": "Buy 1 F @ Market"
+        }
+      ]
+    }
+  }
+}

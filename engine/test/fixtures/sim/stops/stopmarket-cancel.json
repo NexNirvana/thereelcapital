@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/orderexecution/orders/976409045"
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Message": "Cancel request sent",
+      "OrderID": "976409045"
+    }
+  }
+}
