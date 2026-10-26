@@ -2,6 +2,14 @@
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
+  import {
+    LIVE_QUOTE_MAX_BACKOFF_MS,
+    LIVE_QUOTE_MAX_POLLS,
+    LIVE_QUOTE_POLL_MS,
+  } from "#lib/domain/config.ts";
+  import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
+  import { readLiveEntry, type LiveEntry } from "#lib/ui/live-entry.ts";
+  import { startLivePoll } from "#lib/ui/live-poll.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
@@ -15,8 +23,46 @@
   const stale = $derived(
     typedSymbol.trim().toUpperCase() !== data.symbol || chosenAccount !== (data.accountId ?? ""),
   );
-  const preview = $derived(stale ? null : data.preview);
-  const blocked = $derived(stale ? null : data.blocked);
+
+  // The price keeps updating while the screen is open (D46). It is display only: the review step
+  // and the send ask the engine again, and the browser never sends a price or a quantity.
+  let live = $state<LiveEntry | null>(null);
+  const quoteHref = $derived(
+    data.accountId === null || data.symbol === ""
+      ? null
+      : `${resolve("/(app)/operar/cotizacion")}?${new URLSearchParams({
+          tipo: data.tipo,
+          cuenta: data.accountId,
+          simbolo: data.symbol,
+        })}`,
+  );
+  // A new page load (another symbol, account or search) starts from what the server just read.
+  $effect.pre(() => {
+    void data;
+    live = null;
+  });
+  $effect(() => {
+    const href = quoteHref;
+    if (href === null) return;
+    return startLivePoll({
+      intervalMs: LIVE_QUOTE_POLL_MS,
+      maxPolls: LIVE_QUOTE_MAX_POLLS,
+      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+      run: async (signal) => {
+        const answer = await readLiveEntry(href, fetch, signal);
+        // An answer for an entry that is no longer on screen is dropped.
+        if (answer !== null && !signal.aborted) live = answer;
+        return answer !== null;
+      },
+    });
+  });
+  const preview = $derived(
+    stale ? null : live === null ? data.preview : live.status === "ready" ? live.preview : null,
+  );
+  const blocked = $derived(
+    stale ? null : live === null ? data.blocked : live.status === "blocked" ? live.message : null,
+  );
+  const quotedAt = $derived(live?.status === "ready" ? live.receivedAt : data.quotedAt);
 
   const tabs = $derived([
     { id: "acciones", label: "Acciones", href: `${resolve("/(app)/operar")}?tipo=acciones` },
@@ -139,6 +185,7 @@
       <DefinitionRow label="Tipo de orden" value="Market" />
     </dl>
     <p class="caption">La cantidad se calcula automáticamente.</p>
+    {#if preview && quotedAt}<LiveQuoteNote receivedAt={quotedAt} />{/if}
   </section>
 
   <section class="summary" aria-label="Resumen">

@@ -145,3 +145,59 @@ test("says so when the connection has no account to trade", async ({ context, pa
   await expect(page.getByText("No hay una cuenta de TradeStation habilitada")).toBeVisible();
   await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
 });
+
+const setVisibility = (page: import("@playwright/test").Page, value: "hidden" | "visible") =>
+  page.evaluate((visibility) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: visibility });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, value);
+
+test("keeps the quantity live without reloading, and stops while the tab is hidden", async ({
+  context,
+  page,
+}) => {
+  const userId = await seedTradingClient(context);
+  await page.goto("/operar?simbolo=MSFT");
+  await expect(page.locator(".form dl")).toContainText("198 acciones");
+  await expect(page.getByText(/Precio de las \d\d:\d\d:\d\d \(Nueva York\)/)).toBeVisible();
+  await shoot(page, "live-quote");
+
+  // The admin halves SIZE: the open screen follows within a few seconds, with no navigation.
+  d1(`UPDATE client_settings SET size_usd = 10000 WHERE user_id = '${userId}'`);
+  await expect(page.locator(".form dl")).toContainText("99 acciones", { timeout: 8_000 });
+  await expect(page.locator(".summary")).toContainText("99 acciones");
+
+  let polls = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/operar/cotizacion")) polls += 1;
+  });
+  await setVisibility(page, "hidden");
+  const hiddenFrom = polls;
+  await page.waitForTimeout(5_000);
+  expect(polls).toBe(hiddenFrom);
+  await setVisibility(page, "visible");
+  await expect.poll(() => polls, { timeout: 8_000 }).toBeGreaterThan(hiddenFrom);
+});
+
+test("the live price endpoint needs a session and rejects price and quantity inputs", async ({
+  context,
+  page,
+  request,
+}) => {
+  const anonymous = await request.get("/operar/cotizacion?cuenta=SIM-1&simbolo=MSFT");
+  expect(anonymous.status()).toBe(401);
+
+  await seedTradingClient(context);
+  const ok = await page.request.get("/operar/cotizacion?cuenta=SIM-1&simbolo=MSFT");
+  expect(await ok.json()).toMatchObject({
+    status: "ready",
+    preview: { qty: 198, askMicros: 101_000_000 },
+  });
+  expect(ok.headers()["cache-control"]).toBe("no-store");
+  for (const extra of ["qty=5", "precio=1", "size=1"]) {
+    const rejected = await page.request.get(
+      `/operar/cotizacion?cuenta=SIM-1&simbolo=MSFT&${extra}`,
+    );
+    expect(rejected.status()).toBe(400);
+  }
+});

@@ -226,3 +226,34 @@ test("stops polling the order while the tab is hidden and resumes on return", as
   await setVisibility("visible");
   await expect.poll(() => polls, { timeout: 8_000 }).toBeGreaterThan(hiddenFrom);
 });
+
+test("keeps the ask live on the review but sends the quantity under review", async ({
+  context,
+  page,
+}) => {
+  const userId = await seedTradingClient(context);
+  await openReview(page, "MSFT");
+  await expect(page.locator("dl")).toContainText("198 acciones");
+  await expect(page.getByText(/Precio de las \d\d:\d\d:\d\d \(Nueva York\)/)).toBeVisible();
+
+  // SIZE changes while the client reads, and the screen polls the price meanwhile: the quantity on
+  // screen and the one the form carries stay those under review until the client re-confirms.
+  d1(`UPDATE client_settings SET size_usd = 10000 WHERE user_id = '${userId}'`);
+  const polled = await page.waitForResponse(
+    (response) => response.url().includes("/operar/cotizacion"),
+    { timeout: 8_000 },
+  );
+  // The time on screen is the one the poll answered, in New York time.
+  const { receivedAt } = (await polled.json()) as { receivedAt: number };
+  const clock = new Intl.DateTimeFormat("es", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZone: "America/New_York",
+  }).format(new Date(receivedAt));
+  await expect(page.getByText(`Precio de las ${clock} (Nueva York)`)).toBeVisible();
+  await expect(page.locator("dl")).toContainText("198 acciones");
+  await expect(page.locator("input[name=cantidad]")).toHaveValue("198");
+  await shoot(page, "live-ask");
+});

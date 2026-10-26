@@ -44,6 +44,7 @@ export const load: PageServerLoad = async (event) => {
     contract: contract?.ok ? contract.value : null,
     accounts: [] as string[],
     accountId: null as string | null,
+    quotedAt: null as number | null,
   };
   if (!shell?.ok) {
     return {
@@ -86,5 +87,6 @@ export const load: PageServerLoad = async (event) => {
     ...shown,
     blocked: null,
     preview: { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType },
+    quotedAt: Date.now(),
   };
 };
