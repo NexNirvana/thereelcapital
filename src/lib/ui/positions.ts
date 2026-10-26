@@ -57,6 +57,20 @@ export function allOutShortHint(position: PositionView, qty: number): string {
   return `ALL OUT · ${formatUnits(qty, position)}`;
 }
 
+const CLOSE_TIME = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+});
+
+/** «Vence hoy · se cierra 15:45 ET» from the start of the expiration day; the engine decides the time (D45). */
+export function expiryWarning(
+  position: Pick<PositionView, "option" | "expiryCloseAt">,
+): string | null {
+  if (position.option === null || position.expiryCloseAt === null) return null;
+  return `Vence hoy · se cierra ${CLOSE_TIME.format(position.expiryCloseAt)} ET`;
+}
+
 const EXPIRY = new Intl.DateTimeFormat("es", {
   day: "numeric",
   month: "short",

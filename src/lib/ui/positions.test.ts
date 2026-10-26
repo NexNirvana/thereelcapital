@@ -10,6 +10,7 @@ import {
   exitOutcome,
   sellableQty,
   countsLine,
+  expiryWarning,
   instrumentLine,
   remainingLine,
   roundedToZeroLine,
@@ -33,8 +34,25 @@ const call: PositionView = {
   stopPct: 30,
   trailingUnlockPct: 70,
   trailingPct: null,
+  expiryCloseAt: null,
   steps: ["done", "done", "done_zero", "done", "available", "available", "available"],
 };
+
+describe("expiration-day warning", () => {
+  it("says when the engine closes the option, in New York time", () => {
+    const normal = { ...call, expiryCloseAt: Date.UTC(2026, 10, 20, 20, 45) };
+    expect(expiryWarning(normal)).toBe("Vence hoy · se cierra 15:45 ET");
+    const early = { ...call, expiryCloseAt: Date.UTC(2026, 10, 27, 17, 45) };
+    expect(expiryWarning(early)).toBe("Vence hoy · se cierra 12:45 ET");
+    const summer = { ...call, expiryCloseAt: Date.UTC(2026, 9, 30, 19, 45) };
+    expect(expiryWarning(summer)).toBe("Vence hoy · se cierra 15:45 ET");
+  });
+
+  it("shows nothing before expiration day or for shares", () => {
+    expect(expiryWarning(call)).toBeNull();
+    expect(expiryWarning({ ...call, option: null })).toBeNull();
+  });
+});
 
 describe("positions screen wording", () => {
   it("words an option as the design does", () => {

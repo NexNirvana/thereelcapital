@@ -25,6 +25,8 @@ export interface PositionView {
   readonly stopPct: number;
   readonly trailingUnlockPct: number;
   readonly trailingPct: number | null;
+  /** Epoch ms the engine closes this option today (D45); null unless today is its expiration day. */
+  readonly expiryCloseAt: number | null;
   readonly steps: readonly ScaleOutStepState[];
 }
 

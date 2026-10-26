@@ -3,6 +3,7 @@
   import { afterNavigate, invalidate, replaceState } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { DEFAULT_TRAILING_PCT, TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
+  import Badge from "#lib/ui/Badge.svelte";
   import Button from "#lib/ui/Button.svelte";
   import Notice from "#lib/ui/Notice.svelte";
   import ProgressBar from "#lib/ui/ProgressBar.svelte";
@@ -12,6 +13,7 @@
     countsLine,
     formatUnits,
     headline,
+    expiryWarning,
     instrumentLine,
     pendingKindLabel,
     pendingStateLabel,
@@ -52,6 +54,18 @@
     };
   });
 
+  // A tab that stopped polling shows old data (the expiration-day warning appears at midnight, New
+  // York): coming back to it starts the count again and reads the engine at once.
+  $effect(() => {
+    const resume = () => {
+      if (document.visibilityState !== "visible" || polls < MAX_POLLS) return;
+      polls = 0;
+      void invalidate("app:positions");
+    };
+    document.addEventListener("visibilitychange", resume);
+    return () => document.removeEventListener("visibilitychange", resume);
+  });
+
   const positionHref = (id: string) =>
     `${resolve("/(app)/posiciones")}?${new URLSearchParams({ p: id })}`;
   const positions = $derived(data.view?.positions ?? []);
@@ -82,6 +96,7 @@
     data.view?.pending.filter((order) => order.positionId === position?.id) ?? [],
   );
   const sellable = $derived(position ? sellableQty(position, pending) : 0);
+  const warning = $derived(position ? expiryWarning(position) : null);
   const stop = $derived(position ? stopStatus(position.protectionState) : null);
   const trailing = $derived(
     position ? trailingStatus(position, pending) : { active: false, canActivate: false },
@@ -155,6 +170,9 @@
       <section class="left" aria-label="Posición">
         <h2 class="symbol">{headline(position)}</h2>
         <p class="instrument">{instrumentLine(position)}</p>
+        {#if warning}
+          <p class="expiry"><Badge label={warning} /></p>
+        {/if}
 
         <p class="remaining">{remainingLine(position)}</p>
         <p class="counts">
@@ -418,6 +436,9 @@
   }
   .instrument {
     margin-top: 0.25rem;
+  }
+  .expiry {
+    margin-top: 0.75rem;
   }
   .remaining {
     margin-top: 2rem;

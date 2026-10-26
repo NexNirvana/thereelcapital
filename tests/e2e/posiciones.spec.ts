@@ -427,3 +427,58 @@ test("needs a signed-in client", async ({ page }) => {
   const response = await page.goto("/posiciones");
   expect(response?.url()).toContain("/acceso");
 });
+
+test("warns on the expiration day that the engine closes the option", async ({ context, page }) => {
+  // The engine's clock is pinned to 2026-11-04 (engine.env): an option expiring that day.
+  await seedTradingClient(context, {
+    positions: [
+      {
+        id: "pos-spy",
+        symbol: "SPY 261104C600",
+        qty: 50,
+        soldQty: 10,
+        protectionState: "verified",
+        option: { underlying: "SPY", expiry: "2026-11-04", strike: 600_000_000, right: "call" },
+        steps: [
+          "done",
+          "available",
+          "available",
+          "available",
+          "available",
+          "available",
+          "available",
+        ],
+      },
+    ],
+  });
+  await page.goto("/posiciones");
+  await expect(page.getByText("Vence hoy · se cierra 15:45 ET", { exact: true })).toBeVisible();
+  await shoot(page, "expiry-day");
+});
+
+test("shows no expiration warning on another day", async ({ context, page }) => {
+  await seedTradingClient(context, {
+    positions: [
+      {
+        id: "pos-spy",
+        symbol: "SPY 261120C600",
+        qty: 50,
+        soldQty: 10,
+        protectionState: "verified",
+        option: { underlying: "SPY", expiry: "2026-11-20", strike: 600_000_000, right: "call" },
+        steps: [
+          "done",
+          "available",
+          "available",
+          "available",
+          "available",
+          "available",
+          "available",
+        ],
+      },
+    ],
+  });
+  await page.goto("/posiciones");
+  await expect(page.getByText("Call 600 · 20 nov 2026")).toBeVisible();
+  await expect(page.getByText(/Vence hoy/)).toHaveCount(0);
+});
