@@ -11,7 +11,7 @@ import type {
   Quote,
   SymbolDetails,
 } from "../broker/adapter.ts";
-import { Rejected, Timeout, Unknown, type BrokerError } from "../broker/errors.ts";
+import { Rejected, Unknown, type BrokerError } from "../broker/errors.ts";
 import type { Transport } from "./http.ts";
 import {
   WireNumber,
@@ -26,7 +26,6 @@ import {
 
 /** Per the quotes endpoint: no more than 100 symbols per request. */
 const MAX_QUOTE_SYMBOLS = 100;
-const DEFAULT_CHAIN_TIMEOUT_MS = 15_000;
 
 const AccountsResponse = Schema.Struct({
   Accounts: Schema.Array(
@@ -272,154 +271,57 @@ export const optionStrikes = (
     return [...new Set(strikes)].sort((a, b) => a - b);
   });
 
-const ChainMessage = Schema.Struct({
-  StreamStatus: blankable(Schema.String),
-  Error: blankable(Schema.String),
-  Bid: blankable(WireNumber),
-  Ask: blankable(WireNumber),
-  Legs: blankable(
-    Schema.Array(
-      Schema.Struct({
-        Symbol: Schema.String,
-        StrikePrice: WireNumber,
-        Expiration: Schema.String,
-        OptionType: Schema.String,
-      }),
-    ),
-  ),
-});
+const MICROS_PER_UNIT = 1_000_000;
 
-const toChainRow = (message: typeof ChainMessage.Type): Effect.Effect<ChainRow | null, Unknown> =>
-  Effect.gen(function* () {
-    const { Legs, Bid, Ask } = message;
-    if (Legs == null) return null; // heartbeats and other non-row messages
-    const leg = Legs[0];
-    if (Legs.length !== 1 || leg === undefined) {
-      return yield* Effect.fail(
-        new Unknown({ operation: "chainSnapshot", detail: "invalid_value:Legs" }),
-      );
-    }
-    const right = leg.OptionType.toLowerCase();
-    if (right !== "call" && right !== "put") {
-      return yield* Effect.fail(
-        new Unknown({ operation: "chainSnapshot", detail: "invalid_value:OptionType" }),
-      );
-    }
-    // A contract with no two-sided market is not offered.
-    if (Bid == null || Ask == null) return null;
-    return {
-      symbol: leg.Symbol,
-      expiration: yield* isoDateOf("chainSnapshot", "Expiration", leg.Expiration),
-      strike: yield* microsOf("chainSnapshot", "StrikePrice", leg.StrikePrice),
-      right,
-      bid: yield* microsOf("chainSnapshot", "Bid", Bid),
-      ask: yield* microsOf("chainSnapshot", "Ask", Ask),
-    };
-  });
+/** `11500000` -> `11.5`: the strike as it appears in an option symbol (no trailing zeros). */
+const strikeText = (micros: number): string => {
+  const whole = Math.trunc(micros / MICROS_PER_UNIT);
+  const fraction = String(micros % MICROS_PER_UNIT)
+    .padStart(6, "0")
+    .replace(/0+$/, "");
+  return fraction === "" ? `${whole}` : `${whole}.${fraction}`;
+};
 
 /**
- * Reads the chain stream until `{"StreamStatus":"EndSnapshot"}`, then closes it. Messages are
- * newline-delimited JSON and chunk boundaries are not message boundaries (docs: HTTP streaming),
- * so bytes are buffered and split on "\n". The whole read, connection included, is bounded by
- * `timeoutMs`. Streams are limited to 10 concurrent per key, so the stream is always closed.
+ * The chain of one expiration: the listed strikes, then one quotes snapshot of both contracts of
+ * each. The chain stream was not used because, in the SIM run of 2026-10-26, it kept sending
+ * updates and never sent `EndSnapshot` (docs/tradestation-integration.md). Quotes are served for
+ * option symbols (≤100 per request, so a long chain takes a few requests). A symbol the broker
+ * does not know, or a contract without both bid and ask, is simply not in the result.
+ * (verify) The symbol is `<underlying> <yymmdd><C|P><strike>`, the shape every sampled symbol had;
+ * an underlying whose options trade under another root (index weeklies) is out of scope.
  */
 export const chainSnapshot = (
   transport: Transport,
   underlying: string,
   expiration: string,
-  timeoutMs: number = DEFAULT_CHAIN_TIMEOUT_MS,
 ): Effect.Effect<ReadonlyArray<ChainRow>, BrokerError> =>
   Effect.gen(function* () {
-    const stream = yield* transport.openStream(
-      "chainSnapshot",
-      `/marketdata/stream/options/chains/${symbolPath([underlying])}`,
-      // `expiration` takes a plain date on SIM; without strikeProximity the chain had 733 rows (sim/chain/chain-stream.json).
-      { expiration, spreadType: "Single", optionType: "All", enableGreeks: "false" },
-      timeoutMs,
+    const strikes = yield* optionStrikes(transport, underlying, expiration);
+    const datePart = expiration.slice(2).replaceAll("-", "");
+    const contracts = strikes.flatMap((strike) =>
+      (["call", "put"] as const).map((right) => ({
+        symbol: `${underlying} ${datePart}${right === "call" ? "C" : "P"}${strikeText(strike)}`,
+        strike,
+        right,
+      })),
     );
-    const rows = new Map<string, ChainRow>();
-    const handleLine = (line: string): Effect.Effect<boolean, Unknown> =>
-      Effect.gen(function* () {
-        if (line.trim() === "") return false;
-        const parsed = yield* Effect.try({
-          try: (): unknown => JSON.parse(line),
-          catch: () => new Unknown({ operation: "chainSnapshot", detail: "invalid_response" }),
-        });
-        const message = yield* decodeWire("chainSnapshot", ChainMessage, parsed);
-        if (message.Error != null) {
-          return yield* Effect.fail(
-            new Unknown({ operation: "chainSnapshot", detail: `stream_error:${message.Error}` }),
-          );
-        }
-        if (message.StreamStatus === "EndSnapshot") return true;
-        if (message.StreamStatus === "GoAway") {
-          return yield* Effect.fail(
-            new Unknown({ operation: "chainSnapshot", detail: "stream_go_away" }),
-          );
-        }
-        const row = yield* toChainRow(message);
-        if (row !== null) rows.set(row.symbol, row);
-        return false;
-      });
-    return yield* Effect.ensuring(
-      readUntilEnd(stream.response, stream.signal, handleLine).pipe(
-        Effect.map(() => [...rows.values()]),
-      ),
-      Effect.sync(stream.abort),
-    );
-  });
-
-/** Feeds each complete line to `onLine` until it returns true; fails when the stream ends first. */
-const readUntilEnd = (
-  response: Response,
-  signal: AbortSignal,
-  onLine: (line: string) => Effect.Effect<boolean, Unknown>,
-): Effect.Effect<void, BrokerError> =>
-  Effect.gen(function* () {
-    const reader = response.body?.getReader();
-    if (reader === undefined) {
-      return yield* Effect.fail(new Unknown({ operation: "chainSnapshot", detail: "network" }));
-    }
-    const decoder = new TextDecoder();
-    let buffer = "";
-    const loop = Effect.gen(function* () {
-      while (true) {
-        const chunk = yield* Effect.tryPromise({
-          // The race makes the timeout hold even for a body that is not tied to the abort signal.
-          try: () =>
-            Promise.race([
-              reader.read(),
-              new Promise<never>((_resolve, reject) => {
-                if (signal.aborted) reject(signal.reason);
-                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-              }),
-            ]),
-          catch: (error): BrokerError =>
-            typeof error === "object" &&
-            error !== null &&
-            "name" in error &&
-            (error.name === "TimeoutError" || error.name === "AbortError")
-              ? new Timeout({ operation: "chainSnapshot" })
-              : new Unknown({ operation: "chainSnapshot", detail: "network" }),
-        });
-        if (chunk.done) {
-          if (buffer !== "" && (yield* onLine(buffer))) return;
-          return yield* Effect.fail(
-            new Unknown({ operation: "chainSnapshot", detail: "stream_ended_early" }),
-          );
-        }
-        buffer += decoder.decode(chunk.value, { stream: true });
-        let newline = buffer.indexOf("\n");
-        while (newline !== -1) {
-          const line = buffer.slice(0, newline);
-          buffer = buffer.slice(newline + 1);
-          if (yield* onLine(line)) return;
-          newline = buffer.indexOf("\n");
-        }
+    const bySymbol = new Map(contracts.map((contract) => [contract.symbol, contract]));
+    const symbols = contracts.map((contract) => contract.symbol);
+    const rows: ChainRow[] = [];
+    for (let start = 0; start < symbols.length; start += MAX_QUOTE_SYMBOLS) {
+      // The receive time is unused here: the caller stamps the chain once it is complete.
+      const quoted = yield* quotes(
+        transport,
+        symbols.slice(start, start + MAX_QUOTE_SYMBOLS),
+        () => 0,
+      );
+      for (const quote of quoted) {
+        const contract = bySymbol.get(quote.symbol);
+        // A one-sided market is not offered; the side stays null upstream, never 0.
+        if (contract === undefined || quote.bid === null || quote.ask === null) continue;
+        rows.push({ ...contract, expiration, bid: quote.bid, ask: quote.ask });
       }
-    });
-    return yield* Effect.ensuring(
-      loop,
-      Effect.promise(() => reader.cancel().catch(() => undefined)),
-    );
+    }
+    return rows;
   });

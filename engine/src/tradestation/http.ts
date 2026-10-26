@@ -69,16 +69,6 @@ export interface Transport {
     path: string,
     body?: unknown,
   ) => Effect.Effect<unknown, BrokerError>;
-  /** An open streaming response (the caller owns closing it) aborted after `timeoutMs`. */
-  readonly openStream: (
-    operation: BrokerOperation,
-    path: string,
-    query: Readonly<Record<string, string>>,
-    timeoutMs: number,
-  ) => Effect.Effect<
-    { readonly response: Response; readonly signal: AbortSignal; readonly abort: () => void },
-    BrokerError
-  >;
   /** The most recent rate-limit headers, whatever the status. */
   readonly rateLimit: () => RateLimitInfo | null;
 }
@@ -263,27 +253,6 @@ export function makeTransport(
       ),
     // No Effect.retry here, ever: a repeated place or cancel could act twice (order-lifecycle.md rule 2).
     send: (operation, method, path, body) => once(operation, method, path, undefined, body),
-    openStream: (operation, path, query, streamTimeoutMs) => {
-      const controller = new AbortController();
-      const timer = setTimeout(
-        () => controller.abort(new DOMException("", "TimeoutError")),
-        streamTimeoutMs,
-      );
-      return sendRequest(operation, urlFor(path, query), {
-        method: "GET",
-        signal: controller.signal,
-      }).pipe(
-        Effect.map((response) => ({
-          response,
-          signal: controller.signal,
-          abort: () => {
-            clearTimeout(timer);
-            controller.abort();
-          },
-        })),
-        Effect.tapError(() => Effect.sync(() => clearTimeout(timer))),
-      );
-    },
     rateLimit: () => lastRateLimit,
   };
   return { ok: true, transport };

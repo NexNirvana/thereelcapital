@@ -16,7 +16,6 @@ import * as trading from "./trading.ts";
 export interface TradeStationAdapterConfig extends TransportConfig {
   /** Epoch ms; stamps quotes with our receive time. */
   readonly now: () => number;
-  readonly chainTimeoutMs?: number;
 }
 
 export interface TradeStationAdapter extends BrokerAdapterShape {
@@ -46,7 +45,7 @@ export function makeTradeStationAdapter(
       optionStrikes: (underlying, expiration) =>
         market.optionStrikes(transport, underlying, expiration),
       chainSnapshot: (underlying, expiration) =>
-        market.chainSnapshot(transport, underlying, expiration, config.chainTimeoutMs),
+        market.chainSnapshot(transport, underlying, expiration),
       confirmOrder: (request) => trading.confirmOrder(transport, guard, request),
       placeOrder: (request) => trading.placeOrder(transport, guard, request),
       cancelOrder: (accountId, orderId) =>

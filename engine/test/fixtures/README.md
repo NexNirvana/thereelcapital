@@ -1,6 +1,6 @@
 # TradeStation fixtures
 
-These files are **derived from the examples in the official TradeStation v3 OpenAPI spec** (linked from `docs/tradestation-integration.md`), not recorded from the SIM API. Where the spec has no example for what the product needs (an option's symbol details, a chain stream with `EndSnapshot`, an order response with `Errors`), the shape follows the spec's schema and the values are invented. Account ids and order ids are the spec's placeholders.
+These files are **derived from the examples in the official TradeStation v3 OpenAPI spec** (linked from `docs/tradestation-integration.md`), not recorded from the SIM API. Where the spec has no example for what the product needs (an option's symbol details, an order response with `Errors`), the shape follows the spec's schema and the values are invented. Account ids and order ids are the spec's placeholders.
 
 Issue #21 (the SIM spike) records real SIM responses in the `sim/` folders below. Only `refresh.test.ts` decodes a `sim/` sample so far; the derived files above remain what the other tests decode.
 
@@ -12,7 +12,6 @@ Issue #21 (the SIM spike) records real SIM responses in the `sim/` folders below
 | `quotes.json` | spec example of `GET /marketdata/quotes/{symbols}` |
 | `expirations.json` | spec example of `GET /marketdata/options/expirations/{underlying}` |
 | `strikes.json` | schema-derived from the spec's `Strikes` example, one strike per spread |
-| `chain-stream.ndjson` | spec example of a chain message, plus a schema-derived second row, a heartbeat and `EndSnapshot` |
 | `orders.json` | spec example of `GET /brokerage/accounts/{accounts}/orders`, extended with schema-derived option, canceled, rejected, multi-leg, short and unmapped-status orders |
 | `positions.json` | spec example of `GET /brokerage/accounts/{accounts}/positions`, plus a schema-derived option and a short position |
 | `confirm.json`, `place.json`, `place-refused.json`, `cancel.json` | spec examples of `orderconfirm`, `POST orders` (the success example trimmed to one order, and its `Errors` example alone) and `DELETE orders/{id}` |

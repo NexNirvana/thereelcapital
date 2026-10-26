@@ -182,7 +182,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     );
   }
 
-  /** One snapshot of an expiration's chain, read on demand and closed. Read-only. */
+  /** One snapshot of an expiration's chain (strikes, then quotes), read on demand. Read-only. */
   optionChain(input: unknown): Promise<EngineResult<OptionChain>> {
     return this.enterWithBroker("optionChain", OptionChainArgs, input, (ctx, args) =>
       optionChain({ ...ctx, stamp: () => engineNow(this.env) }, args),
