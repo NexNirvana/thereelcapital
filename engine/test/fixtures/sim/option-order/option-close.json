@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/orderexecution/orders",
+    "body": {
+      "AccountID": "****703M",
+      "Symbol": "F 261030C11.5",
+      "Quantity": "1",
+      "OrderType": "Market",
+      "TradeAction": "SELLTOCLOSE",
+      "TimeInForce": {
+        "Duration": "DAY"
+      },
+      "Route": "Intelligent",
+      "OrderConfirmID": "spkd19188c3dab24a00bcb"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Orders": [
+        {
+          "Message": "Sent order: Sell to Close 1 F 261030C11.5 @ Market",
+          "OrderID": "976409030"
+        }
+      ]
+    }
+  }
+}

@@ -16,27 +16,27 @@
       "Quotes": [
         {
           "Symbol": "F",
-          "Open": "11.8",
-          "High": "12.05",
-          "Low": "11.785",
-          "PreviousClose": "11.9",
-          "Last": "11.92",
-          "Ask": "11.93",
-          "AskSize": "500",
-          "Bid": "11.92",
-          "BidSize": "5000",
-          "NetChange": "0.02",
-          "NetChangePct": "0.168067226890756",
+          "Open": "11.62",
+          "High": "11.71",
+          "Low": "11.59",
+          "PreviousClose": "11.6",
+          "Last": "11.665",
+          "Ask": "11.67",
+          "AskSize": "7300",
+          "Bid": "11.66",
+          "BidSize": "10600",
+          "NetChange": "0.065",
+          "NetChangePct": "0.560344827586207",
           "High52Week": "17.78",
           "High52WeekTimestamp": "2026-05-29T00:00:00Z",
           "Low52Week": "11.11",
           "Low52WeekTimestamp": "2026-03-30T00:00:00Z",
-          "Volume": "37900354",
-          "PreviousVolume": "44408809",
-          "Close": "11.94",
+          "Volume": "3625096",
+          "PreviousVolume": "44147320",
+          "Close": "11.665",
           "DailyOpenInterest": "0",
           "Restrictions": [],
-          "TradeTime": "2026-10-22T21:16:05Z",
+          "TradeTime": "2026-10-26T14:02:44Z",
           "TickSizeTier": "0",
           "MarketFlags": {
             "IsDelayed": false,
@@ -44,9 +44,9 @@
             "IsBats": false,
             "IsHalted": false
           },
-          "LastSize": "365",
+          "LastSize": "800",
           "LastVenue": "NASDAQ",
-          "VWAP": "11.947243543008"
+          "VWAP": "11.6507925395225"
         }
       ]
     }

@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/orderexecution/orders",
+    "body": {
+      "AccountID": "****703M",
+      "Symbol": "F",
+      "Quantity": "1",
+      "OrderType": "Market",
+      "TradeAction": "BUY",
+      "TimeInForce": {
+        "Duration": "DAY"
+      },
+      "Route": "Intelligent",
+      "OrderConfirmID": "spk4e315f190eea427a871"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Orders": [
+        {
+          "Message": "Sent order: Buy 1 F @ Market",
+          "OrderID": "976408993"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/orderexecution/orders/976409008"
+  },
+  "response": {
+    "status": 400,
+    "headers": {},
+    "body": {
+      "Error": "BadRequest",
+      "Message": "Not an open order."
+    }
+  }
+}

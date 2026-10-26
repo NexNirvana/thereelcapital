@@ -14,14 +14,14 @@
     "status": 200,
     "headers": {
       "x-ratelimit-limit": "500",
-      "x-ratelimit-remaining": "474",
-      "x-ratelimit-reset": "1792703767"
+      "x-ratelimit-remaining": "476",
+      "x-ratelimit-reset": "1793023367"
     },
     "body": {
       "access_token": "[REDACTED]",
       "refresh_token": "[REDACTED]",
       "id_token": "[REDACTED]",
-      "scope": "openid MarketData ReadAccount Trade offline_access",
+      "scope": "openid MarketData ReadAccount Trade OptionSpreads offline_access",
       "expires_in": 1200,
       "token_type": "Bearer"
     }

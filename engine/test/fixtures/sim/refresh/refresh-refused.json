@@ -13,8 +13,8 @@
     "status": 403,
     "headers": {
       "x-ratelimit-limit": "500",
-      "x-ratelimit-remaining": "478",
-      "x-ratelimit-reset": "1792703768"
+      "x-ratelimit-remaining": "491",
+      "x-ratelimit-reset": "1793023368"
     },
     "body": {
       "error": "invalid_grant",

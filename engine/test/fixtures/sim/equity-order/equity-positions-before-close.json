@@ -13,7 +13,32 @@
       "x-ratelimit-resource": "sim-get-positions"
     },
     "body": {
-      "Positions": [],
+      "Positions": [
+        {
+          "AccountID": "****703M",
+          "AveragePrice": "11.68",
+          "AssetType": "STOCK",
+          "Last": "11.6784",
+          "Bid": "11.67",
+          "Ask": "11.68",
+          "ConversionRate": "1",
+          "DayTradeRequirement": "0",
+          "InitialRequirement": "0",
+          "MaintenanceMargin": "0",
+          "PositionID": "190797294",
+          "LongShort": "Long",
+          "Quantity": "1",
+          "Symbol": "F",
+          "Timestamp": "2026-10-26T14:03:50Z",
+          "TodaysProfitLoss": "0",
+          "TotalCost": "11.68",
+          "MarketValue": "11.6784",
+          "MarkToMarketPrice": "11.68",
+          "UnrealizedProfitLoss": "0",
+          "UnrealizedProfitLossPercent": "0",
+          "UnrealizedProfitLossQty": "0"
+        }
+      ],
       "Errors": []
     }
   }

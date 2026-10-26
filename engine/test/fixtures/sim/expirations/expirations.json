@@ -4,12 +4,92 @@
     "path": "/marketdata/options/expirations/F"
   },
   "response": {
-    "status": 403,
-    "headers": {},
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "90",
+      "x-ratelimit-period": "60",
+      "x-ratelimit-remaining": "90",
+      "x-ratelimit-reset": "1",
+      "x-ratelimit-resource": "option-expirations"
+    },
     "body": {
-      "Message": "Missing required scope.",
-      "StatusCode": 403,
-      "TraceID": "cffaf243-629d-4487-bc05-8cc339c63076"
+      "Expirations": [
+        {
+          "Date": "2026-10-30T00:00:00Z",
+          "Type": "Weekly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-11-06T00:00:00Z",
+          "Type": "Weekly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-11-13T00:00:00Z",
+          "Type": "Weekly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-11-20T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-11-27T00:00:00Z",
+          "Type": "Weekly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-12-04T00:00:00Z",
+          "Type": "Weekly",
+          "Root": "F"
+        },
+        {
+          "Date": "2026-12-18T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2027-01-15T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2027-03-19T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2027-06-17T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2027-09-17T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2027-12-17T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2028-01-21T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2028-12-15T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        },
+        {
+          "Date": "2029-01-19T00:00:00Z",
+          "Type": "Monthly",
+          "Root": "F"
+        }
+      ]
     }
   }
 }

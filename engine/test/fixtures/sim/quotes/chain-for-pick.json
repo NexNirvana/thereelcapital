@@ -1,0 +1,348 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/stream/options/chains/F?expiration=2026-10-30&spreadType=Single&optionType=Call&enableGreeks=false"
+  },
+  "response": {
+    "status": 200,
+    "messages": [
+      {
+        "Ask": "0.01",
+        "Bid": "0",
+        "Mid": "0.005",
+        "AskSize": 8,
+        "BidSize": 0,
+        "Close": "0.01",
+        "High": "0.02",
+        "Last": "0.01",
+        "Low": "0.01",
+        "NetChange": "0",
+        "NetChangePct": "0",
+        "Open": "0.01",
+        "PreviousClose": "0.01",
+        "Volume": 22,
+        "Side": "Call",
+        "Strikes": ["14"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C14",
+            "Ratio": 1,
+            "StrikePrice": "14",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.2",
+        "Bid": "0.19",
+        "Mid": "0.195",
+        "AskSize": 32,
+        "BidSize": 1,
+        "Close": "0.2",
+        "High": "0.27",
+        "Last": "0.2",
+        "Low": "0.17",
+        "NetChange": "0",
+        "NetChangePct": "0",
+        "Open": "0.17",
+        "PreviousClose": "0.2",
+        "Volume": 3232,
+        "Side": "Call",
+        "Strikes": ["12"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C12",
+            "Ratio": 1,
+            "StrikePrice": "12",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.08",
+        "Bid": "0.07",
+        "Mid": "0.075",
+        "AskSize": 10,
+        "BidSize": 911,
+        "Close": "0.07",
+        "High": "0.11",
+        "Last": "0.07",
+        "Low": "0.02",
+        "NetChange": "-0.02",
+        "NetChangePct": "-0.2222",
+        "Open": "0.02",
+        "PreviousClose": "0.09",
+        "Volume": 800,
+        "Side": "Call",
+        "Strikes": ["12.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C12.5",
+            "Ratio": 1,
+            "StrikePrice": "12.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "2.36",
+        "Bid": "1.94",
+        "Mid": "2.15",
+        "AskSize": 18,
+        "BidSize": 595,
+        "Close": "2.23",
+        "High": "2.33",
+        "Last": "2.23",
+        "Low": "2.23",
+        "NetChange": "0.15",
+        "NetChangePct": "0.0721",
+        "Open": "2.33",
+        "PreviousClose": "2.08",
+        "Volume": 9,
+        "Side": "Call",
+        "Strikes": ["9.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C9.5",
+            "Ratio": 1,
+            "StrikePrice": "9.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.02",
+        "Bid": "0.01",
+        "Mid": "0.015",
+        "AskSize": 356,
+        "BidSize": 635,
+        "Close": "0.02",
+        "High": "0.03",
+        "Last": "0.02",
+        "Low": "0.01",
+        "NetChange": "-0.01",
+        "NetChangePct": "-0.3333",
+        "Open": "0.02",
+        "PreviousClose": "0.03",
+        "Volume": 40,
+        "Side": "Call",
+        "Strikes": ["13.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C13.5",
+            "Ratio": 1,
+            "StrikePrice": "13.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.47",
+        "Bid": "0.4",
+        "Mid": "0.435",
+        "AskSize": 1135,
+        "BidSize": 168,
+        "Close": "0.43",
+        "High": "0.49",
+        "Last": "0.43",
+        "Low": "0.41",
+        "NetChange": "0.02",
+        "NetChangePct": "0.0488",
+        "Open": "0.44",
+        "PreviousClose": "0.41",
+        "Volume": 210,
+        "Side": "Call",
+        "Strikes": ["11.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C11.5",
+            "Ratio": 1,
+            "StrikePrice": "11.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.85",
+        "Bid": "0.71",
+        "Mid": "0.78",
+        "AskSize": 1587,
+        "BidSize": 2133,
+        "Close": "0.7",
+        "High": "0.8",
+        "Last": "0.7",
+        "Low": "0.7",
+        "NetChange": "-0.02",
+        "NetChangePct": "-0.0278",
+        "Open": "0.8",
+        "PreviousClose": "0.72",
+        "Volume": 2,
+        "Side": "Call",
+        "Strikes": ["11"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C11",
+            "Ratio": 1,
+            "StrikePrice": "11",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.04",
+        "Bid": "0.03",
+        "Mid": "0.035",
+        "AskSize": 2292,
+        "BidSize": 10,
+        "Close": "0.03",
+        "High": "0.05",
+        "Last": "0.03",
+        "Low": "0.03",
+        "NetChange": "-0.01",
+        "NetChangePct": "-0.25",
+        "Open": "0.04",
+        "PreviousClose": "0.04",
+        "Volume": 361,
+        "Side": "Call",
+        "Strikes": ["13"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C13",
+            "Ratio": 1,
+            "StrikePrice": "13",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "2",
+        "Bid": "1.49",
+        "Mid": "1.745",
+        "AskSize": 1141,
+        "BidSize": 1231,
+        "Close": "1.67",
+        "High": "0",
+        "Last": "1.67",
+        "Low": "0",
+        "NetChange": "0",
+        "NetChangePct": "0",
+        "Open": "0",
+        "PreviousClose": "1.67",
+        "Volume": 0,
+        "Side": "Call",
+        "Strikes": ["10"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C10",
+            "Ratio": 1,
+            "StrikePrice": "10",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "1.41",
+        "Bid": "1.16",
+        "Mid": "1.285",
+        "AskSize": 1550,
+        "BidSize": 211,
+        "Close": "1.43",
+        "High": "1.43",
+        "Last": "1.43",
+        "Low": "1.43",
+        "NetChange": "0.31",
+        "NetChangePct": "0.2768",
+        "Open": "1.43",
+        "PreviousClose": "1.12",
+        "Volume": 1,
+        "Side": "Call",
+        "Strikes": ["10.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C10.5",
+            "Ratio": 1,
+            "StrikePrice": "10.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.2",
+        "Bid": "0.19",
+        "Mid": "0.195",
+        "AskSize": 20,
+        "BidSize": 1,
+        "Close": "0.2",
+        "High": "0.27",
+        "Last": "0.2",
+        "Low": "0.17",
+        "NetChange": "0",
+        "NetChangePct": "0",
+        "Open": "0.17",
+        "PreviousClose": "0.2",
+        "Volume": 3232,
+        "Side": "Call",
+        "Strikes": ["12"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C12",
+            "Ratio": 1,
+            "StrikePrice": "12",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      },
+      {
+        "Ask": "0.08",
+        "Bid": "0.07",
+        "Mid": "0.075",
+        "AskSize": 10,
+        "BidSize": 917,
+        "Close": "0.07",
+        "High": "0.11",
+        "Last": "0.07",
+        "Low": "0.02",
+        "NetChange": "-0.02",
+        "NetChangePct": "-0.2222",
+        "Open": "0.02",
+        "PreviousClose": "0.09",
+        "Volume": 800,
+        "Side": "Call",
+        "Strikes": ["12.5"],
+        "Legs": [
+          {
+            "Symbol": "F 261030C12.5",
+            "Ratio": 1,
+            "StrikePrice": "12.5",
+            "Expiration": "2026-10-30T00:00:00Z",
+            "OptionType": "Call",
+            "AssetType": "StockOption"
+          }
+        ]
+      }
+    ],
+    "totalMessages": 348
+  }
+}

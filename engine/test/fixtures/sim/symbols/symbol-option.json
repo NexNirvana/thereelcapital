@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/marketdata/symbols/F%20261030C11.5"
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "Symbols": [
+        {
+          "AssetType": "STOCKOPTION",
+          "Country": "United States",
+          "Currency": "USD",
+          "Description": "Ford Motor [F] Oct 2026 11.500 Call",
+          "Exchange": "OPRA",
+          "ExpirationDate": "2026-10-30T00:00:00Z",
+          "Symbol": "F 261030C11.5",
+          "OptionType": "CALL",
+          "Root": "F",
+          "StrikePrice": "11.5",
+          "Underlying": "F",
+          "PriceFormat": {
+            "Format": "Decimal",
+            "Decimals": "2",
+            "IncrementStyle": "Schedule",
+            "PointValue": "100",
+            "IncrementSchedule": [
+              {
+                "StartsAt": "0",
+                "Increment": "0.01"
+              },
+              {
+                "StartsAt": "3",
+                "Increment": "0.05"
+              }
+            ]
+          },
+          "QuantityFormat": {
+            "Format": "Decimal",
+            "Decimals": "0",
+            "IncrementStyle": "Simple",
+            "Increment": "1",
+            "MinimumTradeQuantity": "1"
+          }
+        }
+      ],
+      "Errors": []
+    }
+  }
+}

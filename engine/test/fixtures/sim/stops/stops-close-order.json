@@ -1,0 +1,357 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/brokerage/accounts/****703M/orders"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "x-ratelimit-limit": "320",
+      "x-ratelimit-period": "300",
+      "x-ratelimit-remaining": "318",
+      "x-ratelimit-reset": "3",
+      "x-ratelimit-resource": "sim-get-accounts"
+    },
+    "body": {
+      "Orders": [
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:04:18Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0.4",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "ExecutionPrice": "0.4",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409286",
+          "OpenedDateTime": "2026-10-26T14:04:18Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "0.43",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "0",
+          "ClosedDateTime": "2026-10-26T14:04:18Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "0",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409175",
+          "OpenedDateTime": "2026-10-26T14:04:05Z",
+          "OrderType": "StopMarket",
+          "PriceUsedForBuyingPower": "0.43",
+          "Routing": "Intelligent",
+          "Status": "OUT",
+          "StatusDescription": "UROut",
+          "StopPrice": "0.39",
+          "AdvancedOptions": "STPTRG=SAB;TRL=10%;",
+          "TrailingStop": {
+            "Percent": "10"
+          },
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "0",
+          "ClosedDateTime": "2026-10-26T14:04:06Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "0",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409045",
+          "OpenedDateTime": "2026-10-26T14:03:54Z",
+          "OrderType": "StopMarket",
+          "PriceUsedForBuyingPower": "0.43",
+          "Routing": "Intelligent",
+          "Status": "OUT",
+          "StatusDescription": "UROut",
+          "StopPrice": "0.2",
+          "AdvancedOptions": "STPTRG=SAB;",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:54Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0.47",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Open",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "ExecutionPrice": "0.47",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409037",
+          "OpenedDateTime": "2026-10-26T14:03:53Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "0.47",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:53Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0.4",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "ExecutionPrice": "0.4",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409030",
+          "OpenedDateTime": "2026-10-26T14:03:53Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "0.43",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:53Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0.47",
+          "Legs": [
+            {
+              "ExpirationDate": "2026-10-30T00:00:00Z",
+              "OpenOrClose": "Open",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F 261030C11.5",
+              "Underlying": "F",
+              "AssetType": "STOCKOPTION",
+              "ExecutionPrice": "0.47",
+              "OptionType": "CALL",
+              "StrikePrice": "11.5"
+            }
+          ],
+          "OrderID": "976409020",
+          "OpenedDateTime": "2026-10-26T14:03:52Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "0.47",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:52Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "11.67",
+          "Legs": [
+            {
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F",
+              "AssetType": "STOCK",
+              "ExecutionPrice": "11.67"
+            }
+          ],
+          "OrderID": "976409014",
+          "OpenedDateTime": "2026-10-26T14:03:52Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.6786",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:52Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "11.68",
+          "Legs": [
+            {
+              "OpenOrClose": "Open",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F",
+              "AssetType": "STOCK",
+              "ExecutionPrice": "11.68"
+            }
+          ],
+          "OrderID": "976409008",
+          "OpenedDateTime": "2026-10-26T14:03:51Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.6784",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:51Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "11.67",
+          "Legs": [
+            {
+              "OpenOrClose": "Close",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Sell",
+              "Symbol": "F",
+              "AssetType": "STOCK",
+              "ExecutionPrice": "11.67"
+            }
+          ],
+          "OrderID": "976408999",
+          "OpenedDateTime": "2026-10-26T14:03:51Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.6784",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "0",
+          "ClosedDateTime": "2026-10-26T14:03:50Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "0",
+          "Legs": [
+            {
+              "QuantityOrdered": "1",
+              "ExecQuantity": "0",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F",
+              "AssetType": "STOCK"
+            }
+          ],
+          "OrderID": "976408994",
+          "OpenedDateTime": "2026-10-26T14:03:50Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.6784",
+          "RejectReason": "duplicate order [976408993]",
+          "Routing": "Intelligent",
+          "Status": "REJ",
+          "StatusDescription": "Rejected",
+          "UnbundledRouteFee": "0"
+        },
+        {
+          "AccountID": "****703M",
+          "CommissionFee": "1",
+          "ClosedDateTime": "2026-10-26T14:03:50Z",
+          "Currency": "USD",
+          "Duration": "DAY",
+          "FilledPrice": "11.68",
+          "Legs": [
+            {
+              "OpenOrClose": "Open",
+              "QuantityOrdered": "1",
+              "ExecQuantity": "1",
+              "QuantityRemaining": "0",
+              "BuyOrSell": "Buy",
+              "Symbol": "F",
+              "AssetType": "STOCK",
+              "ExecutionPrice": "11.68"
+            }
+          ],
+          "OrderID": "976408993",
+          "OpenedDateTime": "2026-10-26T14:03:50Z",
+          "OrderType": "Market",
+          "PriceUsedForBuyingPower": "11.68",
+          "Routing": "Intelligent",
+          "Status": "FLL",
+          "StatusDescription": "Filled",
+          "UnbundledRouteFee": "0"
+        }
+      ],
+      "Errors": []
+    }
+  }
+}

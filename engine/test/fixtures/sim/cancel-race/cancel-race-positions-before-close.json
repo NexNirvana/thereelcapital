@@ -8,12 +8,37 @@
     "headers": {
       "x-ratelimit-limit": "320",
       "x-ratelimit-period": "300",
-      "x-ratelimit-remaining": "317",
-      "x-ratelimit-reset": "4",
+      "x-ratelimit-remaining": "318",
+      "x-ratelimit-reset": "3",
       "x-ratelimit-resource": "sim-get-positions"
     },
     "body": {
-      "Positions": [],
+      "Positions": [
+        {
+          "AccountID": "****703M",
+          "AveragePrice": "11.68",
+          "AssetType": "STOCK",
+          "Last": "11.6786",
+          "Bid": "11.67",
+          "Ask": "11.68",
+          "ConversionRate": "1",
+          "DayTradeRequirement": "0",
+          "InitialRequirement": "0",
+          "MaintenanceMargin": "0",
+          "PositionID": "190797296",
+          "LongShort": "Long",
+          "Quantity": "1",
+          "Symbol": "F",
+          "Timestamp": "2026-10-26T14:03:51Z",
+          "TodaysProfitLoss": "0",
+          "TotalCost": "11.68",
+          "MarketValue": "11.6786",
+          "MarkToMarketPrice": "11.68",
+          "UnrealizedProfitLoss": "0",
+          "UnrealizedProfitLossPercent": "0",
+          "UnrealizedProfitLossQty": "0"
+        }
+      ],
       "Errors": []
     }
   }
