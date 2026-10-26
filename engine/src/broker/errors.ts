@@ -7,6 +7,7 @@ export type BrokerOperation =
   | "accounts"
   | "symbolDetails"
   | "quotes"
+  | "quoteStream"
   | "optionExpirations"
   | "optionStrikes"
   | "chainSnapshot"

@@ -59,6 +59,10 @@ export interface Quote {
   readonly isHalted: boolean;
 }
 
+/** What the quote stream delivers: a changed quote, or the broker saying the stream is idle but alive. */
+export type QuoteStreamEvent =
+  { readonly kind: "quote"; readonly quote: Quote } | { readonly kind: "heartbeat" };
+
 export interface ChainRow {
   readonly symbol: string;
   readonly expiration: string;
@@ -130,6 +134,16 @@ export interface BrokerAdapterShape {
   readonly symbolDetails: (symbol: string) => Op<SymbolDetails>;
   /** Symbols the broker answered with an error are absent from the result. */
   readonly quotes: (symbols: ReadonlyArray<string>) => Op<ReadonlyArray<Quote>>;
+  /**
+   * Follows the quotes of `symbols` and calls `onEvent` for each message until the broker ends the
+   * stream (resolves), `signal` aborts (resolves) or it breaks (fails). A read, so the caller may
+   * start it again. Optional: the local simulation has none and the screens poll instead.
+   */
+  readonly quoteStream?: (
+    symbols: ReadonlyArray<string>,
+    onEvent: (event: QuoteStreamEvent) => void,
+    signal: AbortSignal,
+  ) => Op<void>;
   /** ISO dates, ascending. */
   readonly optionExpirations: (underlying: string) => Op<ReadonlyArray<string>>;
   readonly optionStrikes: (underlying: string, expiration: string) => Op<ReadonlyArray<number>>;

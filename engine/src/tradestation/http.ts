@@ -69,6 +69,16 @@ export interface Transport {
     path: string,
     body?: unknown,
   ) => Effect.Effect<unknown, BrokerError>;
+  /**
+   * Opens a streaming GET and resolves to its body once the headers arrive (a hung connect is cut
+   * after the timeout). Never retried here: the caller decides when to start again. `signal` ends
+   * the connection and the body.
+   */
+  readonly stream: (
+    operation: BrokerOperation,
+    path: string,
+    signal: AbortSignal,
+  ) => Effect.Effect<ReadableStream<Uint8Array>, BrokerError>;
   /** The most recent rate-limit headers, whatever the status. */
   readonly rateLimit: () => RateLimitInfo | null;
 }
@@ -253,6 +263,27 @@ export function makeTransport(
       ),
     // No Effect.retry here, ever: a repeated place or cancel could act twice (order-lifecycle.md rule 2).
     send: (operation, method, path, body) => once(operation, method, path, undefined, body),
+    stream: (operation, path, signal) =>
+      Effect.gen(function* () {
+        // The timeout covers only the connect; the body then lives until the caller aborts.
+        const connection = new AbortController();
+        const abort = () => connection.abort();
+        if (signal.aborted) abort();
+        signal.addEventListener("abort", abort, { once: true });
+        const timer = setTimeout(abort, timeoutMs);
+        const response = yield* sendRequest(operation, urlFor(path), {
+          method: "GET",
+          signal: connection.signal,
+        }).pipe(
+          Effect.ensuring(Effect.sync(() => clearTimeout(timer))),
+          Effect.tapError(() => Effect.sync(() => signal.removeEventListener("abort", abort))),
+        );
+        if (response.body === null) {
+          signal.removeEventListener("abort", abort);
+          return yield* Effect.fail(new Unknown({ operation, detail: "invalid_response" }));
+        }
+        return response.body;
+      }),
     rateLimit: () => lastRateLimit,
   };
   return { ok: true, transport };
