@@ -4,6 +4,9 @@
 // pandas_market_calendars. Pure functions: `now` is always a parameter.
 
 import { getCalendar } from "market-calendar";
+import { sessionDate } from "./session-date.ts";
+
+export { sessionDate };
 
 export type InstrumentKind = "equity" | "option";
 
@@ -22,18 +25,6 @@ const EXCHANGE_CALENDAR: Readonly<Record<InstrumentKind, string>> = {
   equity: "NYSE",
   option: "CBOE_Equity_Options",
 };
-
-const newYorkDate = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/New_York",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-/** The America/New_York calendar day (YYYY-MM-DD) that `now` falls on. */
-export function sessionDate(now: Date): string {
-  return newYorkDate.format(now);
-}
 
 const HOUR_MS = 3_600_000;
 

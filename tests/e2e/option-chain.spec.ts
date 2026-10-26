@@ -28,7 +28,7 @@ async function openChain(page: Page) {
   await page.getByRole("textbox", { name: "Subyacente" }).fill("msft");
   await page.getByRole("button", { name: "Buscar" }).click();
   await expect(page).toHaveURL(/subyacente=msft/i);
-  await page.getByLabel("Vencimientos").getByRole("link").first().click();
+  // With no date typed the chain opens on today's expiration, or on the next one.
   await expect(page.getByRole("table")).toBeVisible();
 }
 
@@ -120,6 +120,69 @@ test("refuses unknown parameters and underlyings without options", async ({ cont
   await expect(page.getByRole("alert")).toContainText("Escribe el ticker");
 });
 
+test("opens on the next expiration when there is none today and says so", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  await expect(
+    page.getByRole("status").filter({ hasText: "Hoy no hay vencimiento para MSFT" }),
+  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Vencimiento" })).toHaveValue(/ · en \d+ días$/);
+  await shoot(page, "cadena-vencimiento");
+});
+
+test("the Vencimiento field suggests only listed dates and explains a date that is not listed", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  const field = page.getByRole("combobox", { name: "Vencimiento" });
+  await field.click();
+  const options = page.getByRole("option");
+  expect(await options.count()).toBeGreaterThan(1);
+  await expect(field).toHaveAttribute("aria-expanded", "true");
+
+  await field.press("ArrowDown");
+  await expect(field).toHaveAttribute("aria-activedescendant", /-1$/);
+  await field.press("Escape");
+  await expect(field).toHaveAttribute("aria-expanded", "false");
+
+  await field.fill("2020-01-02");
+  await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
+  await shoot(page, "cadena-vencimiento-inexistente");
+  await field.fill("");
+  await field.press("ArrowDown");
+  await field.press("ArrowDown");
+  await field.press("Enter");
+  await expect(page).toHaveURL(/vencimiento=\d{4}-\d{2}-\d{2}/);
+  await expect(page.getByRole("table")).toBeVisible();
+});
+
+test("«Ver vencimiento» submits what was typed", async ({ context, page }) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  const field = page.getByRole("combobox", { name: "Vencimiento" });
+  await field.fill("2020-01-02");
+  await page.getByRole("button", { name: "Ver vencimiento" }).click();
+  await expect(page).toHaveURL(/vencimiento=2020-01-02/);
+  await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
+});
+
+test("works as a plain GET form and the server refuses a date it does not list", async ({
+  context,
+  page,
+}) => {
+  await seedTradingClient(context);
+  await page.goto("/operar/cadena?subyacente=MSFT&vencimiento=2020-01-02");
+  await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
+  await expect(page.getByRole("table")).toHaveCount(0);
+  await page.goto("/operar/cadena?subyacente=MSFT&vencimiento=abc");
+  await expect(page.getByText(/^No reconozco esa fecha/)).toBeVisible();
+});
+
 test("does not describe an equity as a contract", async ({ context, page }) => {
   await seedTradingClient(context);
   await page.goto("/operar?tipo=opciones&simbolo=MSFT");
@@ -172,12 +235,11 @@ test("the live chain endpoint needs a session, rejects extra inputs and never la
 
   await seedTradingClient(context);
   await page.goto("/operar/cadena?subyacente=MSFT");
-  const first = await page
-    .getByLabel("Vencimientos")
-    .getByRole("link")
-    .first()
-    .getAttribute("href");
-  const expiration = new URL(first ?? "", origin).searchParams.get("vencimiento") ?? "";
+  await page.getByRole("combobox", { name: "Vencimiento" }).click();
+  await page.getByRole("option").first().click();
+  await expect(page).toHaveURL(/vencimiento=\d{4}-\d{2}-\d{2}/);
+  const expiration = new URL(page.url()).searchParams.get("vencimiento") ?? "";
+  expect(expiration).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const ok = await page.request.get(`${href}${expiration}`);
   expect(ok.status()).toBe(200);
   expect(ok.headers()["cache-control"]).toBe("no-store");
