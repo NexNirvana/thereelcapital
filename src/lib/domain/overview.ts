@@ -14,7 +14,7 @@ export type OverviewConnection =
         readonly accountId: string;
         readonly accountType: "Cash" | "Margin";
       }>;
-      /** null: unknown (rows stored before the connect-time expiry). */
+      /** null: unknown, the normal state of a key that has not rotated (D44). */
       readonly refreshExpiresAt: number | null;
       readonly lastOkAt: number | null;
     };

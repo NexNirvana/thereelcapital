@@ -8,7 +8,7 @@ None open. Questions 1–5 and 13 were decided on 2026-10-21 (trailing set and b
 
 ## TradeStation (SIM spike)
 
-6. Exact error at absolute refresh-token expiry, and whether the 24 h lifetime counts from authorization or from the first rotation. The key does not rotate; the absolute expiry is not observable in one session and stays open.
+6. ~~Exact error at absolute refresh-token expiry, and whether the 24 h lifetime counts from authorization or from the first rotation.~~ Decided 2026-10-26 (D44): the 24 h applies only to keys that rotate, counted from the first observed rotation. This key does not rotate, so it has no countdown. The exact error at a rotating key's expiry stays unobserved; a refused refresh (403 `invalid_grant`) already marks the connection revoked.
 11. Behavior of an option at expiry, and the resulting positions. Not observable in one session; keep the safer design (close before expiry).
 
 Also unobserved: partial fills (`FPR`, `FLP`), which SIM does not produce for 1-share orders, and how a triggered broker-held stop fills.
