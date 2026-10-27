@@ -42,8 +42,18 @@ export interface PendingExitView {
   readonly cancelable: boolean;
 }
 
+/**
+ * Whether what the view shows was checked against TradeStation. While the connection is down the
+ * sync loop is stopped, so the quantities are the last ones the engine saw (`lastSyncAt`, epoch ms,
+ * null when it never completed a pass).
+ */
+export type PositionsVerification =
+  | { readonly status: "verified" }
+  | { readonly status: "unverified"; readonly lastSyncAt: number | null };
+
 export interface PositionsView {
   readonly positions: readonly PositionView[];
   readonly pending: readonly PendingExitView[];
   readonly maxPositions: number;
+  readonly verification: PositionsVerification;
 }
