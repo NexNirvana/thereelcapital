@@ -1,7 +1,12 @@
 // How the Posiciones screen words what the engine's `positions` returns. The engine decides; this
 // only translates and formats. Nothing here computes a quantity to sell.
 
-import type { PendingExitView, PositionView } from "#lib/domain/positions-view.ts";
+import type {
+  PendingExitView,
+  PositionsVerification,
+  PositionsView,
+  PositionView,
+} from "#lib/domain/positions-view.ts";
 import { trailingEligible } from "#lib/domain/stop.ts";
 import { SCALE_OUT_STEPS, type ScaleOutStepState } from "#lib/domain/scaleout.ts";
 import { kindLabel, stateLabel } from "./history.ts";
@@ -255,4 +260,20 @@ export function cancelOutcome(state: string): ActionOutcome {
         title: "No se canceló la orden",
         message: "TradeStation no tomó la cancelación. Inténtalo de nuevo.",
       };
+}
+
+/**
+ * The positions view as the page reads it. A Durable Object still on the previous engine code
+ * answers without `verification`; that is read as verified, which is what the page showed before
+ * the field existed (docs/architecture.md#deploy-order).
+ */
+export function withVerification(
+  view: Omit<PositionsView, "verification"> & { readonly verification?: PositionsVerification },
+): PositionsView {
+  const { verification, ...rest } = view;
+  if (verification?.status !== "unverified")
+    return { ...rest, verification: { status: "verified" } };
+  const { lastSyncAt } = verification;
+  const known = typeof lastSyncAt === "number" && Number.isFinite(lastSyncAt) ? lastSyncAt : null;
+  return { ...rest, verification: { status: "unverified", lastSyncAt: known } };
 }

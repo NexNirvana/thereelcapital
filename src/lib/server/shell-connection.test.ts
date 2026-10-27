@@ -44,6 +44,17 @@ describe("shellConnection", () => {
   });
 });
 
+describe("an engine still on the previous code", () => {
+  test("reads a connected view without lastSyncAt as null", () => {
+    const old: Omit<typeof connected, "lastSyncAt"> & { lastSyncAt?: number } = { ...connected };
+    delete old.lastSyncAt;
+    expect(shellConnection({ ok: true, value: old })).toEqual({
+      ok: true,
+      view: { ...connected, lastSyncAt: null },
+    });
+  });
+});
+
 describe("one connection read per trader page load", () => {
   const read = (path: string) =>
     Bun.file(new URL(`../../routes/(app)/${path}`, import.meta.url)).text();

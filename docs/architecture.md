@@ -157,6 +157,11 @@ Versions are pinned through `packageManager: "bun@<version>"` in `package.json`,
 - Cloudflare Web Analytics is on for the production zone (D26 in [decisions.md](decisions.md)); Cloudflare injects its beacon at the edge, so nothing in the repo loads it and local and e2e runs make no external requests. The beacon is the only off-origin request in production.
 - One production environment for the SIM pilot. Add a staging environment only when REAL is being prepared.
 
+### Deploy order
+
+The `engine` and `web` Workers deploy one after the other, and a Durable Object keeps running the previous engine code for a while after the engine deploys. For some minutes the new web code therefore reads answers shaped by the old engine. A field the engine adds to a view that the web reads must be optional at the web boundary (`src/lib/server/shell-connection.ts`, `withVerification` in `src/lib/ui/positions.ts`), with the previous behavior as its default; make it required only in a later deploy. A missing field must never throw in the layout.
+
+
 ## Costs and free-tier limits
 
 The pilot budget is US$0/month (D22): everything runs on free plans.
