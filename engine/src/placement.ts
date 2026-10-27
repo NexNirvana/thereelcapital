@@ -1,6 +1,7 @@
 // The single-attempt order placement shared by entries and exits (docs/order-lifecycle.md). A fix to
 // how a placement outcome is persisted (CLAUDE.md "Never break" rule 5) is made here, once.
 
+import { sanitizeRejectReason } from "#lib/domain/reject-reason.ts";
 import type { BrokerAdapterShape, OrderRequest } from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
 import type { ConnectionContext } from "./connection.ts";
@@ -78,6 +79,11 @@ export async function placeOnce(
     ) {
       // The broker answered that it did not take the order, so nothing exists to reconcile.
       releaseIntent(ctx, intentId, placement.giveBack);
+      const rejectReason =
+        placed.error._tag === "Rejected" ? sanitizeRejectReason(placed.error.reason) : null;
+      if (rejectReason !== null) {
+        ctx.sql.exec("UPDATE intents SET reject_reason = ? WHERE id = ?", rejectReason, intentId);
+      }
       logEvent(ctx, "warn", `${eventPrefix}.rejected`, {
         intentId,
         failure: placed.error._tag,

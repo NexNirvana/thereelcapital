@@ -180,13 +180,15 @@ function applyOrder(ctx: ReconcileContext, intent: IntentRow, order: BrokerOrder
     logOnce(ctx, intent.id, "warn", "reconcile.fill_missing", { intentId: intent.id });
   }
   ctx.sql.exec(
-    `UPDATE intents SET state = ?, broker_order_id = ?, filled_qty = ?, avg_fill_price = ?, updated_at = ?
+    `UPDATE intents SET state = ?, broker_order_id = ?, filled_qty = ?, avg_fill_price = ?, updated_at = ?,
+            reject_reason = COALESCE(?, reject_reason)
       WHERE id = ?`,
     state,
     order.orderId,
     filledQty,
     avgFillPrice,
     ctx.now,
+    order.status === "REJECTED" ? (order.rejectReason ?? null) : null,
     intent.id,
   );
   if (state !== intent.state || filledQty !== intent.filled_qty) {

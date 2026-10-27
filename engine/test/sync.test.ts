@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { localSimFor } from "../src/broker/provider.ts";
-import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
+import type { BrokerAdapterShape, BrokerSkip } from "../src/broker/adapter.ts";
 import { Unknown } from "../src/broker/errors.ts";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
 import { holdForReconciliation, reconciliationPending } from "../src/refresh.ts";
@@ -266,10 +266,14 @@ describe("degraded states", () => {
       expect(protection(ctx)).toEqual([{ p: "unverified" }]);
       expect(await blockedReasons(ctx, "MSFT")).toEqual(["RECONCILIATION_PENDING"]);
 
-      sim.inject({ kind: "rateLimited", operation: "orders", retryAfterMs: 1 });
+      sim.inject({ kind: "rateLimited", operation: "positions", retryAfterMs: 1 });
       expect(await runSync(ctx)).toMatchObject({ nextInMs: SYNC_INTERVAL_MS });
       // Same condition on the next tick: logged once, not again.
       expect(events(ctx, "sync.rate_limited")).toHaveLength(1);
+      // Another read failing is a different condition (D49 diagnosis).
+      sim.inject({ kind: "rateLimited", operation: "orders", retryAfterMs: 1 });
+      await runSync(ctx);
+      expect(events(ctx, "sync.rate_limited")).toHaveLength(2);
     });
   });
 
@@ -606,5 +610,127 @@ describe("the alarm loop", () => {
     expect(after.sync).toBeGreaterThan(Date.now());
     expect(after.sync).toBeLessThan(later);
     expect(after.alarm).toBe(after.sync);
+  });
+});
+
+describe("items the broker listing could not be read for", () => {
+  const skip = (over: Partial<BrokerSkip> = {}): BrokerSkip => ({
+    operation: "orders",
+    orderId: "foreign-1",
+    accountId: "SIM-1",
+    symbol: "ZZZ",
+    field: "Legs.QuantityOrdered",
+    ...over,
+  });
+  const withSkips = (broker: BrokerAdapterShape, pending: { items: BrokerSkip[] }) =>
+    ({
+      ...broker,
+      takeSkipped: () => pending.items,
+    }) satisfies BrokerAdapterShape;
+
+  it("passes over an order that is not ours, logging which field was unreadable", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const pending = { items: [skip()] };
+    await inClient(client, clock, withSkips(sim.adapter, pending), async (ctx) => {
+      await enter(ctx, "AAPL");
+      expect(await runSync(ctx)).toMatchObject({ reconciled: true });
+      expect(events(ctx, "sync.broker_error")).toHaveLength(0);
+      const logged = events(ctx, "sync.items_skipped");
+      expect(logged).toHaveLength(1);
+      expect(String(logged[0]?.data_json)).toContain("Legs.QuantityOrdered");
+      expect(String(logged[0]?.data_json)).not.toContain("foreign-1");
+      expect(JSON.parse(String(logged[0]?.data_json))).toMatchObject({
+        operation: expect.any(String),
+        detail: expect.stringMatching(/^invalid_value:/),
+      });
+      await runSync(ctx);
+      expect(events(ctx, "sync.items_skipped")).toHaveLength(1);
+    });
+  });
+
+  it("stays degraded when the unreadable order is the one of our intent", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const pending = { items: [] as BrokerSkip[] };
+    sim.setFill({ kind: "delayed", afterMs: 600_000 });
+    await inClient(client, clock, withSkips(sim.adapter, pending), async (ctx) => {
+      const intentId = await enter(ctx, "AAPL");
+      const row = ctx.sql
+        .exec<{ broker_order_id: string | null }>(
+          "SELECT broker_order_id FROM intents WHERE id = ?",
+          intentId,
+        )
+        .one();
+      pending.items = [skip({ orderId: row.broker_order_id, field: "OpenedDateTime" })];
+      expect(await runSync(ctx)).toMatchObject({ reconciled: false });
+      const failures = events(ctx, "sync.broker_error");
+      expect(failures).toHaveLength(1);
+      expect(String(failures[0]?.data_json)).toContain("invalid_value:OpenedDateTime");
+
+      // Another unreadable field is a different condition: a new row, not a silent repeat.
+      pending.items = [skip({ orderId: row.broker_order_id, field: "Status" })];
+      await runSync(ctx);
+      expect(events(ctx, "sync.broker_error")).toHaveLength(2);
+      pending.items = [skip({ orderId: row.broker_order_id, field: "Status" })];
+      await runSync(ctx);
+      expect(events(ctx, "sync.broker_error")).toHaveLength(2);
+    });
+  });
+
+  it("stays degraded when an unreadable position is the symbol of an open position of ours", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    const pending = { items: [] as BrokerSkip[] };
+    await inClient(client, clock, withSkips(sim.adapter, pending), async (ctx) => {
+      await withOpenPosition(ctx, "AAPL");
+      pending.items = [
+        skip({ operation: "positions", orderId: null, symbol: "ZZZ", field: "Quantity" }),
+      ];
+      expect(await runSync(ctx)).toMatchObject({ reconciled: true });
+      pending.items = [
+        skip({ operation: "positions", orderId: null, symbol: "AAPL", field: "Quantity" }),
+      ];
+      expect(await runSync(ctx)).toMatchObject({ reconciled: false });
+      expect(String(events(ctx, "sync.broker_error").at(-1)?.data_json)).toContain("positions");
+      expect(ctx.sql.exec("SELECT status FROM positions WHERE symbol = 'AAPL'").one()).toEqual({
+        status: "OPEN",
+      });
+    });
+  });
+
+  it("drops what a failed orders read had skipped, so the next pass does not report it", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    let buffer: BrokerSkip[] = [];
+    let failOrders = false;
+    // Like the real adapter: the buffer is handed over once, then cleared.
+    const broker = {
+      ...sim.adapter,
+      orders: (ids: readonly string[]) => {
+        if (failOrders) {
+          buffer = [skip()];
+          return Effect.fail(new Unknown({ operation: "orders", detail: "network" }));
+        }
+        return sim.adapter.orders(ids);
+      },
+      takeSkipped: () => {
+        const taken = buffer;
+        buffer = [];
+        return taken;
+      },
+    } satisfies BrokerAdapterShape;
+    await inClient(client, clock, broker, async (ctx) => {
+      await enter(ctx, "AAPL");
+      failOrders = true;
+      expect(await runSync(ctx)).toMatchObject({ reconciled: false });
+      failOrders = false;
+      expect(await runSync(ctx)).toMatchObject({ reconciled: true });
+      expect(events(ctx, "sync.items_skipped")).toHaveLength(0);
+    });
   });
 });

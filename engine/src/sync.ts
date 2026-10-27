@@ -11,9 +11,14 @@ import {
   SYNC_INTERVAL_MS,
   SYNC_MIN_INTERVAL_MS,
 } from "#lib/domain/config.ts";
-import type { BrokerAdapterShape, BrokerOrder, SymbolDetails } from "./broker/adapter.ts";
+import type {
+  BrokerAdapterShape,
+  BrokerOrder,
+  BrokerSkip,
+  SymbolDetails,
+} from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
-import type { BrokerError } from "./broker/errors.ts";
+import { Unknown, type BrokerError } from "./broker/errors.ts";
 import { LAST_OK_KEY, readConnection, type ConnectionContext } from "./connection.ts";
 import {
   reconcile,
@@ -157,14 +162,27 @@ async function readSnapshot(
   const warming = warmAccountGuard(broker, accounts);
   const orders = await attempt(broker.orders(accounts));
   await warming;
-  if (!orders.ok) return orders;
+  if (!orders.ok) {
+    broker.takeSkipped?.(); // a later batch failed: what earlier ones skipped is not this pass's
+    return orders;
+  }
   // Started together once the orders are in; the error precedence stays orders, positions, history.
   const [positions, historical] = await Promise.all([
     attempt(broker.positions(accounts)),
     readHistory(ctx, accounts, orders.value),
   ]);
+  // Taken even when a read failed, so a stale list never leaks into the next pass.
+  const skipped = broker.takeSkipped?.() ?? [];
   if (!positions.ok) return positions;
   if (!historical.ok) return historical;
+  const ours = skippedThatCouldBeOurs(ctx, skipped);
+  if (ours !== null) {
+    return {
+      ok: false,
+      error: new Unknown({ operation: ours.operation, detail: `invalid_value:${ours.field}` }),
+    };
+  }
+  reportSkipped(ctx, skipped);
 
   const details = new Map<string, SymbolDetails>();
   for (const symbol of symbolsNeedingDetails(ctx.sql, positions.value)) {
@@ -181,6 +199,68 @@ async function readSnapshot(
       details,
     },
   };
+}
+
+/**
+ * A left-out item is none of our business unless it could be ours: then the pass cannot tell what
+ * happened to our order or position, and stays degraded rather than guess (a missing position
+ * would read as closed, a missing order as unresolved). Returns the first such item.
+ */
+function skippedThatCouldBeOurs(
+  ctx: SyncContext,
+  skipped: readonly BrokerSkip[],
+): BrokerSkip | null {
+  const live = "state NOT IN ('FILLED', 'CANCELED', 'REJECTED')";
+  const any = (query: string, ...params: SqlStorageValue[]) =>
+    ctx.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM (${query})`, ...params).one().n > 0;
+  for (const item of skipped) {
+    if (item.operation === "positions") {
+      const bySymbol = item.symbol === null ? "" : " AND symbol = ?";
+      const params = item.symbol === null ? [] : [item.symbol];
+      if (
+        any(
+          `SELECT 1 FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'${bySymbol}
+           UNION ALL SELECT 1 FROM intents WHERE mode = 'SIM' AND ${live}${bySymbol}`,
+          ...params,
+          ...params,
+        )
+      ) {
+        return item;
+      }
+    } else if (
+      item.orderId === null
+        ? any(
+            `SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+          )
+        : any(
+            `SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id = ? AND ${live}
+             UNION ALL SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+            item.orderId,
+          )
+    ) {
+      return item;
+    }
+  }
+  return null;
+}
+
+/** Logs what was left out, again only when the set of operations and fields changes. */
+function reportSkipped(ctx: SyncContext, skipped: readonly BrokerSkip[]): void {
+  if (skipped.length === 0) return;
+  const kinds = [...new Set(skipped.map((item) => `${item.operation}:${item.field}`))].sort();
+  const [operation = "", ...field] = (kinds[0] ?? "").split(":");
+  logOnce(
+    { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+    kinds.join(","),
+    "warn",
+    "sync.items_skipped",
+    {
+      skipped: kinds,
+      count: skipped.length,
+      operation,
+      detail: `invalid_value:${field.join(":")}`,
+    },
+  );
 }
 
 const warmed = new WeakSet<BrokerAdapterShape>();
@@ -271,10 +351,21 @@ async function degrade(ctx: SyncContext, error: BrokerError): Promise<SyncResult
   // Entries wait and protection is unverified until a pass succeeds again.
   holdForReconciliation(ctx.storage);
   const { type, level } = DEGRADED[error._tag];
-  // One event per change of condition, not one per tick.
-  if (ctx.storage.kv.get<string>(DEGRADED_KEY) !== type) {
-    ctx.storage.kv.put(DEGRADED_KEY, type);
-    logEvent(ctx, level, type, { operation: error.operation, failure: error._tag });
+  // One event per change of condition, not one per tick: a change of operation or detail is one.
+  const detail =
+    error._tag === "Unknown"
+      ? error.detail.slice(0, 64)
+      : error._tag === "Rejected"
+        ? error.code.slice(0, 64)
+        : null;
+  const condition = `${type}|${error.operation}|${detail ?? ""}`;
+  if (ctx.storage.kv.get<string>(DEGRADED_KEY) !== condition) {
+    ctx.storage.kv.put(DEGRADED_KEY, condition);
+    logEvent(ctx, level, type, {
+      operation: error.operation,
+      failure: error._tag,
+      ...(detail === null ? {} : { detail }),
+    });
   }
   if (error._tag === "AuthExpired") {
     // A token that cannot be renewed waits for the client to reconnect, which restarts the loop.

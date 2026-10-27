@@ -85,3 +85,23 @@ export function isoDateOf(
 /** Path segment for a symbol list: option symbols contain spaces. */
 export const symbolPath = (symbols: ReadonlyArray<string>): string =>
   symbols.map((symbol) => encodeURIComponent(symbol)).join(",");
+
+type Plain = Schema.Top & { readonly DecodingServices: never };
+
+/**
+ * Names the first field of `struct` that `input` breaks, for a diagnosis that never carries a
+ * value. `item` when the input is not an object at all.
+ */
+export function failingField(
+  struct: { readonly fields: Readonly<Record<string, Plain>> },
+  input: unknown,
+): string {
+  if (typeof input !== "object" || input === null) return "item";
+  const record = input as Record<string, unknown>;
+  for (const [key, field] of Object.entries(struct.fields)) {
+    const probe = Schema.Struct({ [key]: field } as Record<string, Plain>);
+    const present = key in record ? { [key]: record[key] } : {};
+    if (Schema.decodeUnknownResult(probe)(present)._tag === "Failure") return key;
+  }
+  return "item";
+}

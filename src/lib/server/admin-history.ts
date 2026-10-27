@@ -67,12 +67,15 @@ export interface ClientIntent {
   readonly filled_qty: number;
   readonly avg_fill_price: number | null;
   readonly source: string;
+  readonly reject_reason?: string | null;
   readonly created_at: number;
 }
 export interface ClientEvent {
   readonly at: number;
   readonly level: string;
   readonly type: string;
+  readonly operation?: string | null;
+  readonly detail?: string | null;
 }
 export interface ClientHistory {
   readonly intents: readonly ClientIntent[];

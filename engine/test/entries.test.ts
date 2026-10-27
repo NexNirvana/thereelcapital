@@ -1,5 +1,6 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { localSimFor } from "../src/broker/provider.ts";
 import { makeLocalSim, type LocalSim } from "../src/broker/local-sim/sim.ts";
@@ -776,5 +777,55 @@ describe("the RPC surface", () => {
       confirmedQty: 100,
     });
     expect(sent).toMatchObject({ ok: true, value: { status: "PLACED", state: "ACKNOWLEDGED" } });
+  });
+
+  it("reads the broker at once when a sell is refused, closing a position sold elsewhere", async () => {
+    const client = await newClient();
+    const sim = localSimFor(
+      client.userId,
+      {
+        now: () => IN_SESSION,
+        seed: "rpc-exit-rejected",
+        accounts: [{ accountId: "SIM-1" }, { accountId: "SIM-2" }],
+        symbols: [{ symbol: "AAPL", assetType: "equity", bid: usd(199), ask: usd(200) }],
+      },
+      { reset: true },
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(IN_SESSION);
+    sim.setFill({ kind: "instant" });
+    const prepared = await client.stub.prepareEntry(target("AAPL"));
+    if (!prepared.ok || prepared.value.status !== "READY") throw new Error("entry not ready");
+    await client.stub.sendEntry({
+      ...target("AAPL"),
+      intentId: prepared.value.intentId,
+      confirmedQty: 100,
+    });
+    await client.stub.sync({ mode: "SIM" });
+    const opened = await client.stub.state({ mode: "SIM" });
+    const positionId = opened.ok ? (opened.value.positions[0]?.id as string) : "";
+    expect(positionId).not.toBe("");
+
+    // Sold in another terminal: the account now holds nothing.
+    await Effect.runPromise(
+      sim.adapter.placeOrder({
+        accountId: "SIM-1",
+        symbol: "AAPL",
+        assetType: "equity",
+        tradeAction: "SELL",
+        quantity: 100,
+        orderConfirmId: "other-terminal",
+      }),
+    );
+    const exit = await client.stub.exit({ mode: "SIM", positionId, step: "ALL_OUT" });
+    expect(exit).toMatchObject({ ok: true, value: { status: "PLACED", state: "REJECTED" } });
+
+    const after = await client.stub.state({ mode: "SIM" });
+    expect(after.ok && after.value.positions).toEqual([]);
+    const history = await client.stub.history({ mode: "SIM" });
+    expect(history.ok && history.value.intents.find((i) => i.kind === "exit")).toMatchObject({
+      state: "REJECTED",
+      reject_reason: "Not enough shares to sell",
+    });
   });
 });

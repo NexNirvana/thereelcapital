@@ -54,6 +54,7 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
   "reconcile.unresolved": "Orden pendiente de verificar",
   "reconcile.armed_never_sent": "Orden preparada que no se envió",
   "sync.broker_error": "Error al sincronizar con TradeStation",
+  "sync.items_skipped": "Órdenes o posiciones ajenas ignoradas",
   "sync.rate_limited": "TradeStation limitó las consultas",
   "sync.token_expired": "TradeStation rechazó o cerró la conexión: reconéctala",
   "sync.recovered": "Sincronización restablecida",
@@ -69,6 +70,40 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
 /** Events without a wording of their own stay readable without exposing internal codes. */
 export function eventLabel(type: string): string {
   return EVENT_LABELS[type] ?? "Evento del sistema";
+}
+
+const OPERATION_LABELS: Readonly<Record<string, string>> = {
+  orders: "órdenes",
+  historicalOrders: "historial de órdenes",
+  positions: "posiciones",
+  symbolDetails: "detalles del símbolo",
+  accounts: "cuentas",
+};
+
+/** The failing broker call and why, in words: no values, only the field a bad answer broke. */
+function detailLabel(detail: string): string {
+  if (detail === "invalid_response") return "respuesta no válida";
+  if (detail === "network") return "sin conexión";
+  if (detail.startsWith("http_5")) return "error de TradeStation";
+  if (detail.startsWith("invalid_value:")) return `valor no válido en ${detail.slice(14)}`;
+  return "rechazada";
+}
+
+/**
+ * An event's wording; a sync failure carries which read failed and why, e.g.
+ * «Error al sincronizar con TradeStation (órdenes: respuesta no válida)».
+ */
+export function eventText(event: {
+  readonly type: string;
+  readonly operation?: string | null | undefined;
+  readonly detail?: string | null | undefined;
+}): string {
+  const label = eventLabel(event.type);
+  if (event.operation == null) return label;
+  const operation = OPERATION_LABELS[event.operation] ?? "TradeStation";
+  return event.detail == null
+    ? `${label} (${operation})`
+    : `${label} (${operation}: ${detailLabel(event.detail)})`;
 }
 
 export function levelLabel(level: string): string {

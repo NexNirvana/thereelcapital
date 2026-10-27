@@ -145,7 +145,13 @@ describe("history", () => {
       "reconcile.position_opened",
       "broker.connected",
     ]);
-    expect(Object.keys(first.events[0] ?? {}).sort()).toEqual(["at", "level", "type"]);
+    expect(Object.keys(first.events[0] ?? {}).sort()).toEqual([
+      "at",
+      "detail",
+      "level",
+      "operation",
+      "type",
+    ]);
     expect((await history(stub, { from: "2026-11-01" })).events).toHaveLength(1);
     const second = await history(stub, { cursor: first.nextCursor });
     expect(second.events).toEqual([]);

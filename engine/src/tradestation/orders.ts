@@ -3,15 +3,32 @@
 // another terminal are left out. Positions: shorts are reported with side "short" so the engine
 // can see them and refuse to trade around them. Positions' P&L fields are never decoded (CLAUDE.md, never break).
 
+import { sanitizeRejectReason } from "#lib/domain/reject-reason.ts";
 import { Effect, Schema } from "effect";
-import type { BrokerOrder, BrokerPosition, AssetType, TradeAction } from "../broker/adapter.ts";
+import type {
+  BrokerOrder,
+  BrokerPosition,
+  BrokerSkip,
+  AssetType,
+  TradeAction,
+} from "../broker/adapter.ts";
 import { Rejected, Unknown, type BrokerError, type BrokerOperation } from "../broker/errors.ts";
 import type { Transport } from "./http.ts";
 import { mapOrderStatus } from "./status.ts";
-import { WireNumber, blankable, decodeWire, epochOf, integerOf, microsOf } from "./values.ts";
+import {
+  WireNumber,
+  blankable,
+  decodeWire,
+  epochOf,
+  failingField,
+  integerOf,
+  microsOf,
+} from "./values.ts";
 
 /** The docs recommend batches of 10 account ids (the endpoints take 1 to 25). */
 const ACCOUNT_BATCH_SIZE = 10;
+
+/** What is kept of the broker's rejection text. */
 
 const AccountErrors = blankable(
   Schema.Array(
@@ -19,50 +36,78 @@ const AccountErrors = blankable(
   ),
 );
 
+const OrderLeg = Schema.Struct({
+  Symbol: Schema.String,
+  AssetType: Schema.String,
+  BuyOrSell: Schema.String,
+  OpenOrClose: blankable(Schema.String),
+  QuantityOrdered: WireNumber,
+  ExecQuantity: WireNumber,
+  QuantityRemaining: WireNumber,
+});
+
+const WireOrder = Schema.Struct({
+  OrderID: Schema.String.check(Schema.isMinLength(1)),
+  AccountID: Schema.String,
+  Status: Schema.String,
+  OpenedDateTime: blankable(Schema.String),
+  ClosedDateTime: blankable(Schema.String),
+  FilledPrice: blankable(WireNumber),
+  /** Present in the recorded SIM listings of rejected orders (sim/*); free text. (verify) in the spec. */
+  RejectReason: blankable(Schema.String),
+  Legs: Schema.Array(OrderLeg),
+});
+
+// The lists are decoded item by item (see `readOrders` and `positions`): the envelope only has to be a list.
 const OrdersResponse = Schema.Struct({
-  Orders: blankable(
-    Schema.Array(
-      Schema.Struct({
-        OrderID: Schema.String.check(Schema.isMinLength(1)),
-        AccountID: Schema.String,
-        Status: Schema.String,
-        OpenedDateTime: blankable(Schema.String),
-        ClosedDateTime: blankable(Schema.String),
-        FilledPrice: blankable(WireNumber),
-        Legs: Schema.Array(
-          Schema.Struct({
-            Symbol: Schema.String,
-            AssetType: Schema.String,
-            BuyOrSell: Schema.String,
-            OpenOrClose: blankable(Schema.String),
-            QuantityOrdered: WireNumber,
-            ExecQuantity: WireNumber,
-            QuantityRemaining: WireNumber,
-          }),
-        ),
-      }),
-    ),
-  ),
+  Orders: blankable(Schema.Array(Schema.Unknown)),
   Errors: AccountErrors,
   /** Present only when the answer is paginated; we never ask for pages, so it means truncation. */
   NextToken: blankable(Schema.String),
 });
 
+const WirePosition = Schema.Struct({
+  AccountID: Schema.String,
+  Symbol: Schema.String,
+  AssetType: Schema.String,
+  LongShort: Schema.String,
+  Quantity: WireNumber,
+  AveragePrice: WireNumber,
+});
+
 const PositionsResponse = Schema.Struct({
-  Positions: blankable(
-    Schema.Array(
-      Schema.Struct({
-        AccountID: Schema.String,
-        Symbol: Schema.String,
-        AssetType: Schema.String,
-        LongShort: Schema.String,
-        Quantity: WireNumber,
-        AveragePrice: WireNumber,
-      }),
-    ),
-  ),
+  Positions: blankable(Schema.Array(Schema.Unknown)),
   Errors: AccountErrors,
 });
+
+const text = (record: unknown, key: string): string | null => {
+  if (typeof record !== "object" || record === null) return null;
+  const value = (record as Record<string, unknown>)[key];
+  return typeof value === "string" && value !== "" ? value : null;
+};
+
+/**
+ * One order or position this client did not place (another app client on a shared account, or the
+ * TradeStation terminal) may be shaped in a way the decoders refuse. It is left out and reported to
+ * `skipped`; the sync loop decides whether that matters (it does when the item could be ours).
+ */
+const skip = (operation: BrokerSkip["operation"], item: unknown, field: string): BrokerSkip => ({
+  operation,
+  orderId: operation === "positions" ? null : text(item, "OrderID"),
+  accountId: text(item, "AccountID"),
+  symbol: text(item, "Symbol"),
+  field,
+});
+
+const legField = (item: unknown): string => {
+  const legs = typeof item === "object" && item !== null ? (item as { Legs?: unknown }).Legs : null;
+  if (!Array.isArray(legs)) return "Legs";
+  for (const leg of legs) {
+    const field = failingField(OrderLeg, leg);
+    if (field !== "item") return `Legs.${field}`;
+  }
+  return "Legs";
+};
 
 /** A partial answer would make reconciliation believe the other accounts are flat, so it fails. */
 const failOnAccountErrors = (
@@ -109,11 +154,9 @@ const tradeActionOf = (
   return null;
 };
 
-type WireOrder = NonNullable<(typeof OrdersResponse.Type)["Orders"]>[number];
-
 const toBrokerOrder = (
   operation: BrokerOperation,
-  order: WireOrder,
+  order: typeof WireOrder.Type,
 ): Effect.Effect<BrokerOrder | null, BrokerError> =>
   Effect.gen(function* () {
     const leg = order.Legs[0];
@@ -143,6 +186,7 @@ const toBrokerOrder = (
         order.ClosedDateTime == null
           ? null
           : yield* epochOf(operation, "ClosedDateTime", order.ClosedDateTime),
+      rejectReason: sanitizeRejectReason(order.RejectReason),
     };
   });
 
@@ -154,6 +198,7 @@ const readOrders = (
   operation: "orders" | "historicalOrders",
   accountIds: ReadonlyArray<string>,
   query: Readonly<Record<string, string>>,
+  skipped: BrokerSkip[],
 ): Effect.Effect<ReadonlyArray<BrokerOrder>, BrokerError> =>
   Effect.gen(function* () {
     const pages = yield* Effect.forEach(batches(accountIds), (ids) =>
@@ -169,32 +214,54 @@ const readOrders = (
         if (decoded.NextToken != null && decoded.NextToken !== "") {
           return yield* Effect.fail(invalid(operation, "NextToken"));
         }
-        const mapped = yield* Effect.forEach(decoded.Orders ?? [], (order) =>
-          toBrokerOrder(operation, order),
-        );
-        return mapped.filter((order) => order !== null);
+        const mapped: BrokerOrder[] = [];
+        for (const item of decoded.Orders ?? []) {
+          const wire = Schema.decodeUnknownResult(WireOrder)(item);
+          if (wire._tag === "Failure") {
+            const field = failingField(WireOrder, item);
+            skipped.push(skip(operation, item, field === "Legs" ? legField(item) : field));
+            continue;
+          }
+          const order = yield* Effect.result(toBrokerOrder(operation, wire.success));
+          if (order._tag === "Failure") {
+            const detail = order.failure._tag === "Unknown" ? order.failure.detail : "";
+            skipped.push(skip(operation, item, detail.replace(/^invalid_value:/, "") || "item"));
+          } else if (order.success !== null) {
+            mapped.push(order.success);
+          }
+        }
+        return mapped;
       }),
     );
     return pages.flat();
   });
 
 /** Today's orders and open orders. No `pageSize`, so the broker returns up to 600 unpaginated. */
-export const orders = (transport: Transport, accountIds: ReadonlyArray<string>) =>
-  readOrders(transport, "orders", accountIds, {});
+export const orders = (
+  transport: Transport,
+  accountIds: ReadonlyArray<string>,
+  skipped: BrokerSkip[] = [],
+) => readOrders(transport, "orders", accountIds, {}, skipped);
 
 /** Closed orders from the UTC date of `since` (epoch ms). (verify) the 600-order cap and the date semantics. */
 export const historicalOrders = (
   transport: Transport,
   accountIds: ReadonlyArray<string>,
   since: number,
+  skipped: BrokerSkip[] = [],
 ) =>
-  readOrders(transport, "historicalOrders", accountIds, {
-    since: new Date(since).toISOString().slice(0, 10),
-  });
+  readOrders(
+    transport,
+    "historicalOrders",
+    accountIds,
+    { since: new Date(since).toISOString().slice(0, 10) },
+    skipped,
+  );
 
 export const positions = (
   transport: Transport,
   accountIds: ReadonlyArray<string>,
+  skipped: BrokerSkip[] = [],
 ): Effect.Effect<ReadonlyArray<BrokerPosition>, BrokerError> =>
   Effect.gen(function* () {
     const pages = yield* Effect.forEach(batches(accountIds), (ids) =>
@@ -203,7 +270,13 @@ export const positions = (
         const decoded = yield* decodeWire("positions", PositionsResponse, body);
         yield* failOnAccountErrors("positions", decoded.Errors);
         const result: BrokerPosition[] = [];
-        for (const position of decoded.Positions ?? []) {
+        for (const item of decoded.Positions ?? []) {
+          const wire = Schema.decodeUnknownResult(WirePosition)(item);
+          if (wire._tag === "Failure") {
+            skipped.push(skip("positions", item, failingField(WirePosition, item)));
+            continue;
+          }
+          const position = wire.success;
           const assetType: AssetType | null =
             position.AssetType === "STOCK"
               ? "equity"
@@ -214,20 +287,31 @@ export const positions = (
           if (assetType === null) continue;
           const side = position.LongShort.toLowerCase();
           if (side !== "long" && side !== "short") {
-            return yield* Effect.fail(invalid("positions", "LongShort"));
+            skipped.push(skip("positions", item, "LongShort"));
+            continue;
+          }
+          const sized = yield* Effect.result(
+            Effect.all({
+              // Size is unsigned; the sign (if the broker sends one for shorts) lives in `side`.
+              quantity: integerOf(
+                "positions",
+                "Quantity",
+                String(position.Quantity).replace(/^-/, ""),
+              ),
+              avgPriceMicros: microsOf("positions", "AveragePrice", position.AveragePrice),
+            }),
+          );
+          if (sized._tag === "Failure") {
+            const detail = sized.failure._tag === "Unknown" ? sized.failure.detail : "";
+            skipped.push(skip("positions", item, detail.replace(/^invalid_value:/, "") || "item"));
+            continue;
           }
           result.push({
             accountId: position.AccountID,
             symbol: position.Symbol,
             assetType,
             side,
-            // Size is unsigned; the sign (if the broker sends one for shorts) lives in `side`.
-            quantity: yield* integerOf(
-              "positions",
-              "Quantity",
-              String(position.Quantity).replace(/^-/, ""),
-            ),
-            avgPriceMicros: yield* microsOf("positions", "AveragePrice", position.AveragePrice),
+            ...sized.success,
           });
         }
         return result;

@@ -2,7 +2,7 @@
 // any base URL but the SIM host is refused at construction, before a token is requested.
 
 import { Data, Effect, Layer } from "effect";
-import { BrokerAdapter, type BrokerAdapterShape } from "../broker/adapter.ts";
+import { BrokerAdapter, type BrokerAdapterShape, type BrokerSkip } from "../broker/adapter.ts";
 import {
   makeTransport,
   type RateLimitInfo,
@@ -34,6 +34,7 @@ export function makeTradeStationAdapter(
   if (!made.ok) return made;
   const { transport } = made;
   const guard = trading.makeSimAccountGuard(transport);
+  let skipped: BrokerSkip[] = [];
   return {
     ok: true,
     adapter: {
@@ -55,10 +56,15 @@ export function makeTradeStationAdapter(
         trading.cancelOrder(transport, guard, accountId, orderId),
       warmAccountGuard: (accountIds) =>
         Effect.forEach(accountIds, (id) => guard.require("accounts", id), { discard: true }),
-      orders: (accountIds) => orders.orders(transport, accountIds),
+      orders: (accountIds) => orders.orders(transport, accountIds, skipped),
       historicalOrders: (accountIds, since) =>
-        orders.historicalOrders(transport, accountIds, since),
-      positions: (accountIds) => orders.positions(transport, accountIds),
+        orders.historicalOrders(transport, accountIds, since, skipped),
+      positions: (accountIds) => orders.positions(transport, accountIds, skipped),
+      takeSkipped: () => {
+        const taken = skipped;
+        skipped = [];
+        return taken;
+      },
     },
   };
 }

@@ -105,9 +105,18 @@ Each row is detected by the sync pass (`engine/src/sync.ts`) and logged as one e
 | `sync.token_expired` | the broker answered 401 | retries each tick while the token can be renewed; stops when the connection is expired or revoked, until a reconnect. The history reads «TradeStation rechazó o cerró la conexión: reconéctala» (never «vencida»: a refresh TradeStation rejected is recorded as REVOKED, not as an expiry) |
 | `sync.rate_limited` | 429 | waits the broker's `Retry-After` (never less than a tick) |
 | `sync.broker_error` | rejected, timeout or an unusable answer | retries next tick |
+| `sync.items_skipped` | an order or position in a listing could not be read and is not ours (another app client's, or an instrument we do not trade); the event names the operation and field, never the item | the pass goes on without it |
 | `sync.recovered` | the next pass succeeded | hold lifted, protection back from `unverified` |
 | `sync.unknown_pending` | an UNKNOWN intent remains after the pass | the position stays `unverified` |
 
 A failed pass places a hold (entries blocked, protection `unverified`) and does nothing else: it never sends, cancels or retries an order, so exits and cancels stay as the table says. A good pass lifts the hold with `markReconciled`, using the hold count taken before the broker was read, so a hold that lands during the read survives. Quotes stale or missing block entries in `prepareEntry` (`QUOTE_STALE`, `QUOTE_MISSING`); the protection state they imply is the stop monitor's. Outside the regular session the pass keeps reconciling and the order guards refuse entries and exits.
 
 The UI always shows the reason. **ESTADO NO VERIFICADO** is shown whenever state can't be confirmed with the broker.
+
+## Unreadable items in a listing and diagnosable failures (D49)
+
+- On a shared account the listings hold other clients' orders and positions. The decoder reads them one by one: an item it cannot read is left out and reported (operation, field), so one foreign item never fails the whole pass.
+- A left-out item that could be ours degrades the pass instead of being guessed: an order whose id is a non-terminal intent's (or any unreadable order while an intent still lacks its broker id), a position whose symbol is an open position's or an in-flight intent's. Our own order never gets a guessed outcome; the keep-UNKNOWN rules apply.
+- `sync.broker_error` carries the operation (`orders`, `historicalOrders`, `positions`, `symbolDetails`, `accounts`), the failure kind and a short code or field name (never a body or a secret). A change of operation or detail logs a new event; the same condition is logged once.
+- A rejected intent keeps the broker's reason (`intents.reject_reason`, at most 200 characters), shown in Historial. A refused exit triggers one sync pass at once: if the broker holds none of the symbol, the position closes as an external sale.
+
