@@ -8,6 +8,12 @@ export const DEFAULT_TRAILING_PCT = 10;
 /** Initial SIZE per entry in US dollars; the admin may only increase it (docs/product-spec.md#parameters). */
 export const DEFAULT_SIZE_USD = 20_000;
 
+/**
+ * Share of the client's SIZE an entry is sized at when the client picks «−25%» on Nueva entrada
+ * (decision D51, docs/product-spec.md#parameters). Whole percent of the SIZE; per entry only.
+ */
+export const SIZE_DOWN_APPLIED_PCT = 75;
+
 /** Initial stop % below the average fill price, set by the admin per client. */
 export const STOP_PCT_BOUNDS = { min: 10, max: 50 } as const;
 export const DEFAULT_STOP_PCT = 30;

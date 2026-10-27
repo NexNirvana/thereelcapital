@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { parseLiveEntry, readLiveEntry } from "./live-entry.ts";
+import {
+  matchingChoice,
+  parseLiveEntry,
+  readLiveEntry,
+  SIZE_CHOICE_MISMATCH,
+} from "./live-entry.ts";
 
 const ready = {
   status: "ready",
@@ -7,6 +12,7 @@ const ready = {
     symbol: "SPY",
     qty: 50,
     sizeMicros: 20_000_000_000,
+    sizeChoice: "full",
     askMicros: 400_000_000,
     assetType: "equity",
   },
@@ -61,6 +67,7 @@ test("an entry message becomes what the screen shows, and a heartbeat only refre
         assetType: "equity",
         qty: 2,
         sizeMicros: 10,
+        sizeChoice: "full",
         askMicros: 5,
       },
       receivedAt: 7,
@@ -69,7 +76,14 @@ test("an entry message becomes what the screen shows, and a heartbeat only refre
   );
   expect(ready).toEqual({
     status: "ready",
-    preview: { symbol: "A", qty: 2, sizeMicros: 10, askMicros: 5, assetType: "equity" },
+    preview: {
+      symbol: "A",
+      qty: 2,
+      sizeMicros: 10,
+      sizeChoice: "full",
+      askMicros: 5,
+      assetType: "equity",
+    },
     receivedAt: 7,
   });
   expect(entryFromMessage({ type: "alive", receivedAt: 9 }, ready)).toMatchObject({
@@ -82,4 +96,31 @@ test("an entry message becomes what the screen shows, and a heartbeat only refre
     ready,
   );
   expect(blocked?.status).toBe("blocked");
+});
+
+test("an endpoint answer without a choice is the full SIZE; an unknown choice is no answer", () => {
+  const bare: Record<string, unknown> = { ...ready.preview };
+  delete bare.sizeChoice;
+  expect(parseLiveEntry({ ...ready, preview: bare })).toEqual(ready as never);
+  expect(parseLiveEntry({ ...ready, preview: { ...bare, sizeChoice: "down50" } })).toBeNull();
+  expect(parseLiveEntry({ ...ready, preview: { ...bare, sizeChoice: "down25" } })).toMatchObject({
+    preview: { sizeChoice: "down25" },
+  });
+});
+
+// Deploy skew: an engine that predates the choice ignores it and sizes at the full SIZE, so the
+// quantity on screen would not be the one a reduced order sends.
+test("an answer for another SIZE choice than the one requested is never shown", () => {
+  const full = parseLiveEntry(ready);
+  const reduced = parseLiveEntry({ ...ready, preview: { ...ready.preview, sizeChoice: "down25" } });
+  if (full === null || reduced === null) throw new Error("fixture must parse");
+  expect(matchingChoice(full, "full")).toBe(full);
+  expect(matchingChoice(reduced, "down25")).toBe(reduced);
+  expect(matchingChoice(full, "down25")).toEqual({
+    status: "blocked",
+    message: SIZE_CHOICE_MISMATCH,
+  });
+  expect(matchingChoice(reduced, "full")).toMatchObject({ status: "blocked" });
+  const blocked = { status: "blocked", message: "x" } as const;
+  expect(matchingChoice(blocked, "down25")).toBe(blocked);
 });

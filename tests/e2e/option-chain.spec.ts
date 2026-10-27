@@ -241,6 +241,17 @@ test("«Ver vencimiento» submits what was typed", async ({ context, page }) => 
   await expect(page.getByText(/^No hay vencimiento el 2 ene 2020/)).toBeVisible();
 });
 
+test("«Ver vencimiento» keeps the one-entry SIZE choice", async ({ context, page }) => {
+  await seedTradingClient(context);
+  await openChain(page);
+  await page.getByRole("link", { name: "−25%" }).click();
+  await expect(page).toHaveURL(/tamano=down25/);
+  await page.getByRole("combobox", { name: "Vencimiento" }).fill("2020-01-02");
+  await page.getByRole("button", { name: "Ver vencimiento" }).click();
+  await expect(page).toHaveURL(/vencimiento=2020-01-02/);
+  await expect(page).toHaveURL(/tamano=down25/);
+});
+
 test("works as a plain GET form and the server refuses a date it does not list", async ({
   context,
   page,

@@ -121,9 +121,17 @@ const target = (symbol: string, accountId = "SIM-1", assetType: "equity" | "opti
 async function send(
   ctx: EntryContext,
   symbol: string,
-  options: { accountId?: string; assetType?: "equity" | "option"; confirmedQty?: number } = {},
+  options: {
+    accountId?: string;
+    assetType?: "equity" | "option";
+    confirmedQty?: number;
+    sizeChoice?: "full" | "down25";
+  } = {},
 ) {
-  const base = target(symbol, options.accountId, options.assetType);
+  const base = {
+    ...target(symbol, options.accountId, options.assetType),
+    ...(options.sizeChoice === undefined ? {} : { sizeChoice: options.sizeChoice }),
+  };
   const prepared = await prepareEntry(ctx, base);
   if (!prepared.ok || prepared.value.status !== "READY") return prepared;
   return sendEntry(ctx, {
@@ -827,5 +835,110 @@ describe("the RPC surface", () => {
       state: "REJECTED",
       reject_reason: "Not enough shares to sell",
     });
+  });
+});
+
+// D51: the client may size one entry down by 25%. The browser names a choice; the engine computes
+// the applied SIZE from the client's SIZE in D1.
+describe("the one-entry SIZE choice", () => {
+  it("sizes a stock at 75% of the SIZE and echoes the choice", async () => {
+    const client = await newClient();
+    const { full, down } = await inClient(client, async (ctx) => ({
+      full: await prepareEntry(ctx, target("AAPL")),
+      down: await prepareEntry(ctx, { ...target("AAPL"), sizeChoice: "down25" }),
+    }));
+    expect(full).toMatchObject({
+      value: { qty: 100, sizeMicros: usd(20_000), sizeChoice: "full" },
+    });
+    expect(down).toMatchObject({
+      value: { qty: 75, sizeMicros: usd(15_000), sizeChoice: "down25" },
+    });
+  });
+
+  it("sizes an option at 75% of the SIZE", async () => {
+    const client = await newClient();
+    const down = await inClient(client, (ctx) =>
+      prepareEntry(ctx, { ...target("MSFT 261120C400", "SIM-1", "option"), sizeChoice: "down25" }),
+    );
+    // 15,000 / (4.00 x 100) = 37.5, floored.
+    expect(down).toMatchObject({ value: { qty: 37, sizeMicros: usd(15_000) } });
+  });
+
+  it("applies the choice to the client's own SIZE, so an increased SIZE is reduced from itself", async () => {
+    const client = await newClient({ sizeUsd: 40_000 });
+    const down = await inClient(client, (ctx) =>
+      prepareEntry(ctx, { ...target("AAPL"), sizeChoice: "down25" }),
+    );
+    expect(down).toMatchObject({ value: { qty: 150, sizeMicros: usd(30_000) } });
+  });
+
+  it("persists the choice and the applied SIZE on the intent before the broker call", async () => {
+    const client = await newClient();
+    const { sent, intent } = await inClient(client, async (ctx, state) => ({
+      sent: await send(ctx, "AAPL", { sizeChoice: "down25" }),
+      intent: state.storage.sql
+        .exec("SELECT qty, size_applied, size_choice, state FROM intents")
+        .one(),
+    }));
+    expect(sent).toMatchObject({ value: { status: "PLACED", qty: 75 } });
+    expect(intent).toMatchObject({
+      qty: 75,
+      size_applied: usd(15_000),
+      size_choice: "down25",
+    });
+  });
+
+  it("records the full choice on an entry sent without one", async () => {
+    const client = await newClient();
+    const intent = await inClient(client, async (ctx, state) => {
+      await send(ctx, "AAPL");
+      return state.storage.sql.exec("SELECT size_applied, size_choice FROM intents").one();
+    });
+    expect(intent).toEqual({ size_applied: usd(20_000), size_choice: "full" });
+  });
+
+  it("asks to re-confirm a quantity sized for another choice, and reserves nothing", async () => {
+    const client = await newClient();
+    const { result, rows, orders } = await inClient(client, async (ctx, state, sim) => {
+      const prepared = await prepareEntry(ctx, target("AAPL"));
+      if (!prepared.ok || prepared.value.status !== "READY") throw new Error("not ready");
+      // The screen showed 100 (full SIZE); the request now says -25%, so the engine sizes 75.
+      const result = await sendEntry(ctx, {
+        ...target("AAPL"),
+        sizeChoice: "down25",
+        intentId: prepared.value.intentId,
+        confirmedQty: prepared.value.qty,
+      });
+      return { result, rows: snapshot(state), orders: await orderCount(sim) };
+    });
+    expect(result).toMatchObject({
+      value: { status: "RECONFIRM", preview: { qty: 75, sizeChoice: "down25" } },
+    });
+    expect(rows).toEqual({ counters: [], intents: [] });
+    expect(orders).toBe(0);
+  });
+
+  it("rejects a choice outside the closed set and any amount the browser might add", async () => {
+    const client = await newClient();
+    const bad = [
+      { sizeChoice: "down50" },
+      { sizeChoice: 25 },
+      { sizeChoice: "down25", sizeMicros: usd(1) },
+      { sizeChoice: "down25", sizePct: 75 },
+    ];
+    for (const extra of bad) {
+      expect(await client.stub.prepareEntry({ ...target("AAPL"), ...extra })).toMatchObject({
+        ok: false,
+        code: "INVALID_INPUT",
+      });
+      expect(
+        await client.stub.sendEntry({
+          ...target("AAPL"),
+          ...extra,
+          intentId: "A".repeat(22),
+          confirmedQty: 1,
+        }),
+      ).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    }
   });
 });

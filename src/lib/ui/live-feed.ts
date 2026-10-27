@@ -91,11 +91,14 @@ export function parseLiveMessage(text: unknown): LiveMessage | null {
       }
       const { symbol, assetType, qty, sizeMicros, askMicros } = update;
       if (update.status !== "ready" || typeof symbol !== "string") return null;
+      // An engine that predates the choice sends none, and always sized at the full SIZE.
+      const sizeChoice = update.sizeChoice ?? "full";
+      if (sizeChoice !== "full" && sizeChoice !== "down25") return null;
       if (assetType !== "equity" && assetType !== "option") return null;
       if (!isNumber(qty) || !isNumber(sizeMicros) || !isNumber(askMicros)) return null;
       return {
         type: "entry",
-        update: { status: "ready", symbol, assetType, qty, sizeMicros, askMicros },
+        update: { status: "ready", symbol, assetType, qty, sizeMicros, sizeChoice, askMicros },
         receivedAt: message.receivedAt,
       };
     }

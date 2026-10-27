@@ -6,6 +6,7 @@ import {
   fillPrice,
   formatWhen,
   kindLabel,
+  sizeLine,
   stateLabel,
 } from "./history.ts";
 
@@ -71,6 +72,32 @@ describe("event wording with the failing operation", () => {
   it("leaves other events as their label", () => {
     expect(eventText({ type: "broker.connected", operation: null, detail: null })).toBe(
       eventLabel("broker.connected"),
+    );
+  });
+});
+
+describe("sizeLine", () => {
+  it("shows a dash for rows from an engine that predates the fields", () => {
+    expect(sizeLine({ kind: "entry" })).toBe("—");
+  });
+
+  it("shows the SIZE an entry used and marks the −25% choice", () => {
+    expect(sizeLine({ kind: "entry", size_applied: 20_000_000_000, size_choice: "full" })).toBe(
+      "US$20,000",
+    );
+    expect(sizeLine({ kind: "entry", size_applied: 15_000_000_000, size_choice: "down25" })).toBe(
+      "US$15,000 · −25%",
+    );
+  });
+
+  it("is a dash for exits and for entries with no recorded SIZE", () => {
+    expect(sizeLine({ kind: "exit", size_applied: null, size_choice: null })).toBe("—");
+    expect(sizeLine({ kind: "entry", size_applied: null, size_choice: null })).toBe("—");
+  });
+
+  it("treats an entry from before the choice existed as the full SIZE", () => {
+    expect(sizeLine({ kind: "entry", size_applied: 20_000_000_000, size_choice: null })).toBe(
+      "US$20,000",
     );
   });
 });

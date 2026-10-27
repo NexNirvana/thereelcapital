@@ -65,6 +65,7 @@ test("has no editable price, SIZE or quantity field", async ({ context, page }) 
           "strikes",
           "intentId",
           "cantidad",
+          "tamano",
           null,
         ].includes(name),
       ),

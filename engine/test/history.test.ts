@@ -217,3 +217,23 @@ describe("history", () => {
     });
   });
 });
+
+describe("history size", () => {
+  it("returns the SIZE an entry was sized with and the client's choice, and nothing for others", async () => {
+    const stub = stubFor("hist-size");
+    await seed(stub, [
+      { id: "i1", createdAt: 1000 },
+      { id: "i2", createdAt: 1001 },
+    ]);
+    await runInDurableObject(stub, (_i, state) => {
+      state.storage.sql.exec(
+        "UPDATE intents SET size_applied = 15000000000, size_choice = 'down25' WHERE id = 'i2'",
+      );
+    });
+    const page = await history(stub);
+    expect(page.intents.map((row) => [row.id, row.size_applied, row.size_choice])).toEqual([
+      ["i2", 15_000_000_000, "down25"],
+      ["i1", null, null],
+    ]);
+  });
+});

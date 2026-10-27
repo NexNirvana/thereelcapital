@@ -16,6 +16,9 @@ type IntentRow = {
   asset_type: string;
   trade_action: string;
   qty: number;
+  /** The SIZE an entry was sized with and the client's choice for it (D51); null for other kinds. */
+  size_applied: number | null;
+  size_choice: string | null;
   state: string;
   filled_qty: number;
   avg_fill_price: number | null;
@@ -93,7 +96,7 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
 
   const rows = sql
     .exec<IntentRow>(
-      `SELECT id, kind, account_id, symbol, asset_type, trade_action, qty, state, filled_qty,
+      `SELECT id, kind, account_id, symbol, asset_type, trade_action, qty, size_applied, size_choice, state, filled_qty,
               avg_fill_price, source, reject_reason, created_at, updated_at
          FROM intents WHERE ${intentWhere.join(" AND ")}
          ORDER BY created_at DESC, id DESC LIMIT ?`,

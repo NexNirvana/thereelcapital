@@ -9,6 +9,7 @@
     formatWhen,
     kindLabel,
     levelLabel,
+    sizeLine,
     stateLabel,
   } from "#lib/ui/history.ts";
   import { formatQuantity } from "#lib/ui/new-entry.ts";
@@ -92,6 +93,7 @@
             <th scope="col">Símbolo</th>
             <th scope="col">Tipo</th>
             <th scope="col">Estado</th>
+            <th scope="col">SIZE</th>
             <th scope="col">Cantidad</th>
             <th scope="col">Ejecutadas</th>
             <th scope="col">Precio de ejecución</th>
@@ -111,6 +113,7 @@
                     >{order.reject_reason}</span
                   >{/if}
               </td>
+              <td data-label="SIZE">{sizeLine(order)}</td>
               <td data-label="Cantidad">
                 {formatQuantity(order.qty, order.asset_type === "option" ? "option" : "equity")}
               </td>
@@ -258,6 +261,10 @@
     border-bottom: 1px solid var(--rule);
     text-align: left;
     font-weight: 400;
+    /* Words stay whole in the orders table (the SIZE column made it tight); only the long account id may break. */
+    overflow-wrap: normal;
+  }
+  td[data-label="Cuenta"] {
     overflow-wrap: anywhere;
   }
   thead th {

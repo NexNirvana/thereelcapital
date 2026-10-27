@@ -181,6 +181,12 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // place request): shown in Historial so a rejected exit says why. Free text, cut to 200 chars.
     `ALTER TABLE intents ADD COLUMN reject_reason TEXT`,
   ],
+  [
+    // D51: the client may size one entry down by 25%. The entry intent keeps the choice next to
+    // `size_applied`, the SIZE actually used. Null for exits and for entries made before the choice
+    // existed (those were all sized at the full SIZE).
+    `ALTER TABLE intents ADD COLUMN size_choice TEXT CHECK (size_choice IS NULL OR size_choice IN ('full', 'down25'))`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */

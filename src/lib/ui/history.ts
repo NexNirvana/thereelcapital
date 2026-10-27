@@ -1,7 +1,7 @@
 // How the Historial screen words what the engine's `history` returns. The engine decides, this only
 // translates; the state labels are the order-lifecycle states (docs/order-lifecycle.md).
 
-import { formatPrice } from "./new-entry.ts";
+import { formatPrice, formatSize } from "./new-entry.ts";
 
 const STATE_LABELS: Readonly<Record<string, string>> = {
   ARMED: "Preparada",
@@ -130,4 +130,18 @@ export function fillLine(filledQty: number, qty: number): string {
 /** The average fill price, or a dash until something filled. */
 export function fillPrice(avgFillPrice: number | null): string {
   return avgFillPrice === null ? "—" : formatPrice(avgFillPrice);
+}
+
+/**
+ * The SIZE an entry was sized with, and «−25%» when the client chose it (D51); a dash for any other
+ * order. Both fields are optional: an engine that predates them sends neither (deploy skew).
+ */
+export function sizeLine(order: {
+  readonly kind: string;
+  readonly size_applied?: number | null;
+  readonly size_choice?: string | null;
+}): string {
+  if (order.kind !== "entry" || order.size_applied == null) return "—";
+  const size = formatSize(order.size_applied);
+  return order.size_choice === "down25" ? `${size} · −25%` : size;
 }

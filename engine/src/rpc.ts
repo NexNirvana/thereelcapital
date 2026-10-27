@@ -5,6 +5,7 @@
 import { Schema, SchemaTransformation } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
+import { SIZE_CHOICES } from "#lib/domain/sizing.ts";
 import { ORDER_STATES } from "#lib/domain/order-states.ts";
 import { Mode } from "./mode.ts";
 
@@ -20,6 +21,11 @@ const EntryTarget = {
   accountId: Id,
   symbol: Symbol,
   assetType: Schema.Literals(["equity", "option"]),
+  /**
+   * The client's choice for this one entry (D51): the full SIZE when absent. A closed set, never an
+   * amount: the engine computes the applied SIZE from the client's SIZE.
+   */
+  sizeChoice: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
 };
 
 export const PrepareEntryArgs = Schema.Struct(EntryTarget);

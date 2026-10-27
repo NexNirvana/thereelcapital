@@ -2,6 +2,8 @@
 // (D47). Prices are display only: nothing here carries a price, SIZE or quantity from the browser.
 // The browser names what it watches; the engine answers with what it read from the broker.
 
+import type { SizeChoice } from "./sizing.ts";
+
 /** Tickers and option symbols as TradeStation writes them (an option has spaces: `F 261030C12`). */
 export const WATCH_SYMBOL = /^[A-Z0-9][A-Z0-9./ -]{0,31}$/;
 
@@ -9,6 +11,8 @@ export interface WatchEntry {
   readonly accountId: string;
   readonly symbol: string;
   readonly assetType: "equity" | "option";
+  /** The client's one-entry SIZE choice (D51). Left out for the full SIZE, so an engine that predates it refuses the watch instead of ignoring it. */
+  readonly sizeChoice?: SizeChoice;
 }
 
 /** Replaces everything the socket watched so far. An empty watch stops the stream for this screen. */
@@ -27,6 +31,8 @@ export type EntryUpdate =
       readonly assetType: "equity" | "option";
       readonly qty: number;
       readonly sizeMicros: number;
+      /** The choice the engine applied: the page refuses an answer for another one (deploy skew). */
+      readonly sizeChoice: SizeChoice;
       readonly askMicros: number;
     }
   /** Engine block codes (`EntryBlockCode`); the page words them with `blockMessage`. */

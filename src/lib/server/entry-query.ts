@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { SIZE_CHOICES, type SizeChoice } from "#lib/domain/sizing.ts";
 
 // Everything the browser may say about an entry: which tab, which account and which instrument.
 // SIZE, quantity and price are not inputs: the engine reads SIZE from the client's settings and the
@@ -7,7 +8,16 @@ export const EntryQuery = Schema.Struct({
   tipo: Schema.optionalKey(Schema.Literals(["acciones", "opciones"])),
   cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
+  /** The one-entry SIZE choice (D51): a closed set, never an amount. Absent means the full SIZE. */
+  tamano: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
 });
+
+/**
+ * What the engine call carries for a choice. The full SIZE is left out, so an engine that predates
+ * the choice keeps working for it, while a reduced one is refused by its strict decoder.
+ */
+export const sizeChoiceArg = (choice: SizeChoice | undefined) =>
+  choice === "down25" ? ({ sizeChoice: "down25" } as const) : ({} as const);
 
 /** The /operar page also takes the chain to show on the Opciones tab (all plain text the server validates again). */
 export const OperarQuery = Schema.Struct({

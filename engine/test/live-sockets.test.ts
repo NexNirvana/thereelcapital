@@ -46,6 +46,7 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
   const heartbeats: Array<() => void> = [];
   const prepared: Array<{ symbol: string; ask: number | null; done: () => void }> = [];
   const timers: Array<{ ms: number; callback: () => void }> = [];
+  const choices: Array<string | undefined> = [];
   const hub = new QuoteHub({
     maxSymbols: 100,
     maxStreams: 1,
@@ -64,6 +65,7 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
     streamAvailable: () => true,
     prepare: (entry, streamed) =>
       new Promise((resolve) => {
+        choices.push(entry.sizeChoice);
         prepared.push({
           symbol: entry.symbol,
           ask: streamed?.ask ?? null,
@@ -77,6 +79,7 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
                 assetType: entry.assetType,
                 qty: 3,
                 sizeMicros: 300,
+                sizeChoice: entry.sizeChoice ?? "full",
                 askMicros: streamed?.ask ?? 100,
               },
             } as never),
@@ -91,7 +94,7 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
     clearTimer: () => undefined,
     ...over,
   });
-  return { sockets, emits, heartbeats, prepared, timers };
+  return { sockets, emits, heartbeats, prepared, timers, choices };
 }
 
 const entry = { accountId: "a1", symbol: "AAPL", assetType: "equity" };
@@ -101,6 +104,8 @@ describe("LiveSockets", () => {
     for (const body of [
       "nope",
       { type: "watch", entry: { ...entry, price: 1 } },
+      { type: "watch", entry: { ...entry, sizeChoice: "down50" } },
+      { type: "watch", entry: { ...entry, sizeMicros: 15 } },
       { type: "watch", symbols: ["bad symbol!"] },
       { type: "buy" },
     ]) {
@@ -110,6 +115,24 @@ describe("LiveSockets", () => {
       socket.watch(body);
       expect(socket.closed?.code).toBe(1008);
     }
+  });
+
+  it("sizes the watched entry with the choice the screen named and says which it applied (D51)", async () => {
+    const { sockets, prepared, choices } = harness();
+    const socket = new FakeSocket();
+    sockets.adopt(socket);
+    socket.watch({ type: "watch", entry: { ...entry, sizeChoice: "down25" } });
+    await tick();
+    prepared[0]?.done();
+    await tick();
+    expect(socket.closed).toBeNull();
+    expect(choices).toEqual(["down25"]);
+    expect(socket.sent).toContainEqual(
+      expect.objectContaining({
+        type: "entry",
+        update: expect.objectContaining({ status: "ready", sizeChoice: "down25" }),
+      }),
+    );
   });
 
   it("answers unavailable, leaving the socket open, to a watch over what the streams can carry", async () => {
