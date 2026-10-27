@@ -52,7 +52,7 @@ import { QuoteHub } from "./quote-hub.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { activateTrailing, type TrailingResult } from "./trailing.ts";
 import { readOverview } from "./overview.ts";
-import { readPositionsView } from "./positions-view.ts";
+import { readPositionsView, readVerification } from "./positions-view.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
 import { migrate } from "./schema.ts";
 import { seedForTest, type SeedResult } from "./test-seed.ts";
@@ -393,9 +393,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   /** Open positions with their steps and the exit orders still working, for /posiciones. Read-only. */
-  positions(input: unknown): EngineResult<PositionsView> {
-    return this.enter("positions", ModeOnlyArgs, input, () =>
-      success(readPositionsView(this.ctx.storage.sql, engineNow(this.env))),
+  positions(input: unknown): Promise<EngineResult<PositionsView>> {
+    return this.enterWithConnection("positions", ModeOnlyArgs, input, async (ctx) =>
+      success({
+        ...readPositionsView(ctx.sql, engineNow(this.env)),
+        verification: await readVerification(ctx),
+      }),
     );
   }
 

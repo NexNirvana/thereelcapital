@@ -1,10 +1,18 @@
 // The Posiciones screen's read (docs/screens-and-flows.md, /posiciones). Reads only: no order is
 // placed, cancelled or changed, and nothing returned is a secret, token or broker order id.
 
-import type { PendingExitView, PositionView, PositionsView } from "#lib/domain/positions-view.ts";
+import type {
+  PendingExitView,
+  PositionView,
+  PositionsVerification,
+  PositionsView,
+} from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
 import { MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
+import { brokerReachable } from "#lib/domain/connection.ts";
 import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
+import { readConnection, type ConnectionContext } from "./connection.ts";
+import { LAST_OK_KEY } from "./sync.ts";
 
 type PositionRow = {
   id: string;
@@ -32,7 +40,11 @@ type PendingRow = {
   has_broker_order: number;
 };
 
-export function readPositionsView(sql: SqlStorage, now: number): PositionsView {
+/** The rows only; the caller adds `verification`, which needs the connection. */
+export function readPositionsView(
+  sql: SqlStorage,
+  now: number,
+): Omit<PositionsView, "verification"> {
   const steps = new Map<string, ScaleOutStepState[]>();
   for (const row of sql
     .exec<StepRow>(
@@ -103,4 +115,20 @@ export function readPositionsView(sql: SqlStorage, now: number): PositionsView {
         (row.state === "ACKNOWLEDGED" || row.state === "PARTIAL"),
     }));
   return { positions, pending, maxPositions: MAX_OPEN_POSITIONS };
+}
+
+/**
+ * Unverified while the connection cannot reach the broker (never connected, expired, revoked or
+ * failing): the sync loop is stopped then, so the rows are the last ones seen. The last good pass
+ * is the Durable Object's own record, falling back to the connection's last successful refresh.
+ */
+export async function readVerification(ctx: ConnectionContext): Promise<PositionsVerification> {
+  const connection = await readConnection(ctx);
+  if (connection.status === "CONNECTED" && brokerReachable(connection.health)) {
+    return { status: "verified" };
+  }
+  const lastSyncAt =
+    ctx.storage.kv.get<number>(LAST_OK_KEY) ??
+    (connection.status === "CONNECTED" ? connection.lastOkAt : null);
+  return { status: "unverified", lastSyncAt };
 }

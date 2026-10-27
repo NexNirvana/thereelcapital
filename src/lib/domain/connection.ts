@@ -41,7 +41,7 @@ export function connectionHealth(args: {
 }
 
 /** `ok` and `expiring` can still reach the broker; the others cannot. */
-function brokerReachable(health: ConnectionHealth): boolean {
+export function brokerReachable(health: ConnectionHealth): boolean {
   return health.status === "ok" || health.status === "expiring";
 }
 

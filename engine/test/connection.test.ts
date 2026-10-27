@@ -652,3 +652,95 @@ describe("mode", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("positions view while the connection is down", () => {
+  const openPosition = (client: Client) =>
+    runInDurableObject(client.stub, (_i, state) =>
+      state.storage.sql.exec(
+        `INSERT INTO positions (id, mode, account_id, symbol, underlying, expiry, strike, right, original_qty, sold_qty,
+           avg_entry_price, stop_pct, trailing_unlock_pct, protection_state, status, opened_on)
+         VALUES ('p1', 'SIM', 'SIM-1', 'F 261030C12', 'F', '2026-10-30', 12000000, 'call', 476, 0, 1, 30, 70, 'verified', 'OPEN', '2026-10-26')`,
+      ),
+    );
+
+  it("carries the unverified flag and the last good sync for a revoked connection", async () => {
+    const client = await newClient();
+    await connect(client);
+    await openPosition(client);
+    expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: { verification: { status: "verified" }, positions: [{ id: "p1" }] },
+    });
+
+    await runInDurableObject(client.stub, (_i, state) =>
+      state.storage.kv.put("sync_last_ok_at", 1234),
+    );
+    await env.DB.prepare("UPDATE broker_connection SET status = 'REVOKED' WHERE user_id = ?")
+      .bind(client.userId)
+      .run();
+    expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: {
+        verification: { status: "unverified", lastSyncAt: 1234 },
+        positions: [{ id: "p1", originalQty: 476 }],
+      },
+    });
+  });
+
+  it("is unverified for a client that never connected", async () => {
+    const client = await newClient();
+    expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: { verification: { status: "unverified", lastSyncAt: null } },
+    });
+  });
+});
+
+describe("reconnecting after a revoked connection", () => {
+  it("restarts the sync loop, whose first pass closes a position that is flat at the broker", async () => {
+    // The local simulator behind the engine tests knows the account SIM-1 and holds nothing.
+    responders.accounts = () =>
+      json({ Accounts: [{ AccountID: "SIM-1", AccountType: "Margin", Status: "Active" }] });
+    const client = await newClient();
+    await connect(client);
+    await seedOpenPosition(client);
+    await runInDurableObject(client.stub, (_i, state) =>
+      state.storage.sql.exec("UPDATE positions SET account_id = 'SIM-1'"),
+    );
+    // The refresh was rejected at 08:15: the connection is REVOKED and the loop has stopped.
+    await env.DB.prepare("UPDATE broker_connection SET status = 'REVOKED' WHERE user_id = ?")
+      .bind(client.userId)
+      .run();
+    await runInDurableObject(client.stub, async (_i, state) => {
+      holdForReconciliation(state.storage);
+      await new AlarmScheduler(state.storage, Date.now).schedule("sync", null);
+    });
+
+    // The real reconnect path: authorize, then the OAuth callback.
+    const { state } = await begin(client);
+    const result = await client.stub.completeConnection({
+      mode: "SIM",
+      code: "auth-code-2",
+      state,
+      redirectUri: REDIRECT_URI,
+    });
+    expect(result).toMatchObject({ ok: true, value: { health: { status: "ok" } } });
+
+    // The reconnect armed the sync loop; its first pass reads the broker, which holds nothing.
+    const outcome = await runInDurableObject(client.stub, async (instance, state) => {
+      const dueAt = state.storage.kv.get<number>("alarm_due:sync");
+      state.storage.kv.put("alarm_due:sync", Date.now());
+      await instance.alarm();
+      await state.storage.deleteAlarm();
+      return {
+        dueAt,
+        status: state.storage.sql.exec("SELECT status FROM positions WHERE id = 'p1'").one().status,
+        closedEvents: state.storage.sql
+          .exec("SELECT COUNT(*) AS n FROM events WHERE type = 'reconcile.position_closed'")
+          .one().n,
+      };
+    });
+    expect(outcome.dueAt).toBeTypeOf("number");
+    expect(outcome).toMatchObject({ status: "CLOSED", closedEvents: 1 });
+  });
+});
