@@ -341,6 +341,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   exit(input: unknown): Promise<EngineResult<ExitResult>> {
     return this.enterWithBroker("exit", ExitArgs, input, async (ctx, args) => {
       const result = await exitPosition(ctx, args);
+      if (result.ok && result.value.status === "PLACED" && result.value.state === "REJECTED") {
+        // The broker refused the sell, perhaps because it holds nothing any more (sold elsewhere
+        // on a shared account): read it now instead of waiting for the next tick. D49.
+        // Best effort: the exit is already recorded, so a failing pass must not hide it.
+        await this.syncOnce(ctx).catch(() => undefined);
+      }
       if (result.ok && result.value.status === "PLACED") {
         // The loop watches the fill; it must be running while an exit is pending.
         await this.#alarms.scheduleNoLater(

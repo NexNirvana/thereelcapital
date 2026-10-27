@@ -176,6 +176,11 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `CREATE INDEX intents_open ON intents (mode, created_at, id) WHERE state NOT IN ('FILLED', 'CANCELED', 'REJECTED')`,
     `CREATE INDEX intents_by_mode_created ON intents (mode, created_at, id)`,
   ],
+  [
+    // The broker's own words for a refused order (its RejectReason or the error message of the
+    // place request): shown in Historial so a rejected exit says why. Free text, cut to 200 chars.
+    `ALTER TABLE intents ADD COLUMN reject_reason TEXT`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */

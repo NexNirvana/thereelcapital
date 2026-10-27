@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BrokerSkip } from "../../src/broker/adapter.ts";
 import { makeTransport, type FetchFn } from "../../src/tradestation/http.ts";
 import * as orders from "../../src/tradestation/orders.ts";
 import { mapOrderStatus } from "../../src/tradestation/status.ts";
@@ -71,6 +72,7 @@ describe("orders", () => {
       rawStatus: "FPR",
       openedAt: Date.parse("2021-02-24T15:47:45Z"),
       closedAt: null,
+      rejectReason: null,
     });
     expect(result[1]).toMatchObject({
       status: "FILLED",
@@ -122,7 +124,7 @@ describe("orders", () => {
     expect(await run(orders.orders(blank.transport, ["A"]))).toEqual([]);
   });
 
-  it("fails as Unknown on an order without any timestamp or with a fractional quantity", async () => {
+  it("leaves out an order it cannot read, names the field and keeps the others", async () => {
     const leg = {
       AssetType: "STOCK",
       BuyOrSell: "Buy",
@@ -132,23 +134,74 @@ describe("orders", () => {
       QuantityRemaining: "1",
       Symbol: "MSFT",
     };
-    const base = { OrderID: "1", AccountID: "A", Status: "OPN", Legs: [leg] };
-    expect(
-      await failureOf(orders.orders(withBody({ Orders: [base] }).transport, ["A"])),
-    ).toMatchObject({
-      _tag: "Unknown",
-      detail: "invalid_value:OpenedDateTime",
-    });
-    const fractional = {
-      ...base,
+    const good = {
+      OrderID: "9",
+      AccountID: "A",
+      Status: "OPN",
       OpenedDateTime: "2021-02-24T15:47:45Z",
-      Legs: [{ ...leg, QuantityOrdered: "1.5" }],
+      Legs: [leg],
     };
-    expect(
-      await failureOf(orders.orders(withBody({ Orders: [fractional] }).transport, ["A"])),
-    ).toMatchObject({
+    const noTimestamp = { ...good, OrderID: "1", OpenedDateTime: null };
+    const fractional = { ...good, OrderID: "2", Legs: [{ ...leg, QuantityOrdered: "1.5" }] };
+    const noStatus = {
+      OrderID: "3",
+      AccountID: "A",
+      Legs: [leg],
+      OpenedDateTime: good.OpenedDateTime,
+    };
+    const noQuantity = { ...good, OrderID: "4", Legs: [{ ...leg, ExecQuantity: undefined }] };
+    const notAnOrder = "garbage";
+    const skipped: BrokerSkip[] = [];
+    const { transport } = withBody({
+      Orders: [noTimestamp, fractional, noStatus, noQuantity, notAnOrder, good],
+    });
+    const result = await run(orders.orders(transport, ["A"], skipped));
+    expect(result.map((order) => order.orderId)).toEqual(["9"]);
+    expect(skipped).toEqual([
+      { operation: "orders", orderId: "1", accountId: "A", symbol: null, field: "OpenedDateTime" },
+      { operation: "orders", orderId: "2", accountId: "A", symbol: null, field: "QuantityOrdered" },
+      { operation: "orders", orderId: "3", accountId: "A", symbol: null, field: "Status" },
+      {
+        operation: "orders",
+        orderId: "4",
+        accountId: "A",
+        symbol: null,
+        field: "Legs.ExecQuantity",
+      },
+      { operation: "orders", orderId: null, accountId: null, symbol: null, field: "item" },
+    ]);
+    expect(JSON.stringify(skipped)).not.toContain("1.5");
+  });
+
+  it("keeps the broker's rejection reason, cut short", async () => {
+    const order = {
+      OrderID: "5",
+      AccountID: "A",
+      Status: "REJ",
+      OpenedDateTime: "2021-02-24T15:47:45Z",
+      RejectReason: "x".repeat(500),
+      Legs: [
+        {
+          AssetType: "STOCKOPTION",
+          BuyOrSell: "Sell",
+          OpenOrClose: "Close",
+          QuantityOrdered: "476",
+          ExecQuantity: "0",
+          QuantityRemaining: "476",
+          Symbol: "F 261030C12",
+        },
+      ],
+    };
+    const [rejected] = await run(orders.orders(withBody({ Orders: [order] }).transport, ["A"]));
+    expect(rejected).toMatchObject({ status: "REJECTED", tradeAction: "SELLTOCLOSE" });
+    expect(rejected?.rejectReason).toHaveLength(200);
+  });
+
+  it("still fails the whole read when the answer itself is not a list of orders", async () => {
+    const { transport } = withBody({ Orders: "nope" });
+    expect(await failureOf(orders.orders(transport, ["A"]))).toMatchObject({
       _tag: "Unknown",
-      detail: "invalid_value:QuantityOrdered",
+      detail: "invalid_response",
     });
   });
 });
@@ -206,5 +259,32 @@ describe("positions", () => {
       Errors: [{ AccountID: "X", Error: "Forbidden" }],
     });
     expect(await failureOf(orders.positions(transport, ["X"]))).toMatchObject({ _tag: "Rejected" });
+  });
+
+  it("leaves out a position it cannot read and keeps the others", async () => {
+    const good = {
+      AccountID: "A",
+      Symbol: "MSFT",
+      AssetType: "STOCK",
+      LongShort: "Long",
+      Quantity: "10",
+      AveragePrice: "1.5",
+    };
+    const skipped: BrokerSkip[] = [];
+    const { transport } = withBody({
+      Positions: [
+        { ...good, Symbol: "F 261030C12", AssetType: "STOCKOPTION", AveragePrice: undefined },
+        { ...good, Symbol: "IBM", Quantity: "1.5" },
+        { ...good, Symbol: "KO", LongShort: "Flat" },
+        good,
+      ],
+    });
+    const result = await run(orders.positions(transport, ["A"], skipped));
+    expect(result.map((position) => position.symbol)).toEqual(["MSFT"]);
+    expect(skipped.map((item) => [item.symbol, item.field])).toEqual([
+      ["F 261030C12", "AveragePrice"],
+      ["IBM", "Quantity"],
+      ["KO", "LongShort"],
+    ]);
   });
 });

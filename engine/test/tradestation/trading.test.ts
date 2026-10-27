@@ -370,7 +370,7 @@ describe("whole adapter", () => {
     await run(adapter.accounts());
     await run(adapter.placeOrder(request));
     await failureOf(adapter.symbolDetails("MSFT"));
-    await failureOf(adapter.orders([ACCOUNT]));
+    await run(adapter.orders([ACCOUNT])); // shapes it cannot read are skipped, not fatal
     expect(calls.length).toBeGreaterThan(3);
     for (const call of calls) expect(call.url.startsWith(`${SIM_BASE}/`)).toBe(true);
   });

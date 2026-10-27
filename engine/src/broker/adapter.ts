@@ -114,6 +114,22 @@ export interface BrokerOrder {
   readonly rawStatus: string;
   readonly openedAt: number;
   readonly closedAt: number | null;
+  /** Why the broker rejected the order, when it said (`RejectReason`); free text, cut short. */
+  readonly rejectReason?: string | null;
+}
+
+/**
+ * An order or position of the listing that could not be decoded and was left out of the answer
+ * (one foreign item must not fail the whole read). Names the field, never a value.
+ */
+export interface BrokerSkip {
+  readonly operation: "orders" | "historicalOrders" | "positions";
+  /** The broker's id, when the item still had a readable one. */
+  readonly orderId: string | null;
+  readonly accountId: string | null;
+  readonly symbol: string | null;
+  /** The field that failed, such as `Legs.QuantityOrdered`, or `item` when the shape was wrong. */
+  readonly field: string;
 }
 
 export interface BrokerPosition {
@@ -166,6 +182,11 @@ export interface BrokerAdapterShape {
    * adapters without a guard (the local simulator) have nothing to warm. Never required for safety.
    */
   readonly warmAccountGuard?: (accountIds: ReadonlyArray<string>) => Op<void>;
+  /**
+   * Items the last reads left out because they could not be decoded; returned once, then cleared.
+   * Optional: only an adapter that decodes a foreign wire format has any.
+   */
+  readonly takeSkipped?: () => ReadonlyArray<BrokerSkip>;
   readonly orders: (accountIds: ReadonlyArray<string>) => Op<ReadonlyArray<BrokerOrder>>;
   /** Closed orders only, from `since` (epoch ms). */
   readonly historicalOrders: (

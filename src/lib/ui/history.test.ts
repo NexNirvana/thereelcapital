@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { eventLabel, fillLine, fillPrice, formatWhen, kindLabel, stateLabel } from "./history.ts";
+import {
+  eventLabel,
+  eventText,
+  fillLine,
+  fillPrice,
+  formatWhen,
+  kindLabel,
+  stateLabel,
+} from "./history.ts";
 
 describe("history wording", () => {
   it("labels every order state of the lifecycle", () => {
@@ -43,5 +51,26 @@ describe("history wording", () => {
     expect(fillLine(10, 50)).toBe("10/50");
     expect(fillPrice(null)).toBe("—");
     expect(fillPrice(101_000_000)).toBe("US$101.00");
+  });
+});
+
+describe("event wording with the failing operation", () => {
+  it("names the read and the reason of a sync failure", () => {
+    expect(
+      eventText({ type: "sync.broker_error", operation: "orders", detail: "invalid_response" }),
+    ).toBe("Error al sincronizar con TradeStation (órdenes: respuesta no válida)");
+    expect(
+      eventText({
+        type: "sync.broker_error",
+        operation: "positions",
+        detail: "invalid_value:Quantity",
+      }),
+    ).toContain("posiciones: ");
+  });
+
+  it("leaves other events as their label", () => {
+    expect(eventText({ type: "broker.connected", operation: null, detail: null })).toBe(
+      eventLabel("broker.connected"),
+    );
   });
 });

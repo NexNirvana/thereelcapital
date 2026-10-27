@@ -3,7 +3,7 @@
   import Button from "#lib/ui/Button.svelte";
   import Notice from "#lib/ui/Notice.svelte";
   import {
-    eventLabel,
+    eventText,
     fillLine,
     fillPrice,
     formatWhen,
@@ -106,7 +106,11 @@
               <td data-label="Tipo">
                 {kindLabel(order.kind)}{order.source === "external" ? " · externa" : ""}
               </td>
-              <td data-label="Estado" class="state">{stateLabel(order.state)}</td>
+              <td data-label="Estado" class="state">
+                {stateLabel(order.state)}{#if order.reject_reason}<span class="reason"
+                    >{order.reject_reason}</span
+                  >{/if}
+              </td>
               <td data-label="Cantidad">
                 {formatQuantity(order.qty, order.asset_type === "option" ? "option" : "equity")}
               </td>
@@ -147,7 +151,7 @@
                 <tr>
                   <th scope="row" data-label="Fecha">{formatWhen(event.at)}</th>
                   <td data-label="Nivel">{levelLabel(event.level)}</td>
-                  <td data-label="Evento">{eventLabel(event.type)}</td>
+                  <td data-label="Evento">{eventText(event)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -263,6 +267,12 @@
   .symbol,
   .state {
     font-weight: 600;
+  }
+  .reason {
+    display: block;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    color: var(--text-dim);
   }
   .sr-only {
     position: absolute;

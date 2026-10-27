@@ -50,7 +50,7 @@ audit_log          id, at, actor_id, action, target_user_id, before_json, after_
 entry_counters     mode, session_date, consumed, reserved               PK(mode, session_date)
 intents            id, mode, kind (entry|exit|stop|trailing|cancel), account_id, position_id,
                    symbol, asset_type, trade_action, qty, size_applied, quote_json, state,
-                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at, source (app|external)
+                   order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at, source (app|external), reject_reason (broker refusal text, ids removed, 200 characters at most)
 positions          id, mode, account_id, symbol, underlying, expiry, strike, right, point_value,
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
                    trailing_pct, trailing_peak, trailing_level, protection_state, status, opened_on, source (app|external)

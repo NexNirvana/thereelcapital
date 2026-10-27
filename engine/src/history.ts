@@ -20,11 +20,25 @@ type IntentRow = {
   filled_qty: number;
   avg_fill_price: number | null;
   source: string;
+  /** The broker's words for a refused order, when it gave any. */
+  reject_reason: string | null;
   created_at: number;
   updated_at: number;
 };
 
-type EventRow = { at: number; level: string; type: string };
+/**
+ * `operation` and `detail` are only filled for the events whose payload is a fixed vocabulary
+ * (DIAGNOSTIC_EVENTS): the broker call that failed and a code such as `invalid_value:QuantityOrdered`.
+ */
+type EventRow = {
+  at: number;
+  level: string;
+  type: string;
+  operation: string | null;
+  detail: string | null;
+};
+
+const DIAGNOSTIC_EVENTS = "('sync.broker_error', 'sync.items_skipped')";
 
 export interface HistoryPage {
   readonly mode: "SIM";
@@ -80,7 +94,7 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
   const rows = sql
     .exec<IntentRow>(
       `SELECT id, kind, account_id, symbol, asset_type, trade_action, qty, state, filled_qty,
-              avg_fill_price, source, created_at, updated_at
+              avg_fill_price, source, reject_reason, created_at, updated_at
          FROM intents WHERE ${intentWhere.join(" AND ")}
          ORDER BY created_at DESC, id DESC LIMIT ?`,
       ...intentParams,
@@ -91,13 +105,16 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
   const last = intents.at(-1);
 
   // Internal detail (`data_json`, the message) never leaves the engine: the screen gets when,
-  // how serious and which kind.
+  // how serious and which kind, plus the operation and code of a sync failure (no values).
   const events =
     args.cursor !== undefined
       ? []
       : sql
           .exec<EventRow>(
-            `SELECT at, level, type FROM events WHERE ${eventWhere.join(" AND ")}
+            `SELECT at, level, type,
+                    CASE WHEN type IN ${DIAGNOSTIC_EVENTS} THEN json_extract(data_json, '$.operation') END AS operation,
+                    CASE WHEN type IN ${DIAGNOSTIC_EVENTS} THEN json_extract(data_json, '$.detail') END AS detail
+               FROM events WHERE ${eventWhere.join(" AND ")}
                ORDER BY at DESC, id DESC LIMIT ?`,
             ...eventParams,
             EVENTS_SHOWN,
