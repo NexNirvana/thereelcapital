@@ -22,7 +22,7 @@ export interface BrokerAccount {
 export async function listTradableAccounts(
   accessToken: string,
 ): Promise<BrokerResult<readonly BrokerAccount[]>> {
-  const sent = await send(`${SIM_API_BASE_URL}/brokerage/accounts`, {
+  const sent = await send("accounts", `${SIM_API_BASE_URL}/brokerage/accounts`, {
     headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
   });
   if (!sent.ok) return sent;

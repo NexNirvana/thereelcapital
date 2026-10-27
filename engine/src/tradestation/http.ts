@@ -15,6 +15,7 @@ import {
   type BrokerOperation,
 } from "../broker/errors.ts";
 import type { Mode } from "../mode.ts";
+import { logBrokerRequest, startTimer } from "../timing.ts";
 import { SIM_API_BASE_URL } from "./endpoints.ts";
 
 /** A broker call that hangs must not hold the Durable Object. */
@@ -200,6 +201,7 @@ export function makeTransport(
         catch: () => new AuthExpired({ operation }),
       });
       if (!access.ok) return yield* Effect.fail(new AuthExpired({ operation }));
+      const startedAt = startTimer();
       const response = yield* Effect.tryPromise({
         try: () =>
           doFetch(url, {
@@ -212,11 +214,14 @@ export function makeTransport(
             ...(init.body === undefined ? {} : { body: init.body }),
             signal: init.signal,
           }),
-        catch: (error): BrokerError =>
-          isTimeoutError(error)
+        catch: (error): BrokerError => {
+          logBrokerRequest(operation, null, startedAt);
+          return isTimeoutError(error)
             ? new Timeout({ operation })
-            : new Unknown({ operation, detail: NETWORK_DETAIL }),
+            : new Unknown({ operation, detail: NETWORK_DETAIL });
+        },
       });
+      logBrokerRequest(operation, response.status, startedAt);
       lastRateLimit = parseRateLimit(response.headers) ?? lastRateLimit;
       if (response.ok) return response;
       return yield* Effect.fail(

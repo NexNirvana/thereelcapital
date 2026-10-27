@@ -76,6 +76,7 @@ import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
 import { Effect, type Schema } from "effect";
 import type { Mode } from "./mode.ts";
+import { logColo } from "./timing.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
 function errorTag(error: unknown): string {
@@ -116,6 +117,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
+    // Once per instance, off the request path: where this Durable Object runs (#279). Production
+    // only, so tests that count outbound fetches never see the probe.
+    if (env.ENVIRONMENT === "production") ctx.waitUntil(logColo());
     this.#alarms = new AlarmScheduler(ctx.storage, () => this.#now());
     this.#sockets = new LiveSockets({
       hub: new QuoteHub({

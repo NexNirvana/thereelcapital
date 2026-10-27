@@ -1,5 +1,7 @@
 // The only TradeStation hosts the engine knows. docs/tradestation-integration.md#environments
 
+import { logBrokerRequest, startTimer } from "../timing.ts";
+
 /** SIM only, no real money. LIVE is not a configured environment and has no constant. */
 export const SIM_API_BASE_URL = "https://sim-api.tradestation.com/v3";
 
@@ -37,19 +39,23 @@ export function isAllowedOrigin(url: string): boolean {
  * carries a status at most, never a body, because token endpoints can echo submitted values.
  */
 export async function send(
+  operation: "auth" | "accounts",
   url: string,
   init: RequestInit,
 ): Promise<{ ok: true; response: Response } | Extract<BrokerResult<never>, { ok: false }>> {
   // Defense in depth for the SIM-only rule: the only origins this module may reach are the SIM API
   // and the auth tenant, whatever a caller passes. Anything else is refused without a request.
   if (!isAllowedOrigin(url)) return { ok: false, failure: "REJECTED" };
+  const startedAt = startTimer();
   try {
     const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    logBrokerRequest(operation, response.status, startedAt);
     if (response.ok) return { ok: true, response };
     // 4xx is the broker saying no (bad secret, bad code); 5xx and 429 are not the client's fault.
     const rejected = response.status >= 400 && response.status < 500 && response.status !== 429;
     return { ok: false, failure: rejected ? "REJECTED" : "UNAVAILABLE", status: response.status };
   } catch {
+    logBrokerRequest(operation, null, startedAt);
     return { ok: false, failure: "UNAVAILABLE" };
   }
 }

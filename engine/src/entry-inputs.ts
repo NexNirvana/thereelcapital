@@ -6,6 +6,7 @@
 // prepareEntry call always read D1.
 
 import { readConnectionRow, type ConnectionContext, type ConnectionRow } from "./connection.ts";
+import { timedD1 } from "./timing.ts";
 
 export interface EntryInputs {
   /** Null when the client has no connection row. */
@@ -21,10 +22,13 @@ export async function loadEntryInputs(ctx: InputsContext): Promise<EntryInputs> 
   const [connection, settings] = await Promise.all([
     readConnectionRow(ctx),
     // The client's SIZE, read from D1 where the admin sets it: the browser has no say.
-    ctx.db
-      .prepare("SELECT size_usd FROM client_settings WHERE user_id = ?")
-      .bind(ctx.userId)
-      .first<{ size_usd: number }>(),
+    timedD1(
+      "size_usd",
+      ctx.db
+        .prepare("SELECT size_usd FROM client_settings WHERE user_id = ?")
+        .bind(ctx.userId)
+        .first<{ size_usd: number }>(),
+    ),
   ]);
   return { connection, sizeUsd: settings?.size_usd ?? null };
 }

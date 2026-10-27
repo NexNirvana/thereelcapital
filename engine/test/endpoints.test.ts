@@ -23,7 +23,7 @@ describe("send origin guard", () => {
   ])("refuses %j without sending a request", async (url) => {
     const spy = vi.spyOn(globalThis, "fetch");
     expect(isAllowedOrigin(url)).toBe(false);
-    expect(await send(url, {})).toEqual({ ok: false, failure: "REJECTED" });
+    expect(await send("auth", url, {})).toEqual({ ok: false, failure: "REJECTED" });
     expect(spy).not.toHaveBeenCalled();
   });
 });

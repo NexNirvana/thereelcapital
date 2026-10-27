@@ -10,6 +10,7 @@ import type { StoredConnectionState } from "#lib/domain/connection.ts";
 import { UnknownKeyIdError, type CredentialCipher } from "./crypto.ts";
 import { logEvent } from "./events.ts";
 import { refreshAccessToken } from "./tradestation/auth.ts";
+import { timedD1 } from "./timing.ts";
 
 /** Marks that entries stay blocked until reconciliation, even once the connection works again. */
 const RECONCILIATION_PENDING_KEY = "reconciliation_pending";
@@ -124,13 +125,16 @@ export class TokenRefresher {
     // seed() and forget() bump this: a connect or disconnect that lands while a request is out
     // makes every later step of this refresh stale, and it drops its result instead of applying it.
     const generation = this.#generation;
-    const row = await db
-      .prepare(
-        `SELECT client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status
+    const row = await timedD1(
+      "token_row",
+      db
+        .prepare(
+          `SELECT client_id, client_secret_enc, refresh_token_enc, key_id, refresh_expires_at, status
            FROM broker_connection WHERE user_id = ?`,
-      )
-      .bind(userId)
-      .first<ConnectionRow>();
+        )
+        .bind(userId)
+        .first<ConnectionRow>(),
+    );
     if (generation !== this.#generation) return { kind: "none" };
     if (row === null) {
       this.forget();

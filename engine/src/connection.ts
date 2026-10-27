@@ -15,6 +15,7 @@ import type { Mode } from "./mode.ts";
 import { listTradableAccounts, type BrokerAccount } from "./tradestation/accounts.ts";
 import { authorizeUrl, exchangeCode, revokeRefreshToken } from "./tradestation/auth.ts";
 import type { BrokerFailure } from "./tradestation/endpoints.ts";
+import { timedD1 } from "./timing.ts";
 
 /** Long enough to log in at TradeStation (passkey, 2FA), short enough to be a one-shot. */
 const ATTEMPT_TTL_MS = 10 * 60 * 1000;
@@ -267,12 +268,15 @@ export interface ConnectionRow {
 }
 
 export function readConnectionRow(ctx: Pick<ConnectionContext, "db" | "userId">) {
-  return ctx.db
-    .prepare(
-      "SELECT refresh_expires_at, last_ok_at, status FROM broker_connection WHERE user_id = ?",
-    )
-    .bind(ctx.userId)
-    .first<ConnectionRow>();
+  return timedD1(
+    "connection_row",
+    ctx.db
+      .prepare(
+        "SELECT refresh_expires_at, last_ok_at, status FROM broker_connection WHERE user_id = ?",
+      )
+      .bind(ctx.userId)
+      .first<ConnectionRow>(),
+  );
 }
 
 export async function readConnection(ctx: ConnectionContext): Promise<ConnectionView> {

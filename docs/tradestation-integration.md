@@ -111,6 +111,18 @@ Future work only: v3 supports `StopMarket` and `AdvancedOptions.TrailingStop`, a
 - **Polling fallback (D46).** Nueva entrada and the review poll the quotes snapshot through the engine's `prepareEntry` (one quotes call per poll, 2 s apart per open screen, 150 of the 500 requests / 5 min; the symbol details are cached). On a quotes failure the screen slows down (2, 4, 8, 16 s) instead of retrying at the base pace. **(verify)** how SIM answers a 429 on the quotes resource.
 - Streams: chunked JSON where chunk boundaries are not message boundaries; `Heartbeat` every 5 s idle (verify); `StreamStatus: EndSnapshot | GoAway` (v3 order and position streams document them; the quote stream is assumed to behave alike, verify); `Error: DualLogon` means close, wait and reconnect.
 
+## Reading the latency events
+
+The `ClientCoordinator` prints one JSON line per measurement so the distance between the Durable Object, TradeStation and D1 can be read in production (#279). Run `wrangler tail reel-engine --format json` and filter on the event name inside each log line (`jq 'select(.logs[]?.message[]? | tostring | contains("broker.request"))'`, or just `grep`).
+
+| Event | Fields | Meaning |
+| --- | --- | --- |
+| `broker.request` | `operation`, `status`, `ms` | One TradeStation request. `operation` is the adapter's operation (`accounts`, `quotes`, `quoteStream`, `optionStrikes`, `chainSnapshot`, `placeOrder`, `orders`, ...) or `auth` for the token endpoints. `status` is the HTTP status, or `null` when no response arrived (timeout, network). `ms` is the time until the response headers; for `quoteStream` that is the time to first byte, once per stream start. |
+| `d1.query` | `name`, `ms` | One D1 read from the Durable Object: `connection_row`, `size_usd`, `protection_settings`, `token_row`. |
+| `do.colo` | `colo` | The Cloudflare data center this Durable Object instance runs in, once per instance (from `cloudflare.com/cdn-cgi/trace`, the `colo` line only). |
+
+The lines never carry URLs, query strings, symbols, account ids, tokens or bodies.
+
 ## Spike checklist (SIM, regular session)
 
 First run, 2026-10-22 after the close (#21): accounts, refresh, equity quote, equity symbol details and rate limits answered and are recorded in `engine/test/fixtures/sim/`; every options step failed with 403 "Missing required scope." (fixed by requesting `OptionSpreads`) and the order steps stopped because the market was closed. The rerun in the regular session on 2026-10-26 covered the rest (see the spike checklist); partial fills, the absolute refresh expiry and option expiry stay unobserved.
