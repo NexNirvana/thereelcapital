@@ -15,6 +15,8 @@ equities: qty = floorToIncrement(SIZE / ask, increment)    // QuantityFormat.Inc
 - Block, with a reason, when the quote is missing, stale or halted, the symbol details are missing, or `qty` < `MinimumTradeQuantity`. There is no manual or browser-supplied price.
 - SIZE is a target: a MARKET fill can cost more than SIZE. Store on the intent the SIZE, quote and point value that were used.
 - Example: SIZE 20,000, ask 4.00, point value 100 → 50 contracts.
+- **SIZE −25% for one entry (D51).** The client may choose `down25` for one entry; the SIZE in the formulas above is then `appliedSize(SIZE, choice)` = floor(SIZE × `SIZE_DOWN_APPLIED_PCT` / 100) in micros (15,000 for 20,000), otherwise the SIZE itself. The browser sends only the closed choice (`full` | `down25`), never an amount; the choice is not stored in D1 and the next entry starts at `full`. Example: SIZE 20,000, ask 4.00 → 37 contracts at −25% (50 at full). The intent stores the choice (`size_choice`) and the SIZE used (`size_applied`) before the broker call.
+- **Deploy skew.** The web sends `sizeChoice` only for `down25`, and the engine rejects unknown fields, so an old engine fails the call instead of sending a full-size order; the web also refuses a preview whose echoed choice differs from the one asked for.
 - At send time the server recomputes the quantity. If it differs from what the client confirmed, return "re-confirm" instead of sending.
 
 ## 2. SIZE changes

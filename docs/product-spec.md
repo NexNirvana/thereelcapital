@@ -21,7 +21,7 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 
 | Parameter | Value | Set by | Applies to |
 | --- | --- | --- | --- |
-| SIZE per entry | US$20,000 initial | admin, increase only, per client | new entries |
+| SIZE per entry | US$20,000 initial | admin, increase only, per client | new entries; the client may pick −25% (75% of SIZE) for one entry, D51 |
 | Open positions | max 2 per client · mode, across accounts | fixed | — |
 | New entries | max 3 per client · mode · market day, across accounts, by default; 1–1000 (D48) | admin, per client | new entries |
 | Initial stop | 30% below the average fill price; bounds 10–50% | admin, per client | new positions |
@@ -39,12 +39,12 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 
 ## Out of scope
 
-Futures, shorting, SELL TO OPEN, BUY TO CLOSE, spreads; any client-chosen order type other than MARKET; charts and P&L in the terminal; public sign-up; a shared REEL CAPITAL API key; SIZE DOWN (−25%/−50%); editable premium; a "reset session" button; adding to an open position (not supported in the pilot; re-entry after a full close is a new position); REAL.
+Futures, shorting, SELL TO OPEN, BUY TO CLOSE, spreads; any client-chosen order type other than MARKET; charts and P&L in the terminal; public sign-up; a shared REEL CAPITAL API key; SIZE DOWN beyond the one-entry −25% (−50%, free percentages or amounts); editable premium; a "reset session" button; adding to an open position (not supported in the pilot; re-entry after a full close is a new position); REAL.
 
 ## Journey
 
 1. **Access**: activation link from the admin (shared in person, single use, 72 h) → passkey → recovery codes → own TradeStation key → OAuth → choose an account. The app sends no email.
-2. **Prepare**: Acciones (ticker) or Opciones (underlying → expiry → strike × CALL/PUT). Read-only ask with freshness, SIZE and computed quantity.
+2. **Prepare**: Acciones (ticker) or Opciones (underlying → expiry → strike × CALL/PUT). Read-only ask with freshness, SIZE (full, or −25% for this entry only, D51) and computed quantity.
 3. **Review and send**: account, mode, instrument, action, SIZE, quantity, MARKET. The server re-checks everything. If the quantity changed, the client re-confirms; the server never silently sends a different quantity.
 4. **Manage**: up to 2 positions; the scale-out bar, ALL OUT and trailing act on the selected one; pending orders show their state and can be cancelled; state is recovered on re-entry.
 5. **History**: orders, states, quantities, fills, cancels. No P&L.
