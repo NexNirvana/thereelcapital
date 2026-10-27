@@ -1,14 +1,15 @@
-import { redirect } from "@sveltejs/kit";
+import { fail, redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
+import { Schema } from "effect";
 import { blockMessage, connectionBlockCode } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
-import { ASSET_TYPE, OperarQuery, SYMBOL } from "#lib/server/entry-query.ts";
+import { ASSET_TYPE, INTENT_ID, OperarQuery, SYMBOL } from "#lib/server/entry-query.ts";
 import { loadChainView } from "#lib/server/chain-view.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { exactStrike, parseStrikeCount } from "#lib/ui/chain-window.ts";
 import { requireUser } from "#lib/server/guards.ts";
-import type { PageServerLoad } from "./$types";
+import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async (event) => {
   const { parent } = event;
@@ -17,7 +18,9 @@ export const load: PageServerLoad = async (event) => {
   // Quotes and accounts of one client: never cached by a shared proxy.
   event.setHeaders({ "cache-control": "no-store" });
 
-  const query = decode(OperarQuery, Object.fromEntries(event.url.searchParams));
+  // `/enviar` is the send form's own action key, not something the client chose.
+  const entry = [...event.url.searchParams].filter(([name]) => !name.startsWith("/"));
+  const query = decode(OperarQuery, Object.fromEntries(entry));
   const tipo = query.tipo ?? "acciones";
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
@@ -106,12 +109,72 @@ export const load: PageServerLoad = async (event) => {
   if (prepared.value.status === "BLOCKED") {
     return { ...shown, preview: null, blocked: blockMessage(prepared.value.reasons) };
   }
-  // The intent id stays server-side: the review step (/operar/revisar) asks for its own preview.
-  const { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType } = prepared.value;
+  // One intent id per page load: every post of this page's send form carries it, so a double
+  // click or a repeated post is the same order (docs/order-lifecycle.md).
+  const {
+    intentId,
+    symbol: preparedSymbol,
+    qty,
+    sizeMicros,
+    askMicros,
+    assetType,
+  } = prepared.value;
   return {
     ...shown,
     blocked: null,
-    preview: { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType },
+    preview: { intentId, symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType },
     quotedAt: Date.now(),
   };
+};
+
+// The only things the send form carries. SIZE, price and any other field are not read, so adding
+// them to the request changes nothing: the engine sizes the order itself and compares `cantidad`
+// with its own quantity (CLAUDE.md, never-break rule 3).
+const Send = Schema.Struct({
+  tipo: Schema.Literals(["acciones", "opciones"]),
+  cuenta: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  simbolo: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32)),
+  intentId: Schema.String.check(Schema.isPattern(INTENT_ID)),
+  cantidad: Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+});
+
+const statusHref = (intentId: string) => resolve("/(app)/operar/revisar/[intentId]", { intentId });
+
+export const actions: Actions = {
+  enviar: async (event) => {
+    requireUser(event);
+    const form = await event.request.formData();
+    const parsed = Schema.decodeUnknownResult(Send)(
+      Object.fromEntries(
+        ["tipo", "cuenta", "simbolo", "intentId", "cantidad"].map((name) => [name, form.get(name)]),
+      ),
+    );
+    if (parsed._tag === "Failure") {
+      return fail(400, { message: "Los datos enviados no son válidos." });
+    }
+    const { tipo, cuenta, simbolo, intentId, cantidad } = parsed.success;
+
+    const sent = await engineFor(env.ENGINE, event)
+      .sendEntry({
+        mode: "SIM",
+        accountId: cuenta,
+        symbol: simbolo,
+        assetType: ASSET_TYPE[tipo],
+        intentId,
+        confirmedQty: cantidad,
+      })
+      // The order may have left before the failure: the status page tells what became of it.
+      .catch(() => null);
+    if (sent === null) redirect(303, statusHref(intentId));
+    if (!sent.ok) return fail(422, { message: sent.message });
+    const result = sent.value;
+    if (result.status === "BLOCKED") return fail(409, { message: blockMessage(result.reasons) });
+    if (result.status === "RECONFIRM") {
+      const { symbol, qty, sizeMicros, askMicros, assetType } = result.preview;
+      return {
+        reconfirm: { symbol, qty, sizeMicros, askMicros, assetType, previousQty: cantidad },
+      };
+    }
+    redirect(303, statusHref(result.intentId));
+  },
 };

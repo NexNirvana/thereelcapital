@@ -1,7 +1,7 @@
 import { expect, test } from "./test.ts";
 import { type Page } from "@playwright/test";
 import { SETTLE_MS, d1, seedTradingClient, origin } from "./support.ts";
-import { openReview, send } from "./trading.ts";
+import { openEntry, send } from "./trading.ts";
 
 // The engine runs the local simulation with its clock pinned inside a regular session
 // (tests/e2e/engine.env). Every scripted symbol asks US$101, so SIZE US$20,000 buys 198 shares and
@@ -27,23 +27,33 @@ async function shoot(page: Page, name: string) {
   }
 }
 
-const SEND = "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=SLOW&/enviar";
+const SEND = "/operar?tipo=acciones&cuenta=SIM-1&simbolo=SLOW&/enviar";
 const state = (page: Page) => page.getByRole("status");
 
-test("reviews the order read-only, then follows it to filled", async ({ context, page }) => {
+test("sends the order in one click from Nueva entrada, then follows it to filled", async ({
+  context,
+  page,
+}) => {
   await seedTradingClient(context);
-  await openReview(page, "SLOW");
-  const rows = page.locator("dl");
-  await expect(rows).toContainText("TradeStation · SIM-1");
-  await expect(rows).toContainText("SIM");
-  await expect(rows).toContainText("Comprar para abrir");
+  await openEntry(page, "SLOW");
+  const rows = page.locator(".form dl");
+  const summary = page.locator(".summary");
+  await expect(summary).toContainText("TradeStation · SIM-1");
+  await expect(summary).toContainText("SIM · sin dinero real");
+  await expect(summary).toContainText("Comprar para abrir");
   await expect(rows).toContainText("US$20,000");
   await expect(rows).toContainText("198 acciones");
   await expect(rows).toContainText("Market");
-  await expect(page.locator("input:not([type=hidden]), select, textarea")).toHaveCount(0);
+  // The summary is the confirmation: the quantity is a hidden field, never an input to edit.
+  await expect(page.locator("input[name=cantidad]")).toHaveAttribute("type", "hidden");
+  await expect(page.getByLabel(/SIZE|Cantidad|Precio/)).toHaveCount(0);
   await shoot(page, "review");
 
+  // One click, no review page in between.
+  const visited: string[] = [];
+  page.on("framenavigated", (frame) => visited.push(new URL(frame.url()).pathname));
   await send(page);
+  expect(visited.some((path) => path === "/operar/revisar")).toBe(false);
   await expect(state(page)).toContainText("Recibida por TradeStation");
   // Acknowledged is not executed.
   await expect(page.getByText("Ejecutada")).toHaveCount(0);
@@ -56,7 +66,7 @@ test("reviews the order read-only, then follows it to filled", async ({ context,
 
 test("shows a partial fill as partial, never as executed", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openReview(page, "PART");
+  await openEntry(page, "PART");
   await send(page);
   await expect(state(page)).toContainText("Ejecución parcial", { timeout: SETTLE_MS });
   await expect(state(page)).toContainText("50 de 198");
@@ -66,7 +76,7 @@ test("shows a partial fill as partial, never as executed", async ({ context, pag
 
 test("shows a rejected order as rejected with nothing executed", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openReview(page, "RJCT");
+  await openEntry(page, "RJCT");
   await send(page);
   await expect(state(page)).toContainText("Rechazada", { timeout: SETTLE_MS });
   await expect(state(page)).toContainText("No se ejecutó nada");
@@ -79,7 +89,7 @@ test("explains a lost broker answer as being verified, not as a failure", async 
   page,
 }) => {
   await seedTradingClient(context);
-  await openReview(page, "DROP");
+  await openEntry(page, "DROP");
   await send(page);
   await expect(state(page)).toContainText("Verificando");
   await expect(state(page)).toContainText("no es un fallo");
@@ -95,16 +105,20 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
   page,
 }) => {
   const userId = await seedTradingClient(context);
-  await openReview(page, "MSFT");
-  await expect(page.locator("dl")).toContainText("198 acciones");
+  await openEntry(page, "MSFT");
+  await expect(page.locator(".form dl")).toContainText("198 acciones");
 
-  // The admin halves SIZE while the client is reading.
+  // The admin halves SIZE while the client is reading. The page keeps the quantity it showed, so
+  // the send is what finds the change (a live price tick would show 99 before the click).
+  await page.route("**/operar/cotizacion*", (route) => route.abort());
   d1(`UPDATE client_settings SET size_usd = 10000 WHERE user_id = '${userId}'`);
   await page.getByRole("button", { name: "Enviar orden" }).click();
   await expect(page.getByText("La cantidad cambió")).toBeVisible({ timeout: SETTLE_MS });
-  await expect(page).toHaveURL(/\/operar\/revisar\?/);
+  await expect(page).toHaveURL(/\/operar\?/);
   await expect(page.getByText("Antes eran 198 acciones y ahora son 99 acciones.")).toBeVisible();
-  await expect(page.locator("dl")).toContainText("99 acciones");
+  await expect(page.locator(".form dl")).toContainText("99 acciones");
+  // One click on the new quantity sends it.
+  await expect(page.getByRole("button", { name: "Enviar con 99 acciones" })).toBeEnabled();
   await shoot(page, "reconfirm");
 
   // Nothing was sent: no entry counted yet.
@@ -113,13 +127,14 @@ test("asks to re-confirm when the quantity changed, then sends the new one", asy
   await expect(other.getByText("0/2 posiciones · 0/3 entradas hoy")).toBeVisible();
   await other.close();
 
-  await send(page, "Confirmar y enviar");
+  await page.unroute("**/operar/cotizacion*");
+  await send(page, "Enviar con 99 acciones");
   await expect(page.locator("dl")).toContainText("99");
 });
 
 test("sends one order when Enviar orden is double-clicked", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openReview(page, "MSFT");
+  await openEntry(page, "MSFT");
   await page.getByRole("button", { name: /Enviar|Enviando/ }).dblclick();
   await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
   await page.goto("/operar?simbolo=MSFT");
@@ -128,7 +143,7 @@ test("sends one order when Enviar orden is double-clicked", async ({ context, pa
 
 test("sends one order when the same intent is posted twice at once", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openReview(page, "SLOW");
+  await openEntry(page, "SLOW");
   const intentId = await page.locator("input[name=intentId]").inputValue();
   const form = { tipo: "acciones", cuenta: "SIM-1", simbolo: "SLOW", intentId, cantidad: "198" };
   const post = () =>
@@ -146,7 +161,7 @@ test("sends one order when the same intent is posted twice at once", async ({ co
 
 test("ignores size, price and other fields the browser adds", async ({ context, page }) => {
   await seedTradingClient(context);
-  await openReview(page, "SLOW");
+  await openEntry(page, "SLOW");
   const intentId = await page.locator("input[name=intentId]").inputValue();
   const send = (extra: Record<string, string>) =>
     page.request.post(SEND, {
@@ -192,10 +207,19 @@ test("sends nobody else's order to the status page", async ({ context, page }) =
   expect(bad?.status()).toBe(404);
 });
 
-test("returns to Nueva entrada when the review has no instrument", async ({ context, page }) => {
+test("sends old review links back to Nueva entrada with the same entry", async ({
+  context,
+  page,
+}) => {
   await seedTradingClient(context);
   await page.goto("/operar/revisar");
   await expect(page).toHaveURL(/\/operar$/);
+
+  await page.goto("/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=MSFT&x=1");
+  await expect(page).toHaveURL(/\/operar\?tipo=acciones&cuenta=SIM-1&simbolo=MSFT$/);
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeEnabled({
+    timeout: SETTLE_MS,
+  });
 });
 
 test("stops polling the order while the tab is hidden and resumes on return", async ({
@@ -203,7 +227,7 @@ test("stops polling the order while the tab is hidden and resumes on return", as
   page,
 }) => {
   await seedTradingClient(context);
-  await openReview(page, "PART");
+  await openEntry(page, "PART");
   await send(page);
   await expect(state(page)).toContainText("Ejecución parcial", { timeout: SETTLE_MS });
   await page.waitForLoadState("networkidle");
@@ -227,17 +251,17 @@ test("stops polling the order while the tab is hidden and resumes on return", as
   await expect.poll(() => polls, { timeout: 8_000 }).toBeGreaterThan(hiddenFrom);
 });
 
-test("keeps the ask live on the review but sends the quantity under review", async ({
+test("follows the live quantity on screen and sends exactly what it shows", async ({
   context,
   page,
 }) => {
   const userId = await seedTradingClient(context);
-  await openReview(page, "MSFT");
-  await expect(page.locator("dl")).toContainText("198 acciones");
+  await openEntry(page, "MSFT");
+  await expect(page.locator(".form dl")).toContainText("198 acciones");
   await expect(page.getByText(/Precio de las \d\d:\d\d:\d\d \(Nueva York\)/)).toBeVisible();
 
-  // SIZE changes while the client reads, and the screen polls the price meanwhile: the quantity on
-  // screen and the one the form carries stay those under review until the client re-confirms.
+  // SIZE changes while the client reads and the screen follows the price meanwhile: the quantity
+  // on screen and the one the form carries move together, so what is sent is what is shown.
   d1(`UPDATE client_settings SET size_usd = 10000 WHERE user_id = '${userId}'`);
   const polled = await page.waitForResponse(
     (response) => response.url().includes("/operar/cotizacion"),
@@ -253,7 +277,7 @@ test("keeps the ask live on the review but sends the quantity under review", asy
     timeZone: "America/New_York",
   }).format(new Date(receivedAt));
   await expect(page.getByText(`Precio de las ${clock} (Nueva York)`)).toBeVisible();
-  await expect(page.locator("dl")).toContainText("198 acciones");
-  await expect(page.locator("input[name=cantidad]")).toHaveValue("198");
+  await expect(page.locator(".form dl")).toContainText("99 acciones");
+  await expect(page.locator("input[name=cantidad]")).toHaveValue("99");
   await shoot(page, "live-ask");
 });

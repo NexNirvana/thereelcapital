@@ -52,7 +52,7 @@ Keep the designs' **hierarchy** through size, weight, case and letter-spacing:
 | --- | --- | --- |
 | **Heading** | `NUEVA ENTRADA`, `POSICIONES`, `TU CUENTA. / TU OPERATIVA.`, wordmark | 600, uppercase, slight negative tracking; desktop H1 about 40px, login hero about 56–64px, mobile H1 about 32px |
 | **Instrument / key figure** | `SPY`, `15 contratos restantes` | 600, 28–36px |
-| **Primary button label** | `Revisar orden`, `Cerrar posición` | 600, 16–18px |
+| **Primary button label** | `Enviar orden`, `Cerrar posición` | 600, 16–18px |
 | **Body** | labels, subtitles, nav, captions | 400, sentence case, 14–16px; secondary in `--text-muted` |
 | **Data** | SIZE, ask, quantities, %, account, time | 500, tabular numerals |
 
