@@ -9,6 +9,7 @@ import {
 } from "./connection.ts";
 import {
   LIVE_ENTRY_INPUTS_TTL_MS,
+  LIVE_ENTRY_RETRY_MS,
   LIVE_STREAM_BACKOFF_BASE_MS,
   LIVE_STREAM_BACKOFF_MAX_MS,
   LIVE_STREAM_MAX_SOCKETS,
@@ -158,6 +159,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       now: () => engineNow(this.env),
       maxSockets: LIVE_STREAM_MAX_SOCKETS,
       maxLifetimeMs: LIVE_STREAM_SOCKET_MAX_MS,
+      entryRetryMs: LIVE_ENTRY_RETRY_MS,
       setTimer: (callback, ms) => setTimeout(callback, ms),
       clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
     });

@@ -62,6 +62,8 @@ export interface LiveSocketsDeps {
   readonly now: () => number;
   readonly maxSockets: number;
   readonly maxLifetimeMs: number;
+  /** After a failed sizing, streamed ticks of the entry are not sized again for this long. */
+  readonly entryRetryMs: number;
   readonly setTimer: (callback: () => void, ms: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;
 }
@@ -86,6 +88,8 @@ class Session implements HubListener {
   /** Bumped by every watch, so an answer to an older watch is dropped. */
   #generation = 0;
   #computing = false;
+  /** Until this time a failed sizing is not tried again by a tick: the details read it needs is not cached on failure. */
+  #retryAt = 0;
   /** The next sizing to do: a streamed quote, or `null` inside for the snapshot read of a new watch. */
   #pending: { readonly quote: Quote | null } | null = null;
   #closed = false;
@@ -122,7 +126,11 @@ class Session implements HubListener {
       ask: quote.ask,
       receivedAt: quote.receivedAt,
     });
-    if (this.#entry !== null && quote.symbol === this.#entry.symbol) {
+    if (
+      this.#entry !== null &&
+      quote.symbol === this.#entry.symbol &&
+      this.#deps.now() >= this.#retryAt
+    ) {
       this.#pending = { quote };
       void this.#drain();
     }
@@ -141,6 +149,7 @@ class Session implements HubListener {
     this.#generation += 1;
     this.#entry = entry;
     this.#pending = null;
+    this.#retryAt = 0;
     const streamed = [...(entry === null ? [] : [entry.symbol]), ...symbols];
     this.#watching = streamed.length > 0;
     if (!this.#deps.streamAvailable()) {
@@ -181,6 +190,15 @@ class Session implements HubListener {
 
   async #compute(entry: WatchEntry, streamed: Quote | null, generation: number): Promise<void> {
     const result = await this.#deps.prepare(entry, streamed).catch(() => null);
+    // A failed read, or a rejected symbol: neither is cached, so each tick would call the broker again.
+    const failed =
+      result === null ||
+      !result.ok ||
+      (result.value.status === "BLOCKED" &&
+        result.value.reasons.includes("SYMBOL_DETAILS_MISSING"));
+    if (failed && generation === this.#generation) {
+      this.#retryAt = this.#deps.now() + this.#deps.entryRetryMs;
+    }
     if (result === null || !result.ok) return;
     if (generation !== this.#generation || this.#closed) return;
     this.send({
