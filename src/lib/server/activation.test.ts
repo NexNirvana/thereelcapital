@@ -8,6 +8,7 @@ import {
   DEFAULT_STOP_PCT,
   DEFAULT_TRAILING_UNLOCK_PCT,
 } from "#lib/domain/config.ts";
+import { DEFAULT_DAILY_ENTRIES } from "#lib/domain/guards.ts";
 import { activationUrl, newInvitation } from "./activation-link.ts";
 import {
   claimInvitation,
@@ -276,10 +277,13 @@ describe("createClient", () => {
         size_usd: DEFAULT_SIZE_USD,
         stop_pct: DEFAULT_STOP_PCT,
         trailing_unlock_pct: DEFAULT_TRAILING_UNLOCK_PCT,
+        // The column default of the migration, which must match DEFAULT_DAILY_ENTRIES.
+        max_daily_entries: DEFAULT_DAILY_ENTRIES,
         updated_at: now,
       },
     ]);
     expect(DEFAULT_SIZE_USD).toBe(20_000);
+    expect(DEFAULT_DAILY_ENTRIES).toBe(3);
     expect(DEFAULT_STOP_PCT).toBe(30);
     expect(DEFAULT_TRAILING_UNLOCK_PCT).toBe(70);
     expect(await findOpenInvitation(db, issued.token, now)).toEqual({

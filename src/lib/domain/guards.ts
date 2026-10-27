@@ -3,8 +3,12 @@
 
 import { isRegularSession } from "./calendar";
 
-/** docs/domain-rules.md §3: entries per client, mode and market session date. */
-export const MAX_DAILY_ENTRIES = 3;
+/**
+ * docs/domain-rules.md §3: entries per client, mode and market session date. The admin sets the
+ * limit per client (D48); a client starts with the default.
+ */
+export const DEFAULT_DAILY_ENTRIES = 3;
+export const DAILY_ENTRIES_BOUNDS = { min: 1, max: 1000 } as const;
 /** docs/domain-rules.md §4: open positions per client and mode. */
 export const MAX_OPEN_POSITIONS = 2;
 
@@ -98,8 +102,20 @@ export function checkOrder(request: OrderRequest, context: OrderContext): GuardR
 }
 
 /** docs/domain-rules.md §3. Entries only: exits never call this. */
-export function canReserveEntry(counters: { consumed: number; reserved: number }): boolean {
-  return counters.consumed + counters.reserved < MAX_DAILY_ENTRIES;
+export function canReserveEntry(
+  counters: { consumed: number; reserved: number },
+  maxDailyEntries: number,
+): boolean {
+  return counters.consumed + counters.reserved < maxDailyEntries;
+}
+
+/** The admin's per-client daily entries limit: a whole number within the bounds. */
+export function isValidDailyEntries(value: number): boolean {
+  return (
+    Number.isSafeInteger(value) &&
+    value >= DAILY_ENTRIES_BOUNDS.min &&
+    value <= DAILY_ENTRIES_BOUNDS.max
+  );
 }
 
 /** docs/domain-rules.md §4. Entries only: exits never call this. */

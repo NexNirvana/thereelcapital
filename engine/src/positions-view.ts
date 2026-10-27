@@ -3,8 +3,8 @@
 
 import type { PendingExitView, PositionView, PositionsView } from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
+import { MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
 import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
-import { entryLimits } from "./entries.ts";
 
 type PositionRow = {
   id: string;
@@ -102,5 +102,5 @@ export function readPositionsView(sql: SqlStorage, now: number): PositionsView {
         row.has_broker_order === 1 &&
         (row.state === "ACKNOWLEDGED" || row.state === "PARTIAL"),
     }));
-  return { positions, pending, maxPositions: entryLimits({ sql, now }).maxPositions };
+  return { positions, pending, maxPositions: MAX_OPEN_POSITIONS };
 }

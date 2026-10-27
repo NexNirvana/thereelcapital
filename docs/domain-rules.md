@@ -21,15 +21,17 @@ equities: qty = floorToIncrement(SIZE / ask, increment)    // QuantityFormat.Inc
 
 `newSize > currentSize` or reject. Only an admin can change it; it applies to new entries only.
 
-## 3. Daily entries (3 per client · mode · market session date)
+## 3. Daily entries (the client's limit · mode · market session date)
 
-- `consumed + reserved < 3` to reserve; check and reserve in one synchronous transaction.
+The limit is a per-client setting the admin edits, a whole number from 1 to 1000 and 3 by default (`client_settings.max_daily_entries`, D48). The engine reads it from D1 together with SIZE for every entry.
+
+- `consumed + reserved < maxDailyEntries` to reserve; check and reserve in one synchronous transaction.
 - A BUY intent consumes its reservation on its **first fill** (partial fills and retries of the same intent don't consume again).
 - The reservation is released only on REJECTED or CANCELED with zero fills. UNKNOWN keeps it.
 - Exits never consume or return entries. The limit never blocks exits or cancels.
 - `session_date` comes from the market calendar, not the browser.
 
-## 4. Open positions (2 per client · mode)
+## 4. Open positions (2 per client · mode, fixed)
 
 `open + reservedOpens < 2` to reserve a slot. The slot is freed on a zero-fill REJECTED/CANCELED entry or when the broker reports zero remaining, never when ALL OUT is pressed.
 

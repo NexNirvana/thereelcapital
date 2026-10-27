@@ -53,7 +53,7 @@ Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`);
 4. MARKET, long-only, regular session, in-scope instruments, SIM. Everything else is rejected by the server.
 5. Persist the intent (`OrderConfirmID` = intent id) before every broker call; never retry place or cancel; a timeout means UNKNOWN, which is reconciled.
 6. No `await` between reading and writing counters or ledgers in the DO.
-7. Limits (2 positions, 3 entries per day) block entries, never exits or cancels.
+7. Limits (2 positions; entries per day, 3 by default and set per client by the admin) block entries, never exits or cancels.
 8. Passkey with user verification for everyone, enforced in our own hooks; onboarding only through a single-use activation link the admin shares (the app sends no email); no public sign-up.
 9. Undecided values (`docs/open-questions.md`) stay in one config module. Don't invent values or features (YAGNI).
 10. Elegant code: use a well-chosen library for solved problems, and never hand-keep data that changes over time (dates, hours, tables) in `src/`. See CONTRIBUTING.md#design.

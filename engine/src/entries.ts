@@ -15,7 +15,6 @@ import {
   canReserveEntry,
   canReserveSlot,
   checkOrder,
-  MAX_DAILY_ENTRIES,
   MAX_OPEN_POSITIONS,
   type RejectionReason,
 } from "#lib/domain/guards.ts";
@@ -112,7 +111,7 @@ interface Sized {
 
 type Evaluation =
   | { readonly kind: "blocked"; readonly reasons: readonly EntryBlockCode[] }
-  | { readonly kind: "ready"; readonly sized: Sized };
+  | { readonly kind: "ready"; readonly sized: Sized; readonly maxDailyEntries: number };
 
 function askOf(quote: Quote | undefined): EntryAsk | null {
   if (quote === undefined) return null;
@@ -190,10 +189,10 @@ function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
 }
 
 /** Daily and slot limits (entries only). Read inside the reservation transaction. */
-function limitReasons(ctx: ConnectionContext): EntryBlockCode[] {
+function limitReasons(ctx: ConnectionContext, maxDailyEntries: number): EntryBlockCode[] {
   const counts = limitCounts(ctx);
   const reasons: EntryBlockCode[] = [];
-  if (!canReserveEntry(counts)) reasons.push("DAILY_ENTRY_LIMIT");
+  if (!canReserveEntry(counts, maxDailyEntries)) reasons.push("DAILY_ENTRY_LIMIT");
   if (!canReserveSlot(counts)) reasons.push("OPEN_POSITION_LIMIT");
   return reasons;
 }
@@ -207,14 +206,17 @@ export interface EntryLimits {
   readonly maxEntries: number;
 }
 
-/** The numbers behind «x/2 posiciones · y/3 entradas hoy»: the same counts that block an entry. */
-export function entryLimits(ctx: Pick<ConnectionContext, "sql" | "now">): EntryLimits {
+/** The numbers behind «x/2 posiciones · y/N entradas hoy», N being the client's own limit: the same counts that block an entry. */
+export function entryLimits(
+  ctx: Pick<ConnectionContext, "sql" | "now">,
+  maxDailyEntries: number,
+): EntryLimits {
   const counts = limitCounts(ctx);
   return {
     positions: counts.open + counts.reservedOpens,
     maxPositions: MAX_OPEN_POSITIONS,
     entriesToday: counts.consumed + counts.reserved,
-    maxEntries: MAX_DAILY_ENTRIES,
+    maxEntries: maxDailyEntries,
   };
 }
 
@@ -296,7 +298,9 @@ async function evaluate(
     pointValue: instrument.pointValue,
   };
   const rejection = guardEntry(ctx, sized);
-  return rejection === null ? success({ kind: "ready", sized }) : blocked(rejection);
+  return rejection === null
+    ? success({ kind: "ready", sized, maxDailyEntries: inputs.maxDailyEntries })
+    : blocked(rejection);
 }
 
 function previewOf(sized: Sized, intentId: string): EntryPreview {
@@ -327,7 +331,7 @@ export async function prepareEntry(
   if (evaluated.value.kind === "blocked") {
     return success({ status: "BLOCKED", reasons: evaluated.value.reasons });
   }
-  const limits = limitReasons(ctx);
+  const limits = limitReasons(ctx, evaluated.value.maxDailyEntries);
   if (limits.length > 0) return success({ status: "BLOCKED", reasons: limits });
   return success(previewOf(evaluated.value.sized, newIntentId()));
 }
@@ -380,7 +384,12 @@ type Reservation =
  * see the same state (order-lifecycle.md, rule 3). Also re-checks what could have changed during
  * the awaits of `evaluate`.
  */
-function reserve(ctx: ConnectionContext, intentId: string, sized: Sized): Reservation {
+function reserve(
+  ctx: ConnectionContext,
+  intentId: string,
+  sized: Sized,
+  maxDailyEntries: number,
+): Reservation {
   return ctx.storage.transactionSync((): Reservation => {
     if (existingIntent(ctx, intentId) !== undefined) return { kind: "replay" };
     if (reconciliationPending(ctx.storage)) {
@@ -388,7 +397,7 @@ function reserve(ctx: ConnectionContext, intentId: string, sized: Sized): Reserv
     }
     const rejection = guardEntry(ctx, sized);
     if (rejection !== null) return { kind: "blocked", reasons: [rejection] };
-    const limits = limitReasons(ctx);
+    const limits = limitReasons(ctx, maxDailyEntries);
     if (limits.length > 0) return { kind: "blocked", reasons: limits };
 
     ctx.sql.exec(
@@ -449,13 +458,13 @@ export async function sendEntry(
   if (evaluated.value.kind === "blocked") {
     return success({ status: "BLOCKED", reasons: evaluated.value.reasons });
   }
-  const { sized } = evaluated.value;
+  const { sized, maxDailyEntries } = evaluated.value;
   // The quantity is the server's. A different confirmed one means the price or SIZE moved.
   if (sized.qty !== args.confirmedQty) {
     return success({ status: "RECONFIRM", preview: previewOf(sized, args.intentId) });
   }
 
-  const reservation = reserve(ctx, args.intentId, sized);
+  const reservation = reserve(ctx, args.intentId, sized, maxDailyEntries);
   if (reservation.kind === "replay") return replayOf(ctx, args) ?? failure("INVALID_INPUT");
   if (reservation.kind === "blocked") {
     return success({ status: "BLOCKED", reasons: reservation.reasons });
