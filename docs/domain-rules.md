@@ -33,7 +33,7 @@ The limit is a per-client setting the admin edits, a whole number from 1 to 1000
 
 ## 4. Open positions (2 per client · mode, fixed)
 
-`open + reservedOpens < 2` to reserve a slot. The slot is freed on a zero-fill REJECTED/CANCELED entry or when the broker reports zero remaining, never when ALL OUT is pressed.
+`open + reservedOpens < 2` to reserve a slot. The slot is freed on a zero-fill REJECTED/CANCELED entry or when the broker reports zero remaining or our own exits have sold the whole position (shared accounts, `order-lifecycle.md`), never when ALL OUT is pressed.
 
 ## 5. Order guards
 
