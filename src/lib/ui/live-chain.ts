@@ -77,55 +77,69 @@ export function chainSymbols(chain: LiveChain): string[] {
     .filter((symbol): symbol is string => symbol !== undefined);
 }
 
-const sideWith = (side: ChainSide | null, bid: number | null, ask: number | null) =>
-  side === null || bid === null || ask === null ? null : { symbol: side.symbol, bid, ask };
+/** Where a contract sits in the chain: its strike's position and which side of it. */
+export type ChainIndex = ReadonlyMap<
+  string,
+  { readonly row: number; readonly side: "call" | "put" }
+>;
 
 /**
- * What a pushed message does to the chain on screen: the new chain, or `null` for no change. A
- * contract that loses one side of its market is shown as missing, never as 0 (like the snapshot).
- * `reference` is the last full read, which names every contract on screen. A side that had no
- * market in it is not watched; the page's slow full read (`refreshMs` of the feed) brings it in.
+ * Indexes the contracts of the last full read by symbol, so a tick finds its row without scanning
+ * the chain. A side that lost its market on screen (null) is still indexed there, which is why the
+ * index comes from the full read and not from what is shown.
  */
-export function chainFromMessage(
-  chain: LiveChain,
-  message: LiveMessage,
-  reference: LiveChain,
-): LiveChain | null {
-  if (message.type === "alive") return { ...chain, receivedAt: message.receivedAt };
-  if (message.type !== "quote") return null;
-  const { symbol, bid, ask, receivedAt } = message;
-  let changed = false;
-  const strikes = chain.strikes.map((row, index) => {
-    // Matched against the last full read, because a side that lost its market on screen (null)
-    // must still be recognized when its market comes back.
-    const known = reference.strikes[index];
-    const callHit = known?.call?.symbol === symbol;
-    const putHit = known?.put?.symbol === symbol;
-    if (!callHit && !putHit) return row;
-    changed = true;
-    return {
-      ...row,
-      call: callHit ? sideWith(known?.call ?? null, bid, ask) : row.call,
-      put: putHit ? sideWith(known?.put ?? null, bid, ask) : row.put,
-    };
+export function indexChain(reference: LiveChain): ChainIndex {
+  const index = new Map<string, { row: number; side: "call" | "put" }>();
+  reference.strikes.forEach((row, position) => {
+    if (row.call !== null) index.set(row.call.symbol, { row: position, side: "call" });
+    if (row.put !== null) index.set(row.put.symbol, { row: position, side: "put" });
   });
-  return changed ? { ...chain, receivedAt, strikes } : { ...chain, receivedAt };
+  return index;
 }
 
 /**
+ * What a run of pushed messages (in the order they arrived) does to the chain on screen: the new
+ * chain, or `null` when none of them is about the chain. Ticks apply in order, so the last one of a
+ * symbol wins; each one touches only its own row, and the rows are copied once for the whole run. A
+ * contract that loses one side of its market is shown as missing, never as 0 (like the snapshot).
+ * `reference` is the last full read, which names every contract on screen. A side that had no
+ * market in it is not watched; the page's slow full read (`refreshMs` of the feed) brings it in.
  * The underlying's own tick moves the price line: the middle of its bid and ask (a pushed quote has
- * no last trade). `null` for any other message, or when the underlying has no two-sided market.
+ * no last trade); with no two-sided market it leaves the price alone.
  */
-export function chainWithUnderlying(
+export function chainFromMessages(
   chain: LiveChain,
-  message: LiveMessage,
+  messages: ReadonlyArray<LiveMessage>,
+  reference: ChainIndex,
   underlying: string,
 ): LiveChain | null {
-  if (message.type !== "quote" || message.symbol !== underlying) return null;
-  if (message.bid === null || message.ask === null) return null;
-  return {
-    ...chain,
-    receivedAt: message.receivedAt,
-    underlyingPrice: Math.round((message.bid + message.ask) / 2),
-  };
+  let strikes: ChainStrike[] | null = null;
+  let receivedAt = chain.receivedAt;
+  let underlyingPrice = chain.underlyingPrice;
+  let touched = false;
+  for (const message of messages) {
+    if (message.type === "alive") {
+      receivedAt = message.receivedAt;
+      touched = true;
+      continue;
+    }
+    if (message.type !== "quote") continue;
+    touched = true;
+    receivedAt = message.receivedAt;
+    const { symbol, bid, ask } = message;
+    if (symbol === underlying && bid !== null && ask !== null) {
+      underlyingPrice = Math.round((bid + ask) / 2);
+      continue;
+    }
+    const hit = reference.get(symbol);
+    if (hit === undefined) continue;
+    strikes ??= chain.strikes.slice();
+    const row = strikes[hit.row];
+    if (row === undefined) continue;
+    const side = bid === null || ask === null ? null : { symbol, bid, ask };
+    strikes[hit.row] = hit.side === "call" ? { ...row, call: side } : { ...row, put: side };
+  }
+  if (!touched) return null;
+  const next = { ...chain, receivedAt, strikes: strikes ?? chain.strikes };
+  return underlyingPrice === undefined ? next : { ...next, underlyingPrice };
 }
