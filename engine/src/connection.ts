@@ -149,12 +149,15 @@ export async function completeConnection(
 
   const listed = await listTradableAccounts(tokens.accessToken);
   if (!listed.ok) {
-    // Do not keep a grant the client cannot see; undo it at TradeStation, best effort.
-    const revoked = await revokeRefreshToken({
-      clientId,
-      clientSecret,
-      refreshToken: tokens.refreshToken,
-    });
+    // Do not keep a grant the client cannot see; undo it at TradeStation, best effort. Not while
+    // another connection uses the key: a revocation ends every grant of the key (D49).
+    const revoked = (await keyIsShared(ctx.db, ctx.userId, clientId))
+      ? { ok: false as const }
+      : await revokeRefreshToken({
+          clientId,
+          clientSecret,
+          refreshToken: tokens.refreshToken,
+        });
     if (revoked.ok) {
       // Revocation covers every refresh token of the API key, so a connection already stored for
       // this same key just died. A connection with another key is untouched.
@@ -184,7 +187,11 @@ export async function completeConnection(
       refresh_token_enc: string;
       key_id: string;
     }>();
-  if (previous !== null && previous.client_id !== clientId) {
+  if (
+    previous !== null &&
+    previous.client_id !== clientId &&
+    !(await keyIsShared(ctx.db, ctx.userId, previous.client_id))
+  ) {
     try {
       await revokeRefreshToken({
         clientId: previous.client_id,
@@ -319,11 +326,29 @@ export function connectionViewOf(
 }
 
 /**
- * Revokes at TradeStation, then forgets the credentials. Revocation covers every refresh token of
- * the client's API key (official docs). If it cannot be done the credentials are still deleted, and
- * the caller is told so the client can revoke from their TradeStation account.
+ * Whether another connection uses the same API key (docs/decisions.md D49). Revoking a refresh
+ * token revokes ALL of the key's tokens (official docs), which would disconnect those clients. Only
+ * this yes/no leaves the query; nothing of the other connection is read.
  */
-export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boolean }> {
+async function keyIsShared(db: D1Database, userId: string, clientId: string): Promise<boolean> {
+  const other = await db
+    .prepare(
+      "SELECT 1 AS shared FROM broker_connection WHERE client_id = ? AND user_id != ? LIMIT 1",
+    )
+    .bind(clientId, userId)
+    .first();
+  return other !== null;
+}
+
+/**
+ * Revokes at TradeStation, then forgets the credentials. Revocation covers every refresh token of
+ * the client's API key (official docs), so it is skipped (`sharedKey`) while another connection
+ * uses the same key. If it cannot be done the credentials are still deleted, and the caller is told
+ * so the client can revoke from their TradeStation account.
+ */
+export async function disconnect(
+  ctx: ConnectionContext,
+): Promise<{ revoked: boolean; sharedKey: boolean }> {
   const row = await ctx.db
     .prepare(
       "SELECT client_id, client_secret_enc, refresh_token_enc, key_id FROM broker_connection WHERE user_id = ?",
@@ -337,25 +362,28 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
     }>();
 
   let revoked = false;
+  const sharedKey = row !== null && (await keyIsShared(ctx.db, ctx.userId, row.client_id));
   if (row !== null) {
-    try {
-      const cipher = await ctx.cipher();
-      const outcome = await revokeRefreshToken({
-        clientId: row.client_id,
-        clientSecret: await cipher.decrypt(
-          row.client_secret_enc,
-          secretContext(ctx.userId),
-          row.key_id,
-        ),
-        refreshToken: await cipher.decrypt(
-          row.refresh_token_enc,
-          refreshContext(ctx.userId),
-          row.key_id,
-        ),
-      });
-      revoked = outcome.ok;
-    } catch {
-      // A value that no longer decrypts (key rotated) cannot be revoked, only deleted.
+    if (!sharedKey) {
+      try {
+        const cipher = await ctx.cipher();
+        const outcome = await revokeRefreshToken({
+          clientId: row.client_id,
+          clientSecret: await cipher.decrypt(
+            row.client_secret_enc,
+            secretContext(ctx.userId),
+            row.key_id,
+          ),
+          refreshToken: await cipher.decrypt(
+            row.refresh_token_enc,
+            refreshContext(ctx.userId),
+            row.key_id,
+          ),
+        });
+        revoked = outcome.ok;
+      } catch {
+        // A value that no longer decrypts (key rotated) cannot be revoked, only deleted.
+      }
     }
     // Tied to the token read above: a connection completed during the revoke await has another
     // token and must survive.
@@ -364,7 +392,7 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
       .bind(ctx.userId, row.refresh_token_enc)
       .run();
     // Same reason for the account cache: it belongs to the connection that was just removed.
-    if (removed.meta.changes === 0) return { revoked };
+    if (removed.meta.changes === 0) return { revoked, sharedKey };
   }
   ctx.tokens.forget();
   ctx.storage.transactionSync(() => {
@@ -374,6 +402,9 @@ export async function disconnect(ctx: ConnectionContext): Promise<{ revoked: boo
     // entries stay blocked until a later connection has been reconciled.
     holdForReconciliation(ctx.storage);
   });
-  logEvent(ctx, revoked || row === null ? "info" : "warn", "broker.disconnected", { revoked });
-  return { revoked };
+  logEvent(ctx, revoked || sharedKey || row === null ? "info" : "warn", "broker.disconnected", {
+    revoked,
+    sharedKey,
+  });
+  return { revoked, sharedKey };
 }

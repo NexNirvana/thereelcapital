@@ -336,19 +336,74 @@ describe("failures", () => {
         state.storage.sql.exec("SELECT protection_state FROM positions").one().protection_state,
     );
 
-  it("treats a refused refresh as revoked, blocks entries and marks protection unverified", async () => {
+  it("retries a refused refresh with a doubling wait, and revokes only after the fifth in a row", async () => {
     const client = await newClient();
     await seedPosition(client);
     respond = () => json({ error: "invalid_grant", error_description: OLD_REFRESH }, 400);
-    await withRefresher(client, async (tokens, _t, deps) => {
+    await withRefresher(client, async (tokens, time, deps) => {
+      const waits: unknown[] = [];
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        const outcome = await tokens.refresh();
+        expect(outcome.kind).toBe("retryable");
+        waits.push((outcome as { retryAfterMs?: number }).retryAfterMs);
+        // Blocked and unverified while it is not known to work, but not revoked.
+        expect(reconciliationPending(deps.storage)).toBe(true);
+        expect((await storedRow(client.userId))?.status).toBe("ERROR");
+        // Callers that ask again inside the wait do not reach TradeStation.
+        expect(await tokens.refresh()).toMatchObject({ kind: "retryable" });
+        expect(bodies).toHaveLength(attempt);
+        time.now += waits.at(-1) as number;
+      }
+      expect(waits).toEqual([60_000, 120_000, 240_000, 480_000]);
       expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "REVOKED" });
+      expect(bodies).toHaveLength(5);
       expect(await tokens.accessToken()).toMatchObject({ ok: false });
-      expect(reconciliationPending(deps.storage)).toBe(true);
     });
     expect((await storedRow(client.userId))?.status).toBe("REVOKED");
     expect(await protectionOf(client)).toBe("unverified");
+    const events = await eventsOf(client);
+    const failed = events.filter((event) => event.type === "broker.refresh_failed");
+    expect(failed).toHaveLength(5);
+    expect(JSON.parse(String(failed[0]?.data_json))).toMatchObject({
+      state: "ERROR",
+      reason: "REJECTED",
+      status: 400,
+      code: "invalid_grant",
+      rejections: 1,
+    });
+    expect(JSON.parse(String(failed[4]?.data_json))).toMatchObject({
+      state: "REVOKED",
+      rejections: 5,
+    });
+    for (const secret of SECRETS) expect(JSON.stringify(events)).not.toContain(secret);
+  });
+
+  it("recovers when a refused refresh works again, and counts the next refusals from zero", async () => {
+    const client = await newClient();
+    respond = () => json({ error: "invalid_grant" }, 403);
+    await withRefresher(client, async (tokens, time) => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const outcome = await tokens.refresh();
+        time.now += (outcome as { retryAfterMs: number }).retryAfterMs;
+      }
+      respond = () => json({ access_token: ACCESS, expires_in: 1200 });
+      expect(await tokens.refresh()).toMatchObject({ kind: "ready" });
+      expect((await storedRow(client.userId))?.status).toBe("CONNECTED");
+
+      respond = () => json({ error: "invalid_grant" }, 403);
+      time.now += 20 * MINUTE;
+      expect(await tokens.refresh()).toEqual({ kind: "retryable", retryAfterMs: 60_000 });
+    });
+  });
+
+  it("keeps only a standard OAuth error code of a refusal, never free text", async () => {
+    const client = await newClient();
+    respond = () => json({ error: `secret ${OLD_REFRESH}`, error_description: CLIENT_SECRET }, 400);
+    await withRefresher(client, async (tokens) => {
+      await tokens.refresh();
+    });
     const events = JSON.stringify(await eventsOf(client));
-    expect(events).toContain("broker.refresh_failed");
+    expect(events).toContain('\\"code\\":\\"other\\"');
     for (const secret of SECRETS) expect(events).not.toContain(secret);
   });
 
@@ -574,19 +629,17 @@ describe("connection RPC", () => {
 
 // Bodies recorded from the SIM token endpoint (SIM spike of 2026-10-22, #21).
 describe("recorded SIM answers", () => {
-  it("treats the recorded 403 invalid_grant as revoked, once and for good", async () => {
+  it("reads the recorded 403 invalid_grant as a refusal that is retried before it is final", async () => {
     const client = await newClient();
     const { status, body } = refreshRefusedSample.response;
     expect(status).toBe(403);
     respond = () => json(body, status);
     await withRefresher(client, async (tokens) => {
-      expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "REVOKED" });
-      expect(bodies).toHaveLength(1); // a refusal is never retried
-      expect(await tokens.accessToken()).toMatchObject({ ok: false });
-      expect(await tokens.refresh()).toEqual({ kind: "terminal", state: "REVOKED" });
-      expect(bodies).toHaveLength(1); // and no later call reaches TradeStation
+      expect(await tokens.refresh()).toEqual({ kind: "retryable", retryAfterMs: 60_000 });
+      expect(bodies).toHaveLength(1); // one request per attempt, never a burst
     });
-    expect((await storedRow(client.userId))?.status).toBe("REVOKED");
+    expect((await storedRow(client.userId))?.status).toBe("ERROR");
+    expect(JSON.stringify(await eventsOf(client))).toContain('\\"code\\":\\"invalid_grant\\"');
   });
 
   it("reads the recorded grant: 1200 s access token and no rotated refresh token", async () => {

@@ -71,6 +71,9 @@
     <Notice title="Desconectado">
       {#if form.revoked}
         Revocamos el acceso en TradeStation y borramos tus credenciales.
+      {:else if form.sharedKey}
+        Borramos tus credenciales. No revocamos el acceso en TradeStation porque otra conexión usa
+        la misma API key y se desconectaría.
       {:else}
         Borramos tus credenciales, pero no pudimos revocar el acceso en TradeStation. Revócalo desde
         tu cuenta de TradeStation.

@@ -4,6 +4,8 @@
 // already in flight is shared (single flight) rather than repeated.
 import {
   ACCESS_TOKEN_REFRESH_MARGIN_MS,
+  REFRESH_REJECTIONS_BEFORE_REVOKED,
+  REFRESH_RETRY_DELAY_MS,
   ROTATING_REFRESH_LIFETIME_MS,
 } from "#lib/domain/config.ts";
 import type { StoredConnectionState } from "#lib/domain/connection.ts";
@@ -21,6 +23,16 @@ const RECONCILIATION_PENDING_KEY = "reconciliation_pending";
  * copy. `replaces` is the D1 ciphertext it supersedes.
  */
 const UNSAVED_REFRESH_KEY = "unsaved_refresh_token";
+/**
+ * Consecutive refused refreshes (4xx) and when the next attempt may go out, kept across an
+ * eviction; any success or reconnect clears it. Callers that need a token (every sync tick) must not
+ * turn the backoff into a burst of attempts.
+ */
+const REFRESH_REJECTIONS_KEY = "refresh_rejections";
+interface RefreshRejections {
+  readonly count: number;
+  readonly retryAt: number;
+}
 interface UnsavedRefreshToken {
   readonly tokenEnc: string;
   readonly replaces: string;
@@ -50,8 +62,8 @@ export type RefreshOutcome =
   | { readonly kind: "none" }
   /** Refreshing cannot work until the client reconnects. */
   | { readonly kind: "terminal"; readonly state: "EXPIRED" | "REVOKED" }
-  /** Might pass by itself; try again later. */
-  | { readonly kind: "retryable" };
+  /** Might pass by itself; try again later (after `retryAfterMs` when given). */
+  | { readonly kind: "retryable"; readonly retryAfterMs?: number };
 
 interface ConnectionRow extends Record<string, SqlStorageValue> {
   client_id: string;
@@ -78,6 +90,7 @@ export class TokenRefresher {
     this.deps.changed?.();
     this.#access = { token: accessToken, expiresAt: this.deps.clock() + expiresInSeconds * 1000 };
     this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
+    this.deps.storage.kv.delete(REFRESH_REJECTIONS_KEY);
   }
 
   forget(): void {
@@ -85,6 +98,7 @@ export class TokenRefresher {
     this.deps.changed?.();
     this.#access = null;
     this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
+    this.deps.storage.kv.delete(REFRESH_REJECTIONS_KEY);
   }
 
   /** When the access token should be refreshed; null while there is none. */
@@ -150,6 +164,11 @@ export class TokenRefresher {
       return this.#fail(row, generation, { kind: "terminal", state: "EXPIRED" }, "EXPIRY_PASSED");
     }
 
+    const rejected = this.deps.storage.kv.get<RefreshRejections>(REFRESH_REJECTIONS_KEY);
+    if (rejected !== undefined && clock() < rejected.retryAt) {
+      return { kind: "retryable", retryAfterMs: rejected.retryAt - clock() };
+    }
+
     let clientSecret: string;
     let refreshToken: string;
     let storedToken: string;
@@ -187,12 +206,28 @@ export class TokenRefresher {
     const now = clock();
 
     if (!result.ok) {
+      if (result.failure !== "REJECTED") {
+        return this.#fail(row, generation, { kind: "retryable" }, result.failure, result.status);
+      }
+      // A refusal is not final at once: with an API key shared by several clients, a refresh
+      // token can be refused for a while and then work (docs/decisions.md D49). Retry with a
+      // doubling wait, and give up only after REFRESH_REJECTIONS_BEFORE_REVOKED in a row.
+      const rejections = (rejected?.count ?? 0) + 1;
+      const retryAfterMs = REFRESH_RETRY_DELAY_MS * 2 ** (rejections - 1);
+      this.deps.storage.kv.put<RefreshRejections>(REFRESH_REJECTIONS_KEY, {
+        count: rejections,
+        retryAt: now + retryAfterMs,
+      });
       const outcome: RefreshOutcome =
-        result.failure === "REJECTED"
+        rejections >= REFRESH_REJECTIONS_BEFORE_REVOKED
           ? { kind: "terminal", state: "REVOKED" }
-          : { kind: "retryable" };
-      return this.#fail(row, generation, outcome, result.failure, result.status);
+          : { kind: "retryable", retryAfterMs };
+      return this.#fail(row, generation, outcome, result.failure, result.status, {
+        code: result.code ?? null,
+        rejections,
+      });
     }
+    this.deps.storage.kv.delete(REFRESH_REJECTIONS_KEY);
 
     const tokens = result.value;
     const accessExpiresAt = now + tokens.expiresInSeconds * 1000;
@@ -303,6 +338,7 @@ export class TokenRefresher {
     outcome: Exclude<RefreshOutcome, { kind: "ready" | "none" }>,
     reason: string,
     httpStatus?: number,
+    detail: Record<string, unknown> = {},
   ): Promise<RefreshOutcome> {
     const { sql, storage, db, userId, clock } = this.deps;
     if (generation !== this.#generation) return { kind: "none" };
@@ -328,6 +364,7 @@ export class TokenRefresher {
       reason,
       status: httpStatus ?? null,
       recorded,
+      ...detail,
     });
     return outcome;
   }
