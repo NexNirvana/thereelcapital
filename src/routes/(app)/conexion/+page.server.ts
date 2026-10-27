@@ -171,6 +171,6 @@ export const actions: Actions = {
       .catch(() => null);
     if (result === null) return unavailable();
     if (!result.ok) return fail(502, { code: result.code, message: result.message });
-    return { disconnected: true, revoked: result.value.revoked };
+    return { disconnected: true, revoked: result.value.revoked, sharedKey: result.value.sharedKey };
   },
 };

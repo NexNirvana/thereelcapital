@@ -106,7 +106,8 @@ const RETRIES = 2;
  * The `refresh_token` grant. The only broker call that is retried: it is idempotent for a
  * non-rotating key, and a rotating key only invalidates the old token once it has answered.
  * Retries cover an unreachable or failing TradeStation (5xx, 429, network), never a refusal.
- * The error body of a refused refresh is not documented, so any other 4xx is terminal: (verify).
+ * A refused refresh (4xx) is reported with its OAuth error code; the caller decides how many to bear
+ * (SIM sample: 403 `invalid_grant`, engine/test/fixtures/sim/refresh/).
  */
 export async function refreshAccessToken(
   args: { clientId: string; clientSecret: string; refreshToken: string },

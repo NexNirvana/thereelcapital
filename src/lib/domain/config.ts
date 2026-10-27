@@ -57,6 +57,14 @@ export const REFRESH_EXPIRY_WARNING_MS = 2 * 60 * 60 * 1000;
 /** Wait before the engine tries again after a refresh failed for a reason that may pass. */
 export const REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
+/**
+ * UNDECIDED (docs/open-questions.md): how many consecutive refused refreshes (4xx) a connection
+ * survives before it is marked REVOKED. The wait before each retry doubles from
+ * REFRESH_RETRY_DELAY_MS, so 5 attempts span about 15 minutes. A refusal may be transient when an API
+ * key is shared by several clients.
+ */
+export const REFRESH_REJECTIONS_BEFORE_REVOKED = 5;
+
 /** Wait before the sync loop tries again after a tick failed; decided equal to the refresh retry. */
 export const SYNC_RETRY_DELAY_MS = 60 * 1000;
 

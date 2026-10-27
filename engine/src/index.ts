@@ -483,7 +483,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         if (outcome.kind === "ready") await this.scheduleRefresh(tokens.nextRefreshAt());
         // A refusal or a missing connection waits for a reconnect, which arms the alarm again.
         else if (outcome.kind === "retryable") {
-          await this.scheduleRefresh(this.#now() + REFRESH_RETRY_DELAY_MS);
+          await this.scheduleRefresh(
+            this.#now() + (outcome.retryAfterMs ?? REFRESH_RETRY_DELAY_MS),
+          );
         }
         return;
       }
@@ -512,7 +514,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   /** Revokes the grant at TradeStation and deletes the stored credentials. */
-  disconnect(input: unknown): Promise<EngineResult<{ revoked: boolean }>> {
+  disconnect(input: unknown): Promise<EngineResult<{ revoked: boolean; sharedKey: boolean }>> {
     return this.enterWithConnection("disconnect", ModeOnlyArgs, input, async (ctx) => {
       const result = success(await disconnect(ctx));
       // forget() ran synchronously inside disconnect and a reconnect would have seeded a token, so

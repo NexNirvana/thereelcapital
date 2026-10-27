@@ -36,7 +36,9 @@ const ACCOUNTS = {
 let calls: Call[] = [];
 let responders: Record<"token" | "accounts" | "revoke", Responder>;
 
-beforeEach(() => {
+// Connections of earlier tests share the API key, which would count as a shared key (D49).
+beforeEach(async () => {
+  await env.DB.prepare("DELETE FROM broker_connection").run();
   calls = [];
   responders = {
     token: () =>
@@ -554,6 +556,20 @@ describe("a failed reconnect", () => {
     expect((await storedConnections(client.userId)).results).toHaveLength(1);
   });
 
+  it("does not revoke the key when another connection uses it", async () => {
+    const client = await newClient();
+    const other = await newClient();
+    await connect(client);
+    await connect(other);
+    calls = [];
+    responders.accounts = () => new Response("down", { status: 503 });
+    const { state } = await begin(client);
+    await complete(client, state);
+    expect(calls.some((call) => call.url.endsWith("/oauth/revoke"))).toBe(false);
+    expect((await storedConnections(client.userId)).results).toHaveLength(1);
+    expect((await storedConnections(other.userId)).results).toHaveLength(1);
+  });
+
   it("keeps the stored connection when the revocation did not go through", async () => {
     const client = await newClient();
     await connect(client);
@@ -566,6 +582,17 @@ describe("a failed reconnect", () => {
 });
 
 describe("switching to another API key", () => {
+  it("does not revoke the previous key while another connection uses it", async () => {
+    const client = await newClient();
+    const other = await newClient();
+    await connect(client);
+    await connect(other);
+    calls = [];
+    const { state } = await begin(client, "another-client-id-0123456789");
+    expect(await complete(client, state)).toMatchObject({ ok: true });
+    expect(calls.some((call) => call.url.endsWith("/oauth/revoke"))).toBe(false);
+  });
+
   it("revokes the previous key's grant before replacing it", async () => {
     const client = await newClient();
     await connect(client);
@@ -584,7 +611,7 @@ describe("disconnect", () => {
     const client = await newClient();
     await connect(client);
     const result = await client.stub.disconnect({ mode: "SIM" });
-    expect(result).toEqual({ ok: true, value: { revoked: true } });
+    expect(result).toEqual({ ok: true, value: { revoked: true, sharedKey: false } });
 
     const revoke = calls.find(
       (call) => call.url === "https://signin.tradestation.com/oauth/revoke",
@@ -608,16 +635,37 @@ describe("disconnect", () => {
     responders.revoke = () => new Response("nope", { status: 500 });
     expect(await client.stub.disconnect({ mode: "SIM" })).toEqual({
       ok: true,
-      value: { revoked: false },
+      value: { revoked: false, sharedKey: false },
     });
     expect((await storedConnections(client.userId)).results).toEqual([]);
+  });
+
+  it("does not revoke a key another connection uses, since that would revoke theirs too", async () => {
+    const alice = await newClient();
+    const bob = await newClient();
+    await connect(alice);
+    await connect(bob); // same API key (D49)
+    calls = [];
+    expect(await alice.stub.disconnect({ mode: "SIM" })).toEqual({
+      ok: true,
+      value: { revoked: false, sharedKey: true },
+    });
+    expect(calls.some((call) => call.url.endsWith("/oauth/revoke"))).toBe(false);
+    expect((await storedConnections(alice.userId)).results).toEqual([]);
+    expect((await storedConnections(bob.userId)).results).toHaveLength(1);
+
+    // Alone on the key now, the last one out revokes it.
+    expect(await bob.stub.disconnect({ mode: "SIM" })).toEqual({
+      ok: true,
+      value: { revoked: true, sharedKey: false },
+    });
   });
 
   it("is harmless when nothing is connected", async () => {
     const client = await newClient();
     expect(await client.stub.disconnect({ mode: "SIM" })).toEqual({
       ok: true,
-      value: { revoked: false },
+      value: { revoked: false, sharedKey: false },
     });
     expect(calls).toEqual([]);
   });

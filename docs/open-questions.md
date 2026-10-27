@@ -26,4 +26,6 @@ Timing values are decided: D33 in [decisions.md](decisions.md).
 
 ## Config values to confirm
 
-None open. Questions 14 and 15 (`SYNC_MIN_INTERVAL_MS`, `PROTECTION_SETTINGS_TTL_MS`) were decided on 2026-10-23: see D40 in [decisions.md](decisions.md).
+Questions 14 and 15 (`SYNC_MIN_INTERVAL_MS`, `PROTECTION_SETTINGS_TTL_MS`) were decided on 2026-10-23: see D40 in [decisions.md](decisions.md).
+
+16. `REFRESH_REJECTIONS_BEFORE_REVOKED` (currently 5, `src/lib/domain/config.ts`): how many refused refreshes in a row before a connection is marked revoked; the wait doubles from 1 minute. Provisional since 2026-10-27 (D49); the owner decides, ideally after the `broker.refresh_failed` codes of the shared key are read.
