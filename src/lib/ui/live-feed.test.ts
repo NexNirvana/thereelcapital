@@ -186,6 +186,7 @@ describe("parseLiveMessage", () => {
           assetType: "equity",
           qty: 2,
           sizeMicros: 1,
+          sizeChoice: "down25",
           askMicros: 2,
         },
         receivedAt: 3,

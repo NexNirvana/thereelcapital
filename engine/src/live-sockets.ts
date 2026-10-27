@@ -3,7 +3,7 @@
 // The client is the Durable Object that owns these sockets; the web Worker already checked the
 // session and addressed this object by it, so nothing a browser sends names a client.
 //
-// What a browser may say is only a watch: an entry (account, symbol, kind) and symbols. Sizing is
+// What a browser may say is only a watch: an entry (account, symbol, kind, size choice) and symbols. Sizing is
 // the engine's: on each tick of the entry's symbol the quote goes out at once, then the quantity is
 // computed again from the client's SIZE and the streamed ask, with the same rules as prepareEntry,
 // from inputs the engine holds in memory (entry-inputs.ts). The order is still sized from a fresh
@@ -16,6 +16,7 @@ import {
   type LiveMessage,
   type WatchEntry,
 } from "#lib/domain/live-protocol.ts";
+import { SIZE_CHOICES } from "#lib/domain/sizing.ts";
 import type { Quote } from "./broker/adapter.ts";
 import type { PrepareEntryResult } from "./entries.ts";
 import type { HubListener, QuoteHub } from "./quote-hub.ts";
@@ -39,6 +40,7 @@ const WatchMessage = Schema.Struct({
       accountId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
       symbol: Schema.String.check(Schema.isPattern(WATCH_SYMBOL)),
       assetType: Schema.Literals(["equity", "option"]),
+      sizeChoice: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
     }),
   ),
   symbols: Schema.optionalKey(Symbols),
@@ -76,6 +78,7 @@ function updateOf(result: PrepareEntryResult): EntryUpdate {
         assetType: result.assetType,
         qty: result.qty,
         sizeMicros: result.sizeMicros,
+        sizeChoice: result.sizeChoice,
         askMicros: result.askMicros,
       }
     : { status: "blocked", reasons: result.reasons };

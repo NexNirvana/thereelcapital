@@ -2,7 +2,9 @@ import { json } from "@sveltejs/kit";
 import { env } from "cloudflare:workers";
 import { blockMessage } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
-import { ASSET_TYPE, EntryQuery, SYMBOL } from "#lib/server/entry-query.ts";
+import { ASSET_TYPE, EntryQuery, SYMBOL, sizeChoiceArg } from "#lib/server/entry-query.ts";
+import { choiceApplied } from "#lib/domain/sizing.ts";
+import { SIZE_CHOICE_MISMATCH } from "#lib/ui/live-entry.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { RequestHandler } from "./$types";
@@ -29,6 +31,7 @@ export const GET: RequestHandler = async (event) => {
       accountId: query.cuenta,
       symbol,
       assetType: ASSET_TYPE[query.tipo ?? "acciones"],
+      ...sizeChoiceArg(query.tamano),
     })
     .catch(() => null);
   if (prepared === null) return json({ status: "unavailable" }, { status: 502, headers: noStore });
@@ -45,11 +48,22 @@ export const GET: RequestHandler = async (event) => {
       { headers: noStore },
     );
   }
-  const { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType } = prepared.value;
+  // An engine that ignored the choice would show a quantity the order would not follow (D51).
+  if (!choiceApplied(query.tamano ?? "full", prepared.value.sizeChoice)) {
+    return json({ status: "blocked", message: SIZE_CHOICE_MISMATCH }, { headers: noStore });
+  }
+  const {
+    symbol: preparedSymbol,
+    qty,
+    sizeMicros,
+    sizeChoice,
+    askMicros,
+    assetType,
+  } = prepared.value;
   return json(
     {
       status: "ready",
-      preview: { symbol: preparedSymbol, qty, sizeMicros, askMicros, assetType },
+      preview: { symbol: preparedSymbol, qty, sizeMicros, sizeChoice, askMicros, assetType },
       receivedAt: Date.now(),
     },
     { headers: noStore },

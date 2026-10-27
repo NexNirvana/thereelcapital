@@ -10,6 +10,7 @@
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
   import type { LiveMessage } from "#lib/domain/live-protocol.ts";
+  import type { SizeChoice } from "#lib/domain/sizing.ts";
   import Button from "./Button.svelte";
   import {
     DEFAULT_STRIKE_COUNT,
@@ -56,6 +57,7 @@
     initialStrike,
     initialCount,
     chosenSymbol,
+    sizeChoice,
   }: {
     view: ChainView;
     accountId: string | null;
@@ -66,6 +68,8 @@
     initialCount: StrikeCount;
     /** The option symbol picked earlier, so its price stays marked. */
     chosenSymbol: string;
+    /** The one-entry SIZE choice (D51); the links below keep it while the contract changes. */
+    sizeChoice: SizeChoice;
   } = $props();
 
   const entryPath = resolve("/(app)/operar");
@@ -73,6 +77,7 @@
     new URLSearchParams({
       tipo: "opciones",
       ...(accountId === null ? {} : { cuenta: accountId }),
+      ...(sizeChoice === "full" ? {} : { tamano: sizeChoice }),
       ...extra,
     });
   let center = $derived(initialStrike);
@@ -295,6 +300,7 @@
     tipo: "opciones",
     subyacente: view.underlying,
     ...(accountId === null ? {} : { cuenta: accountId }),
+    ...(sizeChoice === "full" ? {} : { tamano: sizeChoice }),
     ...countQuery,
   });
   const expirationHref = (isoDate: string) =>
@@ -330,6 +336,9 @@
 
 <form method="GET" action={entryPath} class="search" onsubmit={onsearch}>
   <input type="hidden" name="tipo" value="opciones" />
+  {#if sizeChoice !== "full"}
+    <input type="hidden" name="tamano" value={sizeChoice} />
+  {/if}
   {#if accounts.length > 1}
     <div class="field">
       <label for="cuenta">Cuenta</label>

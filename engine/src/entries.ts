@@ -18,7 +18,13 @@ import {
   MAX_OPEN_POSITIONS,
   type RejectionReason,
 } from "#lib/domain/guards.ts";
-import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/domain/sizing.ts";
+import {
+  appliedSize,
+  computeEntryQty,
+  type EntryAsk,
+  type EntryBlockReason,
+  type SizeChoice,
+} from "#lib/domain/sizing.ts";
 import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./broker/adapter.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
@@ -59,7 +65,10 @@ export interface EntryPreview {
   readonly symbol: string;
   readonly assetType: "equity" | "option";
   readonly qty: number;
+  /** The SIZE this entry is sized with: the client's SIZE or the share they chose (D51). */
   readonly sizeMicros: number;
+  /** Echo of the choice applied, so the web Worker can refuse an engine that ignored it. */
+  readonly sizeChoice: SizeChoice;
   readonly askMicros: number;
   readonly pointValue: number;
   /** ask × qty × point value (options); the SIZE is a target, a MARKET fill can cost more. */
@@ -104,6 +113,7 @@ interface Sized {
   readonly tradeAction: "BUY" | "BUYTOOPEN";
   readonly qty: number;
   readonly sizeMicros: number;
+  readonly sizeChoice: SizeChoice;
   readonly quote: Quote;
   readonly askMicros: number;
   readonly pointValue: number;
@@ -258,7 +268,9 @@ async function evaluate(
   if (inputs.sizeUsd === null || !Number.isSafeInteger(inputs.sizeUsd * MICROS_PER_USD)) {
     return blocked("SIZE_UNAVAILABLE");
   }
-  const sizeMicros = inputs.sizeUsd * MICROS_PER_USD;
+  // The browser names only the choice; the SIZE is the client's, read from D1 (D51).
+  const sizeChoice = args.sizeChoice ?? "full";
+  const sizeMicros = appliedSize(inputs.sizeUsd * MICROS_PER_USD, sizeChoice);
 
   if (!details.ok) {
     if (details.error._tag === "Rejected") {
@@ -296,6 +308,7 @@ async function evaluate(
     tradeAction: args.assetType === "equity" ? "BUY" : "BUYTOOPEN",
     qty: qty.qty,
     sizeMicros,
+    sizeChoice,
     quote,
     askMicros: quote.ask,
     pointValue: instrument.pointValue,
@@ -316,6 +329,7 @@ function previewOf(sized: Sized, intentId: string): EntryPreview {
     assetType: sized.assetType,
     qty: sized.qty,
     sizeMicros: sized.sizeMicros,
+    sizeChoice: sized.sizeChoice,
     askMicros: sized.askMicros,
     pointValue: sized.pointValue,
     estimatedCostMicros: Number(BigInt(sized.askMicros) * BigInt(sized.qty) * BigInt(multiplier)),
@@ -412,8 +426,8 @@ function reserve(
     ctx.sql.exec(
       `INSERT INTO intents
          (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, size_applied,
-          quote_json, point_value, state, order_confirm_id, created_at, updated_at)
-       VALUES (?, 'SIM', 'entry', ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
+          size_choice, quote_json, point_value, state, order_confirm_id, created_at, updated_at)
+       VALUES (?, 'SIM', 'entry', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
       intentId,
       sized.accountId,
       sized.symbol,
@@ -421,6 +435,7 @@ function reserve(
       sized.tradeAction,
       sized.qty,
       sized.sizeMicros,
+      sized.sizeChoice,
       JSON.stringify({
         bid: quote.bid,
         ask: quote.ask,

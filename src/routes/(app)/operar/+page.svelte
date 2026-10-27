@@ -2,6 +2,8 @@
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
+  import { page } from "$app/state";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
   import Notice from "#lib/ui/Notice.svelte";
@@ -14,7 +16,12 @@
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
   import OptionChainPanel from "#lib/ui/OptionChainPanel.svelte";
   import type { ChainView } from "#lib/ui/chain-view.ts";
-  import { entryFromMessage, readLiveEntry, type LiveEntry } from "#lib/ui/live-entry.ts";
+  import {
+    entryFromMessage,
+    matchingChoice,
+    readLiveEntry,
+    type LiveEntry,
+  } from "#lib/ui/live-entry.ts";
   import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
@@ -42,6 +49,7 @@
           tipo: data.tipo,
           cuenta: data.accountId,
           simbolo: data.symbol,
+          ...(data.sizeChoice === "full" ? {} : { tamano: data.sizeChoice }),
         })}`,
   );
   // A new page load (another symbol, account or search) starts from what the server just read.
@@ -60,10 +68,13 @@
           accountId: data.accountId ?? "",
           symbol: data.symbol,
           assetType: data.tipo === "opciones" ? "option" : "equity",
+          // The full SIZE is left out of the watch (an engine that predates the choice refuses a reduced one).
+          ...(data.sizeChoice === "full" ? {} : { sizeChoice: data.sizeChoice }),
         },
       },
       onMessage: (message) => {
-        live = entryFromMessage(message, live) ?? live;
+        const next = entryFromMessage(message, live);
+        if (next !== null) live = matchingChoice(next, data.sizeChoice);
       },
       poll: {
         intervalMs: LIVE_QUOTE_POLL_MS,
@@ -72,7 +83,7 @@
         run: async (signal) => {
           const answer = await readLiveEntry(href, fetch, signal);
           // An answer for an entry that is no longer on screen is dropped.
-          if (answer !== null && !signal.aborted) live = answer;
+          if (answer !== null && !signal.aborted) live = matchingChoice(answer, data.sizeChoice);
           return answer !== null;
         },
       },
@@ -95,6 +106,24 @@
     stale ? null : live === null ? data.blocked : live.status === "blocked" ? live.message : null,
   );
   const quotedAt = $derived(live?.status === "ready" ? live.receivedAt : data.quotedAt);
+
+  // The one-entry SIZE choice (D51) lives in the URL: a new Nueva entrada has none, so it starts at
+  // the full SIZE. Choosing keeps the rest of the search (symbol, account, chain) as it is.
+  const sizeOptions = $derived(
+    (
+      [
+        { id: "full", label: "Normal" },
+        { id: "down25", label: "−25%" },
+      ] as const
+    ).map((option) => {
+      const search = new SvelteURLSearchParams(page.url.search);
+      for (const name of [...search.keys()]) if (name.startsWith("/")) search.delete(name);
+      if (option.id === "full") search.delete("tamano");
+      else search.set("tamano", option.id);
+      const query = search.toString();
+      return { ...option, href: `${resolve("/(app)/operar")}${query === "" ? "" : `?${query}`}` };
+    }),
+  );
 
   const tabs = $derived([
     { id: "acciones", label: "Acciones", href: `${resolve("/(app)/operar")}?tipo=acciones` },
@@ -153,7 +182,13 @@
         : "Enviar orden",
   );
   const sendAction = $derived(
-    `?${new URLSearchParams({ tipo: data.tipo, cuenta: data.accountId ?? "", simbolo: data.symbol })}&/enviar`,
+    `?${new SvelteURLSearchParams({
+      tipo: data.tipo,
+      cuenta: data.accountId ?? "",
+      simbolo: data.symbol,
+      // Kept in the action URL too, so a native post that re-runs the load keeps the choice.
+      ...(data.sizeChoice === "full" ? {} : { tamano: data.sizeChoice }),
+    })}&/enviar`,
   );
 </script>
 
@@ -184,6 +219,9 @@
     {#if data.tipo === "acciones"}
       <form method="GET" action={resolve("/(app)/operar")}>
         <input type="hidden" name="tipo" value={data.tipo} />
+        {#if data.sizeChoice !== "full"}
+          <input type="hidden" name="tamano" value={data.sizeChoice} />
+        {/if}
         {#if data.accounts.length > 1}
           <label class="field">
             <span>Cuenta</span>
@@ -219,6 +257,7 @@
         initialStrike={data.strike}
         initialCount={data.strikeCount}
         chosenSymbol={data.symbol}
+        sizeChoice={data.sizeChoice}
       />
       {#if contract}
         <div class="field chosen">
@@ -232,6 +271,23 @@
         </div>
       {/if}
     {/if}
+
+    <div class="size-choice">
+      <p class="size-label">SIZE de esta entrada</p>
+      <!-- eslint-disable svelte/no-navigation-without-resolve -- every href is built with resolve() above -->
+      <nav class="size-options" aria-label="Opciones de tamaño">
+        {#each sizeOptions as option (option.id)}
+          <a
+            href={option.href}
+            aria-current={data.sizeChoice === option.id ? "true" : undefined}
+            data-sveltekit-noscroll
+            data-sveltekit-replacestate>{option.label}</a
+          >
+        {/each}
+      </nav>
+      <!-- eslint-enable svelte/no-navigation-without-resolve -->
+      <p class="caption">Solo afecta a esta entrada. La próxima vuelve a Normal.</p>
+    </div>
 
     <dl>
       <DefinitionRow
@@ -270,6 +326,7 @@
       {/if}
       <DefinitionRow label="Modo" value="SIM · sin dinero real" />
       <DefinitionRow label="Acción" value="Comprar para abrir" />
+      <DefinitionRow label="SIZE aplicado" value={preview ? formatSize(preview.sizeMicros) : "—"} />
       <DefinitionRow
         label="Cantidad"
         value={preview ? formatQuantity(preview.qty, preview.assetType) : "—"}
@@ -320,6 +377,7 @@
         <input type="hidden" name="simbolo" value={data.symbol} />
         <input type="hidden" name="intentId" value={intentId} />
         <input type="hidden" name="cantidad" value={preview.qty} />
+        <input type="hidden" name="tamano" value={data.sizeChoice} />
       {/if}
       <Button
         type="submit"
@@ -424,6 +482,38 @@
     margin-bottom: 0.375rem;
     color: var(--text-dim);
     font-size: 14px;
+  }
+  .size-choice {
+    margin-top: 1.5rem;
+  }
+  .size-label {
+    margin: 0 0 0.375rem;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .size-options {
+    display: flex;
+  }
+  .size-options a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 8rem;
+    min-height: var(--target);
+    padding: 0 1.25rem;
+    border: 1px solid var(--rule-strong);
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  .size-options a + a {
+    margin-left: -1px;
+  }
+  .size-options a[aria-current="true"] {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--bg);
+    font-weight: 500;
   }
   .selector,
   select {

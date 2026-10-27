@@ -4,7 +4,15 @@ import { env } from "cloudflare:workers";
 import { Schema } from "effect";
 import { blockMessage, connectionBlockCode } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
-import { ASSET_TYPE, INTENT_ID, OperarQuery, SYMBOL } from "#lib/server/entry-query.ts";
+import {
+  ASSET_TYPE,
+  INTENT_ID,
+  OperarQuery,
+  SYMBOL,
+  sizeChoiceArg,
+} from "#lib/server/entry-query.ts";
+import { choiceApplied, SIZE_CHOICES } from "#lib/domain/sizing.ts";
+import { SIZE_CHOICE_MISMATCH } from "#lib/ui/live-entry.ts";
 import { loadChainView } from "#lib/server/chain-view.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { exactStrike, parseStrikeCount } from "#lib/ui/chain-window.ts";
@@ -22,6 +30,8 @@ export const load: PageServerLoad = async (event) => {
   const entry = [...event.url.searchParams].filter(([name]) => !name.startsWith("/"));
   const query = decode(OperarQuery, Object.fromEntries(entry));
   const tipo = query.tipo ?? "acciones";
+  // Every new Nueva entrada starts at the full SIZE: the choice lives in this URL only (D51).
+  const sizeChoice = query.tamano ?? "full";
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
   const engine = engineFor(env.ENGINE, event);
@@ -59,6 +69,7 @@ export const load: PageServerLoad = async (event) => {
   const base = {
     tipo,
     symbol,
+    sizeChoice,
     stopPct: settings?.stop_pct ?? null,
     limits: limits?.ok ? limits.value : null,
     contract: chosen,
@@ -100,7 +111,13 @@ export const load: PageServerLoad = async (event) => {
   }
 
   const prepared = await engine
-    .prepareEntry({ mode: "SIM", accountId, symbol, assetType: ASSET_TYPE[tipo] })
+    .prepareEntry({
+      mode: "SIM",
+      accountId,
+      symbol,
+      assetType: ASSET_TYPE[tipo],
+      ...sizeChoiceArg(sizeChoice),
+    })
     .catch(() => null);
   if (prepared === null) {
     return { ...shown, preview: null, blocked: "No pudimos comunicarnos con TradeStation." };
@@ -108,6 +125,10 @@ export const load: PageServerLoad = async (event) => {
   if (!prepared.ok) return { ...shown, preview: null, blocked: prepared.message };
   if (prepared.value.status === "BLOCKED") {
     return { ...shown, preview: null, blocked: blockMessage(prepared.value.reasons) };
+  }
+  // An engine that ignored the choice would show a quantity the order would not follow.
+  if (!choiceApplied(sizeChoice, prepared.value.sizeChoice)) {
+    return { ...shown, preview: null, blocked: SIZE_CHOICE_MISMATCH };
   }
   // One intent id per page load: every post of this page's send form carries it, so a double
   // click or a repeated post is the same order (docs/order-lifecycle.md).
@@ -136,6 +157,8 @@ const Send = Schema.Struct({
   simbolo: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32)),
   intentId: Schema.String.check(Schema.isPattern(INTENT_ID)),
   cantidad: Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  // The choice, never an amount: the engine computes the applied SIZE (D51).
+  tamano: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
 });
 
 const statusHref = (intentId: string) => resolve("/(app)/operar/revisar/[intentId]", { intentId });
@@ -145,14 +168,18 @@ export const actions: Actions = {
     requireUser(event);
     const form = await event.request.formData();
     const parsed = Schema.decodeUnknownResult(Send)(
+      // A field the form left out is absent, not null: the choice is optional (the full SIZE).
       Object.fromEntries(
-        ["tipo", "cuenta", "simbolo", "intentId", "cantidad"].map((name) => [name, form.get(name)]),
+        ["tipo", "cuenta", "simbolo", "intentId", "cantidad", "tamano"]
+          .map((name) => [name, form.get(name)] as const)
+          .filter(([, value]) => value !== null),
       ),
     );
     if (parsed._tag === "Failure") {
       return fail(400, { message: "Los datos enviados no son válidos." });
     }
     const { tipo, cuenta, simbolo, intentId, cantidad } = parsed.success;
+    const tamano = parsed.success.tamano ?? "full";
 
     const sent = await engineFor(env.ENGINE, event)
       .sendEntry({
@@ -162,6 +189,7 @@ export const actions: Actions = {
         assetType: ASSET_TYPE[tipo],
         intentId,
         confirmedQty: cantidad,
+        ...sizeChoiceArg(tamano),
       })
       // The order may have left before the failure: the status page tells what became of it.
       .catch(() => null);
@@ -170,6 +198,9 @@ export const actions: Actions = {
     const result = sent.value;
     if (result.status === "BLOCKED") return fail(409, { message: blockMessage(result.reasons) });
     if (result.status === "RECONFIRM") {
+      if (!choiceApplied(tamano, result.preview.sizeChoice)) {
+        return fail(409, { message: SIZE_CHOICE_MISMATCH });
+      }
       const { symbol, qty, sizeMicros, askMicros, assetType } = result.preview;
       return {
         reconfirm: { symbol, qty, sizeMicros, askMicros, assetType, previousQty: cantidad },

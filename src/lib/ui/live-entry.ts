@@ -3,12 +3,15 @@
 // itself when it is sent.
 
 import type { LiveMessage } from "#lib/domain/live-protocol.ts";
+import { choiceApplied, type SizeChoice } from "#lib/domain/sizing.ts";
 import { blockMessage } from "./new-entry.ts";
 
 export interface LiveEntryPreview {
   readonly symbol: string;
   readonly qty: number;
   readonly sizeMicros: number;
+  /** The choice the engine applied; an answer for another one is never shown (see `entryFromMessage`). */
+  readonly sizeChoice: SizeChoice;
   readonly askMicros: number;
   readonly assetType: "equity" | "option";
 }
@@ -31,15 +34,37 @@ export function parseLiveEntry(body: unknown): LiveEntry | null {
   if (body.status !== "ready" || !("preview" in body) || !("receivedAt" in body)) return null;
   const { preview, receivedAt } = body;
   if (typeof preview !== "object" || preview === null || !isNumber(receivedAt)) return null;
-  const { symbol, qty, sizeMicros, askMicros, assetType } = preview as Record<string, unknown>;
+  const {
+    symbol,
+    qty,
+    sizeMicros,
+    askMicros,
+    assetType,
+    sizeChoice = "full",
+  } = preview as Record<string, unknown>;
   if (typeof symbol !== "string") return null;
+  if (sizeChoice !== "full" && sizeChoice !== "down25") return null;
   if (!isNumber(qty) || !isNumber(sizeMicros) || !isNumber(askMicros)) return null;
   if (assetType !== "equity" && assetType !== "option") return null;
   return {
     status: "ready",
-    preview: { symbol, qty, sizeMicros, askMicros, assetType },
+    preview: { symbol, qty, sizeMicros, sizeChoice, askMicros, assetType },
     receivedAt,
   };
+}
+
+/** Shown instead of a quantity the engine sized for another SIZE choice than the one on screen. */
+export const SIZE_CHOICE_MISMATCH =
+  "El servicio aún no aplica la opción de SIZE elegida. Recarga la página.";
+
+/**
+ * A ready answer is trusted only for the choice the screen asked for: otherwise the quantity shown
+ * would not be the one an order sends (deploy skew, docs/architecture.md#deploying).
+ */
+export function matchingChoice(entry: LiveEntry, requested: SizeChoice): LiveEntry {
+  return entry.status === "ready" && !choiceApplied(requested, entry.preview.sizeChoice)
+    ? { status: "blocked", message: SIZE_CHOICE_MISMATCH }
+    : entry;
 }
 
 /** One read of the endpoint: the answer, or `null` when it could not be read. */
@@ -72,10 +97,10 @@ export function entryFromMessage(
   if (update.status === "blocked") {
     return { status: "blocked", message: blockMessage(update.reasons) };
   }
-  const { symbol, qty, sizeMicros, askMicros, assetType } = update;
+  const { symbol, qty, sizeMicros, sizeChoice, askMicros, assetType } = update;
   return {
     status: "ready",
-    preview: { symbol, qty, sizeMicros, askMicros, assetType },
+    preview: { symbol, qty, sizeMicros, sizeChoice, askMicros, assetType },
     receivedAt: message.receivedAt,
   };
 }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { parseMicros } from "./money";
 import {
+  appliedSize,
+  choiceApplied,
   computeEntryQty,
   validateSizeChange,
   type EntryBlockReason,
@@ -172,4 +174,61 @@ describe("validateSizeChange", () => {
       expect(() => validateSizeChange(1, invalid)).toThrow(RangeError);
     },
   );
+});
+
+describe("appliedSize", () => {
+  test("the full choice keeps the SIZE", () => {
+    expect(appliedSize(parseMicros("20000"), "full")).toBe(parseMicros("20000"));
+  });
+
+  test("down25 sizes 20,000 at 15,000", () => {
+    expect(appliedSize(parseMicros("20000"), "down25")).toBe(parseMicros("15000"));
+  });
+
+  test("rounds a fraction of a micro-dollar down", () => {
+    // 75% of 0.000005 is 0.00000375: three micro-dollars, not four.
+    expect(appliedSize(5, "down25")).toBe(3);
+  });
+
+  test("rejects a SIZE that is not an integer number of micro-dollars", () => {
+    expect(() => appliedSize(1.5, "down25")).toThrow();
+  });
+
+  test("an option: 15,000 at ask 4.00 and point value 100 buys 37 contracts, 50 at full SIZE", () => {
+    const sizeFor = (choice: "full" | "down25") =>
+      computeEntryQty({ ...option, size: appliedSize(option.size, choice) });
+    expect(sizeFor("full")).toEqual({ ok: true, qty: 50 });
+    expect(sizeFor("down25")).toEqual({ ok: true, qty: 37 });
+  });
+
+  test("a stock: 15,000 at ask 50.00 buys 300 shares, 400 at full SIZE", () => {
+    const stock: EntrySizingInput = {
+      ...option,
+      assetType: "equity",
+      pointValue: null,
+      ask: { status: "fresh", price: parseMicros("50.00") },
+    };
+    expect(computeEntryQty({ ...stock, size: appliedSize(stock.size, "full") })).toEqual({
+      ok: true,
+      qty: 400,
+    });
+    expect(computeEntryQty({ ...stock, size: appliedSize(stock.size, "down25") })).toEqual({
+      ok: true,
+      qty: 300,
+    });
+  });
+});
+
+describe("choiceApplied", () => {
+  test("matches the choice the engine echoes", () => {
+    expect(choiceApplied("full", "full")).toBe(true);
+    expect(choiceApplied("down25", "down25")).toBe(true);
+    expect(choiceApplied("down25", "full")).toBe(false);
+    expect(choiceApplied("full", "down25")).toBe(false);
+  });
+
+  test("an engine that echoes nothing applied the full SIZE, never a reduced one", () => {
+    expect(choiceApplied("full", undefined)).toBe(true);
+    expect(choiceApplied("down25", undefined)).toBe(false);
+  });
 });

@@ -1,4 +1,9 @@
+import { SIZE_DOWN_APPLIED_PCT } from "./config";
 import { assertMicros } from "./money";
+
+/** What the client may pick for one entry: the full SIZE or 75% of it (D51). A closed set. */
+export const SIZE_CHOICES = ["full", "down25"] as const;
+export type SizeChoice = (typeof SIZE_CHOICES)[number];
 
 // Freshness and halt status are determined by the caller, without a clock here.
 export type EntryAsk =
@@ -50,4 +55,24 @@ export function validateSizeChange(current: number, next: number): SizeChangeRes
   assertMicros(current);
   assertMicros(next);
   return next > current ? { ok: true } : { ok: false, reason: "SIZE_NOT_INCREASED" };
+}
+
+/**
+ * Deploy skew guard (docs/architecture.md#deploying): the web Worker asked for `requested` and the
+ * engine says what it applied. An engine that predates the choice ignores it and answers nothing,
+ * which counts as the full SIZE, so a reduced request against it never matches.
+ */
+export function choiceApplied(requested: SizeChoice, echoed: SizeChoice | undefined): boolean {
+  return requested === (echoed ?? "full");
+}
+
+/**
+ * docs/domain-rules.md §1. The SIZE one entry is sized with: the client's SIZE, or its
+ * SIZE_DOWN_APPLIED_PCT percent. Micro-dollars in and out; a fraction of a micro-dollar rounds down,
+ * so the applied SIZE never exceeds the share.
+ */
+export function appliedSize(size: number, choice: SizeChoice): number {
+  assertMicros(size);
+  if (choice === "full") return size;
+  return Number((BigInt(size) * BigInt(SIZE_DOWN_APPLIED_PCT)) / 100n);
 }
