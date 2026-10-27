@@ -12,6 +12,7 @@ import {
   LIVE_STREAM_BACKOFF_BASE_MS,
   LIVE_STREAM_BACKOFF_MAX_MS,
   LIVE_STREAM_MAX_SOCKETS,
+  LIVE_STREAM_MAX_STREAMS,
   LIVE_STREAM_MAX_SYMBOLS,
   LIVE_STREAM_SOCKET_MAX_MS,
   REFRESH_REQUEST_RETRY_DELAY_MS,
@@ -108,12 +109,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   #syncing: Promise<SyncResult> | null = null;
   /** Strikes of the chains the screens poll, so a refresh reads only quotes (D46). */
   readonly #strikes: StrikesCache = new Map();
-  /** The one upstream quote stream of this client and the browser sockets it feeds (D47). */
+  /** The upstream quote streams of this client and the browser sockets they feed (D47). */
   readonly #sockets: LiveSockets;
   /** SIZE and the connection row for sizing the streamed entry; D1 owns both (entry-inputs.ts). */
   private readonly entryInputs = new EntryInputsCache(() => this.#now(), LIVE_ENTRY_INPUTS_TTL_MS);
-  /** The failure last logged for the quote stream, until it delivers again. */
-  #streamFailure: string | null = null;
+  /** The failure last logged for each quote stream, until that stream delivers again. */
+  #streamFailures = new Map<number, string>();
 
   constructor(ctx: DurableObjectState, env: EngineEnv) {
     super(ctx, env);
@@ -123,7 +124,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     this.#alarms = new AlarmScheduler(ctx.storage, () => this.#now());
     this.#sockets = new LiveSockets({
       hub: new QuoteHub({
-        run: (symbols, onEvent, signal) => this.runQuoteStream(symbols, onEvent, signal),
+        run: (symbols, onEvent, signal, streamId) =>
+          this.runQuoteStream(symbols, onEvent, signal, streamId),
+        // A stream retired in its backoff never runs again: forget its failure, or the dedup would
+        // hide the same failure on a later stream.
+        onRetire: (streamId) => this.#streamFailures.delete(streamId),
         wait: (ms, signal) =>
           new Promise<void>((resolve) => {
             const done = () => {
@@ -135,6 +140,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
             signal.addEventListener("abort", done, { once: true });
           }),
         maxSymbols: LIVE_STREAM_MAX_SYMBOLS,
+        maxStreams: LIVE_STREAM_MAX_STREAMS,
         backoffBaseMs: LIVE_STREAM_BACKOFF_BASE_MS,
         backoffMaxMs: LIVE_STREAM_BACKOFF_MAX_MS,
       }),
@@ -196,6 +202,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     symbols: ReadonlyArray<string>,
     onEvent: Parameters<NonNullable<BrokerAdapterShape["quoteStream"]>>[1],
     signal: AbortSignal,
+    streamId: number,
   ): Promise<"ended" | "failed"> {
     const connection = this.connectionContext();
     const broker = connection === null ? null : this.brokerFor(connection);
@@ -206,22 +213,27 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           symbols,
           (event) => {
             // The stream delivers again: the next failure is a new condition worth a row.
-            this.#streamFailure = null;
+            this.#streamFailures.delete(streamId);
             onEvent(event);
           },
           signal,
         ),
       ),
     );
-    if (result._tag === "Success") return "ended";
+    if (result._tag === "Success") {
+      // An aborted run (its stream replaced or retired) ends here: that stream no longer fails.
+      this.#streamFailures.delete(streamId);
+      return "ended";
+    }
     // Only the kind and, for a refusal, its code: never the symbols, a token or a body.
     const kind =
       result.failure._tag === "Rejected"
         ? `${result.failure._tag}:${result.failure.code}`
         : result.failure._tag;
     // A condition that persists is logged once, not on every retry (order-lifecycle.md degraded states).
-    if (kind !== this.#streamFailure) {
-      this.#streamFailure = kind;
+    const alreadyLogged = [...this.#streamFailures.values()].includes(kind);
+    this.#streamFailures.set(streamId, kind);
+    if (!alreadyLogged) {
       this.log("warn", "SIM", "quote_stream.failed", "quoteStream", kind);
     }
     return "failed";

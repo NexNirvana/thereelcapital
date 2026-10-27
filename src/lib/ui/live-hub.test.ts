@@ -140,7 +140,10 @@ describe("createLiveHub", () => {
     socket.emit("open");
     socket.push({ type: "state", state: "unavailable" });
     expect(h.hub.unavailable).toBe(true);
+    // A healthy stream's data does not say a down one is back: only the engine's `live` does.
     socket.push({ type: "alive", receivedAt: 1 });
+    expect(h.hub.unavailable).toBe(true);
+    socket.push({ type: "state", state: "live" });
     expect(h.hub.unavailable).toBe(false);
   });
 

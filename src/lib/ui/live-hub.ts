@@ -173,10 +173,7 @@ export function createLiveHub(options: LiveHubOptions): LiveHub {
       const message = options.parse(event.data);
       if (message === null) return;
       if (message.type === "state") unavailable = message.state === "unavailable";
-      else {
-        unavailable = false;
-        reconnectFailures = 0;
-      }
+      else reconnectFailures = 0;
       for (const listener of [...listeners]) listener.onMessage(message);
     });
     created.addEventListener("close", ended);

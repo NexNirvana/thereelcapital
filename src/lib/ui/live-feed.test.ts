@@ -125,6 +125,17 @@ describe("startLiveFeed", () => {
     expect(h.pollPending().length).toBe(1);
   });
 
+  test("keeps polling after a quote while the engine says a stream is down, until it says live", () => {
+    const h = harness();
+    const socket = h.sockets[0]!;
+    socket.emit("open");
+    socket.push({ type: "state", state: "unavailable" });
+    socket.push({ type: "quote", symbol: "A", bid: 1, ask: 2, receivedAt: 1 });
+    expect(h.pollPending().length).toBe(1);
+    socket.push({ type: "state", state: "live" });
+    expect(h.pollPending().length).toBe(0);
+  });
+
   test("reconnects with a growing delay after the socket closes, and polls meanwhile", () => {
     const h = harness();
     h.sockets[0]!.emit("close");
