@@ -23,7 +23,8 @@ import { computeEntryQty, type EntryAsk, type EntryBlockReason } from "#lib/doma
 import type { BrokerAdapterShape, OrderRequest, Quote, SymbolDetails } from "./broker/adapter.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
-import { readConnection, type ConnectionContext } from "./connection.ts";
+import { connectionViewOf, type ConnectionContext } from "./connection.ts";
+import { loadEntryInputs, type EntryInputsCache } from "./entry-inputs.ts";
 import { logEvent } from "./events.ts";
 import { placeOnce } from "./placement.ts";
 import { newIntentId } from "./ids.ts";
@@ -222,11 +223,14 @@ async function evaluate(
   ctx: EntryContext,
   args: PrepareEntryArgs,
   streamed?: Quote,
+  inputsCache?: EntryInputsCache,
 ): Promise<EngineResult<Evaluation>> {
   const blocked = (...reasons: EntryBlockCode[]) =>
     success<Evaluation>({ kind: "blocked", reasons });
 
-  const view = await readConnection(ctx);
+  // The live preview reads these from the Durable Object's copy; everything else reads D1.
+  const inputs = await (inputsCache === undefined ? loadEntryInputs(ctx) : inputsCache.read(ctx));
+  const view = connectionViewOf(ctx, inputs.connection);
   if (view.status === "NOT_CONNECTED") return blocked("NOT_CONNECTED");
   const block = entryBlock({
     health: view.health,
@@ -236,25 +240,20 @@ async function evaluate(
   const account = view.accounts.find((candidate) => candidate.accountId === args.accountId);
   if (account === undefined) return blocked("ACCOUNT_NOT_OWNED");
 
-  // D1 and the broker are read together; the checks below keep the old precedence: SIZE, then
-  // the symbol details, then the quote. The details are cached; the quote is for the requested
-  // symbol, which is the one the details carry.
-  const [settings, details, quotes] = await Promise.all([
-    // The client's SIZE, read from D1 where the admin sets it: the browser has no say.
-    ctx.db
-      .prepare("SELECT size_usd FROM client_settings WHERE user_id = ?")
-      .bind(ctx.userId)
-      .first<{ size_usd: number }>(),
+  // The broker reads go together; the checks below keep the old precedence: SIZE, then the symbol
+  // details, then the quote. The details are cached; the quote is for the requested symbol, which
+  // is the one the details carry.
+  const [details, quotes] = await Promise.all([
     cachedSymbolDetails(ctx, args.symbol),
     // A quote the stream just delivered replaces the snapshot read (D47); sendEntry never takes one.
     streamed === undefined
       ? attempt(ctx.broker.quotes([args.symbol]))
       : Promise.resolve({ ok: true as const, value: [streamed] }),
   ]);
-  if (settings === null || !Number.isSafeInteger(settings.size_usd * MICROS_PER_USD)) {
+  if (inputs.sizeUsd === null || !Number.isSafeInteger(inputs.sizeUsd * MICROS_PER_USD)) {
     return blocked("SIZE_UNAVAILABLE");
   }
-  const sizeMicros = settings.size_usd * MICROS_PER_USD;
+  const sizeMicros = inputs.sizeUsd * MICROS_PER_USD;
 
   if (!details.ok) {
     if (details.error._tag === "Rejected") {
@@ -321,8 +320,9 @@ export async function prepareEntry(
   ctx: EntryContext,
   args: PrepareEntryArgs,
   streamed?: Quote,
+  inputsCache?: EntryInputsCache,
 ): Promise<EngineResult<PrepareEntryResult>> {
-  const evaluated = await evaluate(ctx, args, streamed);
+  const evaluated = await evaluate(ctx, args, streamed, inputsCache);
   if (!evaluated.ok) return evaluated;
   if (evaluated.value.kind === "blocked") {
     return success({ status: "BLOCKED", reasons: evaluated.value.reasons });

@@ -158,10 +158,12 @@ export const LIVE_STREAM_SOCKET_MAX_MS = 15 * 60 * 1000;
 export const LIVE_STREAM_SILENCE_MS = 8 * 1000;
 
 /**
- * A streamed entry is sized at most this often per screen (the latest tick wins), so a busy symbol
- * does not turn every tick into a database read. Ours, not TradeStation's.
+ * How long the engine keeps the connection status and SIZE it read from D1 to size the streamed
+ * entry (D47). D1 stays their owner: a SIZE change, a connection change and a reconnect drop the
+ * copy at once, and this only bounds how long a missed drop (a failed call from the admin
+ * screen) can show a stale quantity. Orders never use it. Ours, not TradeStation's.
  */
-export const LIVE_ENTRY_MIN_GAP_MS = 250;
+export const LIVE_ENTRY_INPUTS_TTL_MS = 60 * 1000;
 /**
  * A stream that delivers nothing, not even a heartbeat, for this long is treated as broken and
  * restarted. (verify) The heartbeat interval is documented as 5 s; this leaves room for six.

@@ -69,12 +69,17 @@ export const actions: Actions = {
     ),
   revokeAllSessions: async (event) =>
     respond(event, "revokeAllSessions", await revokeAllSessions(event, context(), event.params.id)),
-  updateSettings: async (event) =>
-    respond(
-      event,
-      "updateSettings",
-      await updateClientSettings(event, context(), event.params.id, await form(event)),
-    ),
+  updateSettings: async (event) => {
+    const result = await updateClientSettings(event, context(), event.params.id, await form(event));
+    if (result.ok) {
+      // The engine keeps a short-lived copy of SIZE for the live preview; tell it to drop it. A
+      // failed or slow call is harmless: the copy expires by itself (LIVE_ENTRY_INPUTS_TTL_MS)
+      // and orders always read D1, so the wait is bounded like every admin engine call.
+      const engine = engineForClient(env.ENGINE, event, event.params.id);
+      await settled(() => engine.settingsChanged({ mode: "SIM" }));
+    }
+    return respond(event, "updateSettings", result);
+  },
   rename: async (event) =>
     respond(
       event,

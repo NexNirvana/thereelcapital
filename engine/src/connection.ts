@@ -247,7 +247,10 @@ export async function completeConnection(
   });
 }
 
-function entriesBlocked(health: ConnectionHealth, ctx: ConnectionContext): boolean {
+function entriesBlocked(
+  health: ConnectionHealth,
+  ctx: Pick<ConnectionContext, "storage">,
+): boolean {
   return entryBlock({ health, reconciliationPending: reconciliationPending(ctx.storage) }) !== null;
 }
 
@@ -256,13 +259,31 @@ function storedState(status: string): StoredConnectionState {
   return status === "CONNECTED" || status === "EXPIRED" || status === "REVOKED" ? status : "ERROR";
 }
 
-export async function readConnection(ctx: ConnectionContext): Promise<ConnectionView> {
-  const row = await ctx.db
+/** The `broker_connection` columns the status is read from; D1 owns them. */
+export interface ConnectionRow {
+  readonly refresh_expires_at: number | null;
+  readonly last_ok_at: number | null;
+  readonly status: string;
+}
+
+export function readConnectionRow(ctx: Pick<ConnectionContext, "db" | "userId">) {
+  return ctx.db
     .prepare(
       "SELECT refresh_expires_at, last_ok_at, status FROM broker_connection WHERE user_id = ?",
     )
     .bind(ctx.userId)
-    .first<{ refresh_expires_at: number | null; last_ok_at: number | null; status: string }>();
+    .first<ConnectionRow>();
+}
+
+export async function readConnection(ctx: ConnectionContext): Promise<ConnectionView> {
+  return connectionViewOf(ctx, await readConnectionRow(ctx));
+}
+
+/** Synchronous: the accounts and the reconciliation hold live in the Durable Object's own storage. */
+export function connectionViewOf(
+  ctx: Pick<ConnectionContext, "sql" | "now" | "storage">,
+  row: ConnectionRow | null,
+): ConnectionView {
   if (row === null) return { mode: "SIM", status: "NOT_CONNECTED" };
   const accounts = ctx.sql
     .exec<{ account_id: string; account_type: "Cash" | "Margin" }>(
