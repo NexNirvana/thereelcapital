@@ -13,7 +13,7 @@ Before building a screen, open its PNG in `designs/desktop/` and `designs/mobile
 - IBM Plex Mono only (self-hosted). Hierarchy from size, weight and case; numbers use `tabular-nums`.
 - Data sits in hairline-separated rows on the background, not in cards. One filled primary button per view.
 - Always visible: mode badge, account, connection state, `x/2 posiciones · y/N entradas hoy` (N is the client's own limit, 3 by default), protection state (`Activo` only when verified).
-- Never: charts, P&L, editable SIZE/quantity/price, SIZE DOWN, demo test buttons.
+- Never: charts, P&L, editable SIZE/quantity/price, SIZE DOWN beyond the one-entry Normal / −25% choice (D51), demo test buttons.
 - Disabled controls state why. Pending order states are visible and not re-clickable.
 - Every value shown comes from the server; components don't compute quantities.
 - Plain Svelte components and CSS; no Effect, no CSS framework.

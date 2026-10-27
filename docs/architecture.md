@@ -49,7 +49,7 @@ audit_log          id, at, actor_id, action, target_user_id, before_json, after_
 ```
 entry_counters     mode, session_date, consumed, reserved               PK(mode, session_date)
 intents            id, mode, kind (entry|exit|stop|trailing|cancel), account_id, position_id,
-                   symbol, asset_type, trade_action, qty, size_applied, quote_json, state,
+                   symbol, asset_type, trade_action, qty, size_applied, size_choice, quote_json, state,
                    order_confirm_id, broker_order_id, filled_qty, avg_fill_price, point_value, created_at, updated_at, source (app|external), reject_reason (broker refusal text, ids removed, 200 characters at most)
 positions          id, mode, account_id, symbol, underlying, expiry, strike, right, point_value,
                    original_qty, sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct,
@@ -159,7 +159,7 @@ Versions are pinned through `packageManager: "bun@<version>"` in `package.json`,
 
 ### Deploy order
 
-The `engine` and `web` Workers deploy one after the other, and a Durable Object keeps running the previous engine code for a while after the engine deploys. For some minutes the new web code therefore reads answers shaped by the old engine. A field the engine adds to a view that the web reads must be optional at the web boundary (`src/lib/server/shell-connection.ts`, `withVerification` in `src/lib/ui/positions.ts`), with the previous behavior as its default; make it required only in a later deploy. A missing field must never throw in the layout.
+The `engine` and `web` Workers deploy one after the other, and a Durable Object keeps running the previous engine code for a while after the engine deploys. For some minutes the new web code therefore reads answers shaped by the old engine. A field the engine adds to a view that the web reads must be optional at the web boundary (`src/lib/server/shell-connection.ts`, `withVerification` in `src/lib/ui/positions.ts`), with the previous behavior as its default; make it required only in a later deploy. A missing field must never throw in the layout. A field that changes what an order does is the opposite: the web sends `sizeChoice` (D51) only when it is not the default and the engine's strict decoder rejects it on an old engine, so the order fails instead of going out at the wrong size; the web also refuses an answer whose echoed choice differs (`choiceApplied`), tested in `engine/test/entries.test.ts` and `src/lib/domain/sizing.test.ts`.
 
 
 ## Costs and free-tier limits
