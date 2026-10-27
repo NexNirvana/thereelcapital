@@ -14,7 +14,7 @@ import {
 import type { BrokerAdapterShape, BrokerOrder, SymbolDetails } from "./broker/adapter.ts";
 import { attempt } from "./broker/attempt.ts";
 import type { BrokerError } from "./broker/errors.ts";
-import { readConnection, type ConnectionContext } from "./connection.ts";
+import { LAST_OK_KEY, readConnection, type ConnectionContext } from "./connection.ts";
 import {
   reconcile,
   symbolsNeedingDetails,
@@ -53,7 +53,6 @@ export interface SyncResult {
 }
 
 const DEGRADED_KEY = "sync_degraded";
-export const LAST_OK_KEY = "sync_last_ok_at";
 
 /**
  * Whether anything needs watching: a connection with accounts, and a position, an unfinished

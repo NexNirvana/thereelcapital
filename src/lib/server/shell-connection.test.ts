@@ -7,6 +7,7 @@ const connected = {
   entriesBlocked: false,
   accounts: [{ accountId: "SIM1", accountType: "Cash" as const }],
   refreshExpiresAt: 1_000,
+  lastSyncAt: 5,
 };
 
 describe("shellConnection", () => {
@@ -28,12 +29,11 @@ describe("shellConnection", () => {
     });
   });
 
-  test("copies the connected view and drops every field it does not name", () => {
+  test("copies the connected view, with its last good sync, and drops every field it does not name", () => {
     const account = { accountId: "SIM1", accountType: "Cash" as const, token: "x" };
     const leaky = {
       ...connected,
       accounts: [account],
-      lastOkAt: 5,
       mode: "SIM",
       refreshToken: "secret",
     };

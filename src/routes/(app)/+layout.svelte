@@ -1,6 +1,8 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
+  import { connectionAlert } from "#lib/ui/connection-alert.ts";
+  import ConnectionAlert from "#lib/ui/ConnectionAlert.svelte";
   import { indicatorFor } from "#lib/ui/connection-indicator.ts";
   import { keepLiveSocketOpen } from "#lib/ui/live-feed.ts";
   import AppShell from "#lib/ui/AppShell.svelte";
@@ -9,6 +11,10 @@
 
   let { children, data }: LayoutProps = $props();
   const indicator = $derived(indicatorFor(data.health));
+  // /conexion already says all of this next to the reconnect form.
+  const alert = $derived(
+    page.url.pathname.startsWith("/conexion") ? null : connectionAlert(data.connection),
+  );
 
   // One live-price socket for the whole signed-in app (D47): it opens with the app and stays open
   // across navigation; each screen only says what it watches. Screens that are not on the stream
@@ -43,6 +49,7 @@
   extras={data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []}
 >
   {#snippet notice()}
+    {#if alert}<ConnectionAlert {alert} />{/if}
     {#if data.unusedCodes === 0}<RecoveryCodesPrompt />{/if}
   {/snippet}
   {@render children()}

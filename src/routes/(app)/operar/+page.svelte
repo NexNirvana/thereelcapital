@@ -7,6 +7,7 @@
     LIVE_QUOTE_MAX_POLLS,
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
+  import { unverifiedLine, unverifiedSince } from "#lib/ui/connection-alert.ts";
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
   import OptionChainPanel from "#lib/ui/OptionChainPanel.svelte";
   import type { ChainView } from "#lib/ui/chain-view.ts";
@@ -17,6 +18,8 @@
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
+  // The shell's connection: while it is down the counts are the last ones the engine saw.
+  const unverified = $derived(unverifiedSince(data.connection));
 
   // What the form shows right now. Editing the symbol or the account makes the preview on screen
   // belong to something the client no longer asks for, so it is dropped until they ask again.
@@ -128,7 +131,10 @@
   </header>
 
   {#if data.limits}
-    <p class="limits">{limitsLine(data.limits)}</p>
+    <p class="limits">
+      {limitsLine(data.limits)}{#if unverified !== undefined}
+        <span class="unverified"> · {unverifiedLine(unverified)}</span>{/if}
+    </p>
   {/if}
 
   <section class="form" aria-label="Instrumento">
@@ -278,6 +284,9 @@
   }
   .lead {
     margin: 0.75rem 0 0;
+    color: var(--text-muted);
+  }
+  .unverified {
     color: var(--text-muted);
   }
   .limits {

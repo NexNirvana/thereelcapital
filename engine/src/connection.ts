@@ -45,7 +45,12 @@ export type ConnectionView =
       /** now + 24 h from the first observed rotation (D44); null while unknown, the normal state of a non-rotating key. */
       readonly refreshExpiresAt: number | null;
       readonly lastOkAt: number | null;
+      /** The last good sync pass of the Durable Object (not the last token refresh); null if none. */
+      readonly lastSyncAt: number | null;
     };
+
+/** The Durable Object's record of its last good sync pass (wall clock, epoch ms). */
+export const LAST_OK_KEY = "sync_last_ok_at";
 
 const secretContext = (userId: string) => `${userId}:client_secret`;
 const refreshContext = (userId: string) => `${userId}:refresh_token`;
@@ -245,6 +250,7 @@ export async function completeConnection(
     accounts: listed.value,
     refreshExpiresAt,
     lastOkAt: ctx.now,
+    lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null,
   });
 }
 
@@ -308,6 +314,7 @@ export function connectionViewOf(
     accounts,
     refreshExpiresAt: row.refresh_expires_at,
     lastOkAt: row.last_ok_at,
+    lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null,
   };
 }
 

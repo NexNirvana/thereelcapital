@@ -9,10 +9,8 @@ import type {
 } from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
 import { MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
-import { brokerReachable } from "#lib/domain/connection.ts";
 import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
-import { readConnection, type ConnectionContext } from "./connection.ts";
-import { LAST_OK_KEY } from "./sync.ts";
+import { LAST_OK_KEY, readConnection, type ConnectionContext } from "./connection.ts";
 
 type PositionRow = {
   id: string;
@@ -118,17 +116,22 @@ export function readPositionsView(
 }
 
 /**
- * Unverified while the connection cannot reach the broker (never connected, expired, revoked or
- * failing): the sync loop is stopped then, so the rows are the last ones seen. The last good pass
- * is the Durable Object's own record, falling back to the connection's last successful refresh.
+ * Unverified until a sync pass has confirmed the state: while the connection cannot reach the broker
+ * (never connected, expired, revoked, failing), after a failed pass, and in the moments after a
+ * connect or disconnect, before the first pass lifts the hold. That is `entriesBlocked`
+ * (docs/order-lifecycle.md#degraded-states). `lastSyncAt` is the last good pass. If D1 cannot say
+ * what the connection is, the rows are still returned, as unverified.
  */
 export async function readVerification(ctx: ConnectionContext): Promise<PositionsVerification> {
-  const connection = await readConnection(ctx);
-  if (connection.status === "CONNECTED" && brokerReachable(connection.health)) {
+  const connection = await readConnection(ctx).catch(() => null);
+  if (connection === null) {
+    return { status: "unverified", lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null };
+  }
+  if (connection.status === "CONNECTED" && !connection.entriesBlocked) {
     return { status: "verified" };
   }
-  const lastSyncAt =
-    ctx.storage.kv.get<number>(LAST_OK_KEY) ??
-    (connection.status === "CONNECTED" ? connection.lastOkAt : null);
-  return { status: "unverified", lastSyncAt };
+  return {
+    status: "unverified",
+    lastSyncAt: connection.status === "CONNECTED" ? connection.lastSyncAt : null,
+  };
 }

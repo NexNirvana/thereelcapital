@@ -27,6 +27,9 @@ export const load: LayoutServerLoad = async (event) => {
   // a client-side link never shows a connection older than the visit; a refresh that keeps the
   // URL (the chain's `app:chain`) leaves it alone.
   void event.url.href;
+  // A screen that stays open (Posiciones) asks for it again now and then, so the alert follows a
+  // connection that drops or recovers without a navigation.
+  event.depends("app:connection");
   const [result, unusedCodes] = await Promise.all([
     engineFor(env.ENGINE, event)
       .connection({ mode: "SIM" })

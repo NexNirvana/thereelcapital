@@ -21,6 +21,8 @@ export type ShellConnection =
               readonly accountType: string;
             }>;
             readonly refreshExpiresAt: number | null;
+            /** Last good sync pass, for «sin verificar desde». */
+            readonly lastSyncAt: number | null;
           };
     };
 
@@ -43,6 +45,7 @@ export function shellConnection(result: EngineConnection | null): ShellConnectio
       entriesBlocked: view.entriesBlocked,
       accounts: view.accounts.map(({ accountId, accountType }) => ({ accountId, accountType })),
       refreshExpiresAt: view.refreshExpiresAt,
+      lastSyncAt: view.lastSyncAt,
     },
   };
 }
