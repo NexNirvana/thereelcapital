@@ -96,7 +96,7 @@ test("sends one order when a step is double-clicked", async ({ context, page }) 
   await expect(page.getByRole("cell", { name: "Salida" })).toHaveCount(1);
 });
 
-test("closes the position with ALL OUT only after a confirmation", async ({ context, page }) => {
+test("closes the position with ALL OUT in one click", async ({ context, page }) => {
   await seedTradingClient(context);
   await openPosition(page, "MSFT", "198 acciones");
   await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeVisible();
@@ -108,19 +108,28 @@ test("closes the position with ALL OUT only after a confirmation", async ({ cont
   await expect(page.getByText("ALL OUT · Cierra las 198 acciones restantes")).toBeHidden();
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  await page.getByRole("button", { name: "Cerrar posición" }).click();
-  await expect(page.getByText("¿Cerrar la posición?")).toBeVisible();
-  await shoot(page, "confirm-all-out");
-  // Backing out sends nothing.
-  await page.getByRole("button", { name: "Volver" }).click();
+  // One click closes it: no confirmation step in between.
   await expect(page.getByText("¿Cerrar la posición?")).toHaveCount(0);
-  await expect(page.getByText("198 acciones restantes", { exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "Cerrar posición" }).click();
-  await sell(page, page.getByRole("button", { name: "Confirmar cierre" }));
+  await shoot(page, "all-out");
+  await sell(page, page.getByRole("button", { name: "Cerrar posición" }));
   await expect(page.getByText("No tienes posiciones abiertas.")).toBeVisible({
     timeout: SETTLE_MS,
   });
+});
+
+test("sends one ALL OUT when Cerrar posición is double-clicked", async ({ context, page }) => {
+  await seedTradingClient(context);
+  await openPosition(page, "HOLD", "198 acciones");
+  let posts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().includes("/salir")) posts += 1;
+  });
+  await page.getByRole("button", { name: /Cerrar posición|Enviando/ }).dblclick();
+  const pending = page.getByRole("region", { name: "Órdenes pendientes" });
+  await expect(pending).toContainText("Salida", { timeout: SETTLE_MS });
+  expect(posts).toBe(1);
+  await page.goto("/historial");
+  await expect(page.getByRole("cell", { name: "Salida" })).toHaveCount(1);
 });
 
 test("cancels a working exit and gives the step back", async ({ context, page }) => {
