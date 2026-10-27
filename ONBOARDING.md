@@ -1,6 +1,6 @@
 # REEL CAPITAL — onboarding inicial
 
-Actualizado: 27 de octubre de 2026 (límite de entradas diarias configurable por cliente). Estado: alcance principal confirmado por el usuario. Stack decidido: SvelteKit + TypeScript + Effect sobre Cloudflare. Instrumentos iniciales: acciones (equities) y opciones, con cadena de opciones para seleccionar contratos. Órdenes exclusivamente de mercado. Cada cliente utiliza su propia API key de TradeStation. Lanzamiento inicial en SIM y modo real posterior. El usuario confirma que ya dispone de API key y acceso SIM para desarrollo. Los servicios concretos de Cloudflare siguientes son propuestas.
+Actualizado: 27 de octubre de 2026 (límite de entradas diarias configurable por cliente). Estado: alcance principal confirmado por el usuario. Stack decidido: SvelteKit + TypeScript + Effect sobre Cloudflare. Instrumentos iniciales: acciones (equities) y opciones, con cadena de opciones para seleccionar contratos. Órdenes exclusivamente de mercado. Cada cliente utiliza su propia API key de TradeStation (matizado el 27 de octubre de 2026: pueden compartirla, ver nota en «Conexión confirmada»). Lanzamiento inicial en SIM y modo real posterior. El usuario confirma que ya dispone de API key y acceso SIM para desarrollo. Los servicios concretos de Cloudflare siguientes son propuestas.
 
 Acceso exclusivamente por invitación, con perfiles creados por el administrador. Operaciones de apertura por compra y cierre por venta durante el horario regular del mercado. Posiciones, cancelación de órdenes pendientes, cierres parciales/totales e historial incluidos. Diseño minimalista, casi brutalista, exclusivamente en tonos oscuros, grises neutros y blanco, según la imagen aportada por el usuario. Los demos orientan la estructura y las interacciones; gráficos y P&L permanecen ocultos durante la operación. Dominio `thereelcapital.com` y cuenta Cloudflare confirmados por el usuario. Piloto privado con unos pocos clientes iniciales.
 
@@ -163,6 +163,8 @@ La API key identifica la aplicación (`client_id`). TradeStation documenta un fl
 El cliente verá la autorización de TradeStation al conectar y cuando necesite autenticarse de nuevo. Después puede operar desde REEL CAPITAL mientras su conexión siga autorizada.
 
 Conexión confirmada: API propia por cliente. Configurar sus credenciales compatibles, callbacks y autorización OAuth. Recibir una clave no garantiza que esté configurada para nuestro dominio. Si requiere un secreto, recibirlo y almacenarlo cifrado mediante el backend.
+
+Nota del 27 de octubre de 2026 (decisión del propietario): varios clientes de la aplicación pueden compartir una misma API key de TradeStation, e incluso el mismo login y las mismas cuentas SIM; la aplicación no exige una API key por cliente y debe recuperarse sin intervención cuando la comparten. Esto matiza «API propia por cliente» y «cada cliente utiliza su propia API key»; el aislamiento de datos de la aplicación entre clientes no cambia. Ver D49 en `docs/decisions.md`.
 
 TradeStation documenta restricciones de acceso por login en las API keys. Verificar para cada conexión sus callbacks autorizados, logins, cuentas y permisos. El usuario confirma disponer de API key y SIM y aporta la comunicación de aprobación de su Web API key; todavía no se han probado sus permisos ni su configuración desde esta aplicación.
 
