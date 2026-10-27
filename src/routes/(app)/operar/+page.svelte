@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
+  import Notice from "#lib/ui/Notice.svelte";
   import {
     LIVE_QUOTE_MAX_BACKOFF_MS,
     LIVE_QUOTE_MAX_POLLS,
@@ -17,7 +20,7 @@
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
 
-  let { data }: PageProps = $props();
+  let { data, form }: PageProps = $props();
   // The shell's connection: while it is down the counts are the last ones the engine saw.
   const unverified = $derived(unverifiedSince(data.connection));
 
@@ -29,8 +32,8 @@
     typedSymbol.trim().toUpperCase() !== data.symbol || chosenAccount !== (data.accountId ?? ""),
   );
 
-  // The price keeps updating while the screen is open (D46). It is display only: the review step
-  // and the send ask the engine again, and the browser never sends a price or a quantity.
+  // The price keeps updating while the screen is open (D46). It is display only: the send asks the
+  // engine again, and the browser never sends a price or a quantity.
   let live = $state<LiveEntry | null>(null);
   const quoteHref = $derived(
     data.accountId === null || data.symbol === ""
@@ -75,8 +78,18 @@
       },
     });
   });
+  // The engine found the quantity had changed since the client saw it: nothing was sent, and the
+  // quantity it returned replaces the one on screen until the live feed updates it. It comes from
+  // the action's own answer, so it also shows without JavaScript.
+  const changed = $derived(form !== null && "reconfirm" in form ? form.reconfirm : undefined);
   const preview = $derived(
-    stale ? null : live === null ? data.preview : live.status === "ready" ? live.preview : null,
+    stale
+      ? null
+      : live === null
+        ? (changed ?? data.preview)
+        : live.status === "ready"
+          ? live.preview
+          : null,
   );
   const blocked = $derived(
     stale ? null : live === null ? data.blocked : live.status === "blocked" ? live.message : null,
@@ -101,23 +114,46 @@
     problem: null,
   };
 
-  // The review step prepares its own preview; this only says which entry to review.
-  const reviewHref = $derived(
-    data.accountId === null
-      ? null
-      : `${resolve("/(app)/operar/revisar")}?${new URLSearchParams({
-          tipo: data.tipo,
-          cuenta: data.accountId,
-          simbolo: data.symbol,
-        })}`,
-  );
+  // The summary on screen is the confirmation: «Enviar orden» posts the entry as shown. The form
+  // carries only the entry, this page's intent id and the quantity on screen, which the engine
+  // compares with its own and never uses (CLAUDE.md, never-break rule 3).
+  const intentId = $derived(stale ? null : (data.preview?.intentId ?? null));
+  const canSend = $derived(preview !== null && intentId !== null && data.accountId !== null);
+  // The page opened without a price (market closed, a pending symbol) and one arrived through the
+  // live feed: reload once for the intent id the send needs.
+  let reloadedFor = "";
+  $effect(() => {
+    const entry = `${data.tipo}|${data.accountId}|${data.symbol}`;
+    if (stale || preview === null || data.preview !== null || reloadedFor === entry) return;
+    reloadedFor = entry;
+    void invalidateAll();
+  });
+
+  // The quantity the engine returned when it found the price had moved: shown in place of the one
+  // the client saw, and sent once more only when they press «Enviar con N».
+  let sending = $state(false);
+  const failure = $derived(form !== null && "message" in form ? form.message : null);
   const reason = $derived(
-    blocked ??
-      (preview === null
-        ? data.tipo === "acciones"
-          ? "Escribe un símbolo y consulta para ver tu orden."
-          : "Elige un contrato para ver tu orden."
-        : null),
+    sending
+      ? "Enviando la orden…"
+      : (blocked ??
+          (preview === null
+            ? data.tipo === "acciones"
+              ? "Escribe un símbolo y consulta para ver tu orden."
+              : "Elige un contrato para ver tu orden."
+            : intentId === null
+              ? "Preparando la orden…"
+              : null)),
+  );
+  const sendLabel = $derived(
+    sending
+      ? "Enviando…"
+      : changed !== undefined && preview
+        ? `Enviar con ${formatQuantity(preview.qty, preview.assetType)}`
+        : "Enviar orden",
+  );
+  const sendAction = $derived(
+    `?${new URLSearchParams({ tipo: data.tipo, cuenta: data.accountId ?? "", simbolo: data.symbol })}&/enviar`,
   );
 </script>
 
@@ -229,6 +265,10 @@
         <DefinitionRow label="Subyacente" value={contract.underlying} />
         <DefinitionRow label="Contrato" value={contract.symbol} />
       {/if}
+      {#if data.accountId}
+        <DefinitionRow label="Cuenta" value={`TradeStation · ${data.accountId}`} />
+      {/if}
+      <DefinitionRow label="Modo" value="SIM · sin dinero real" />
       <DefinitionRow label="Acción" value="Comprar para abrir" />
       <DefinitionRow
         label="Cantidad"
@@ -241,15 +281,56 @@
     </dl>
     <p class="note">Orden de mercado en simulación.</p>
 
-    <div class="review">
-      {#if preview && reviewHref}
-        <Button variant="primary" href={reviewHref}>Revisar orden</Button>
-      {:else}
-        <Button variant="primary" disabled aria-describedby="review-reason">Revisar orden</Button>
+    {#if changed !== undefined && preview}
+      <Notice title="La cantidad cambió" role="alert">
+        El precio o tu SIZE cambiaron. Antes eran {formatQuantity(
+          changed.previousQty,
+          preview.assetType,
+        )} y ahora son {formatQuantity(preview.qty, preview.assetType)}.
+      </Notice>
+    {/if}
+    {#if failure}
+      <Notice title="No se envió la orden" role="alert">{failure}</Notice>
+    {/if}
+
+    <form
+      class="review"
+      method="POST"
+      action={sendAction}
+      use:enhance={({ cancel }) => {
+        // A second click before the first answer must not become a second request.
+        if (sending) {
+          cancel();
+          return;
+        }
+        sending = true;
+        return async ({ result, update }) => {
+          // A new quantity is not a navigation: keep the page as it is and let `form` show it.
+          await update({ reset: false, invalidateAll: false });
+          // A refused send (a limit, the engine) reads the page again, so the reason and the
+          // disabled button come from the server instead of the preview that was just refused.
+          if (result.type === "failure") await invalidateAll();
+          sending = false;
+        };
+      }}
+    >
+      {#if canSend && preview}
+        <input type="hidden" name="tipo" value={data.tipo} />
+        <input type="hidden" name="cuenta" value={data.accountId} />
+        <input type="hidden" name="simbolo" value={data.symbol} />
+        <input type="hidden" name="intentId" value={intentId} />
+        <input type="hidden" name="cantidad" value={preview.qty} />
       {/if}
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={!canSend || sending}
+        aria-describedby="review-reason"
+      >
+        {sendLabel}
+      </Button>
       <p id="review-reason" class="reason" aria-live="polite">{reason}</p>
-      {#if preview}<p class="confirm">Confirma los detalles antes de enviar.</p>{/if}
-    </div>
+    </form>
   </section>
 
   <p class="mode">SIM · Simulación, sin dinero real</p>
@@ -434,11 +515,6 @@
     margin: 0.75rem 0 0;
     color: var(--text-muted);
     overflow-wrap: anywhere;
-  }
-  .confirm {
-    margin: 0.5rem 0 0;
-    color: var(--text-dim);
-    font-size: 14px;
   }
 
   @media (max-width: 900px) {

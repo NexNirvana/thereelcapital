@@ -80,7 +80,7 @@ test("picks a CALL from the chain without leaving /operar and fills the summary"
   await expect(page.locator(".form")).toContainText(`Símbolo del contrato: ${symbol}`);
   await expect(page.locator(".form dl")).toContainText("US$7.10");
   await expect(page.locator(".form dl")).toContainText("28 contratos");
-  await expect(page.getByRole("link", { name: /Revisar orden/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeEnabled();
   await expect(page.getByRole("link", { name: /Cambiar contrato/ })).toHaveCount(0);
   await shoot(page, "opciones-contrato");
 });
@@ -383,5 +383,5 @@ test("a client with two accounts picks one on the Opciones tab and the chain kee
     "href",
     /cuenta=SIM-2/,
   );
-  await expect(page.getByRole("link", { name: /Revisar orden/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeEnabled();
 });

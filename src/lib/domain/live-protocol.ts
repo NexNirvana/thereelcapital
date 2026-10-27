@@ -14,7 +14,7 @@ export interface WatchEntry {
 /** Replaces everything the socket watched so far. An empty watch stops the stream for this screen. */
 export interface WatchMessage {
   readonly type: "watch";
-  /** The entry on Nueva entrada or the review: the engine sizes it again on every tick. */
+  /** The entry on Nueva entrada: the engine sizes it again on every tick. */
   readonly entry?: WatchEntry;
   /** Other symbols to follow, such as the contracts of the chain rows on screen. */
   readonly symbols?: ReadonlyArray<string>;

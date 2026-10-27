@@ -27,7 +27,7 @@ test("shows the quantity the server computed, in read-only rows", async ({ conte
   await page.goto("/operar");
   await expect(page.getByRole("heading", { name: "Nueva entrada" })).toBeVisible();
   await expect(page.getByText("0/2 posiciones · 0/3 entradas hoy")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeDisabled();
 
   await page.getByLabel("Símbolo").fill("msft");
   await page.getByRole("button", { name: "Consultar" }).click();
@@ -41,11 +41,8 @@ test("shows the quantity the server computed, in read-only rows", async ({ conte
   await expect(page.locator(".summary")).toContainText("30%");
   await shoot(page, "acciones-preview");
 
-  // With a preview, Revisar orden leads to the review step (order-review.spec.ts).
-  await expect(page.getByRole("link", { name: /Revisar orden/ })).toHaveAttribute(
-    "href",
-    "/operar/revisar?tipo=acciones&cuenta=SIM-1&simbolo=MSFT",
-  );
+  // With a preview the same page sends the order (order-review.spec.ts).
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeEnabled();
 });
 
 test("has no editable price, SIZE or quantity field", async ({ context, page }) => {
@@ -59,9 +56,22 @@ test("has no editable price, SIZE or quantity field", async ({ context, page }) 
     // is an order value. The Strike field has no name, so it is never submitted.
     expect(
       names.every((name) =>
-        ["tipo", "cuenta", "simbolo", "subyacente", "vencimiento", "strikes", null].includes(name),
+        [
+          "tipo",
+          "cuenta",
+          "simbolo",
+          "subyacente",
+          "vencimiento",
+          "strikes",
+          "intentId",
+          "cantidad",
+          null,
+        ].includes(name),
       ),
     ).toBe(true);
+    // The send form carries the intent id and the quantity on screen as hidden fields only.
+    await expect(page.locator("input[name=cantidad]:not([type=hidden])")).toHaveCount(0);
+    await expect(page.locator("input[name=intentId]:not([type=hidden])")).toHaveCount(0);
     await expect(page.locator("input[type=number]")).toHaveCount(0);
     await expect(page.locator("form input[inputmode=decimal][name]")).toHaveCount(0);
   }
@@ -114,7 +124,7 @@ test("names the reason when the engine blocks the entry", async ({ context, page
   await seedTradingClient(context);
   await page.goto("/operar?simbolo=NOPE");
   await expect(page.getByText("No encontramos ese símbolo en TradeStation.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeDisabled();
   await shoot(page, "acciones-bloqueada");
 });
 
@@ -123,7 +133,7 @@ test("blocks entries while the connection is unusable or not made", async ({ con
   d1(`UPDATE broker_connection SET status = 'EXPIRED' WHERE user_id = '${userId}'`);
   await page.goto("/operar?simbolo=MSFT");
   await expect(page.getByText("La conexión con TradeStation no está disponible.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeDisabled();
 
   await seedSignedInUser(context);
   await page.goto("/operar");
@@ -144,7 +154,7 @@ test("shows the Opciones tab with only the Subyacente field until one is typed",
   await expect(page.getByRole("link", { name: /Elegir contrato|Cambiar contrato/ })).toHaveCount(0);
   await expect(page.getByLabel("Símbolo")).toHaveCount(0);
   await expect(page.getByRole("table")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeDisabled();
   await expect(page.locator("#review-reason")).toHaveText("Elige un contrato para ver tu orden.");
   await shoot(page, "opciones");
 });
@@ -153,7 +163,7 @@ test("says so when the connection has no account to trade", async ({ context, pa
   await seedTradingClient(context, { accounts: [] });
   await page.goto("/operar?simbolo=MSFT");
   await expect(page.getByText("No hay una cuenta de TradeStation habilitada")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Revisar orden/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeDisabled();
 });
 
 const setVisibility = (page: import("@playwright/test").Page, value: "hidden" | "visible") =>

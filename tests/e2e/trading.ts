@@ -5,16 +5,15 @@ import { SETTLE_MS } from "./support.ts";
 // Steps the trading specs share, driven through the UI against the local simulation
 // (tests/e2e/engine.env).
 
-export async function openReview(page: Page, symbol: string) {
+export async function openEntry(page: Page, symbol: string) {
+  // Wait for hydration before submitting: a native post would reload the page under the assertions.
   await page.goto(`/operar?simbolo=${symbol}`, { waitUntil: "networkidle" });
-  await page.getByRole("link", { name: /Revisar orden/ }).click();
-  await expect(page).toHaveURL(/\/operar\/revisar\?/);
-  await expect(page.getByRole("heading", { name: "Revisar orden" })).toBeVisible();
-  // Let the page hydrate before submitting: a native post would reload it under the assertions.
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: "Enviar orden" })).toBeEnabled({
+    timeout: SETTLE_MS,
+  });
 }
 
-/** Submits the review and waits until the browser is on the order's status page. */
+/** Sends the entry shown on Nueva entrada and waits until the browser is on the order's status page. */
 export async function send(page: Page, button = "Enviar orden") {
   await page.getByRole("button", { name: button }).click();
   await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
@@ -22,8 +21,7 @@ export async function send(page: Page, button = "Enviar orden") {
 
 /** Buys through the UI and waits for the engine to open the position. */
 export async function openPosition(page: Page, symbol: string, shares: string) {
-  await page.goto(`/operar?simbolo=${symbol}`);
-  await page.getByRole("link", { name: /Revisar orden/ }).click();
+  await openEntry(page, symbol);
   await page.getByRole("button", { name: "Enviar orden" }).click();
   await expect(page).toHaveURL(/\/operar\/revisar\/[A-Za-z0-9_-]{22}$/, { timeout: SETTLE_MS });
   // The position shows up on a poll. Wait for the page to hydrate too: a click before that is a
