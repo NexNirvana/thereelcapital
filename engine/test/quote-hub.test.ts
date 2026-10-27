@@ -19,19 +19,23 @@ interface FakeRun {
   readonly symbols: ReadonlyArray<string>;
   readonly emit: (event: QuoteStreamEvent) => void;
   readonly signal: AbortSignal;
+  readonly streamId: number;
   readonly finish: (outcome: "ended" | "failed") => void;
 }
 
-function harness(maxSymbols = 100) {
+function harness(maxSymbols = 100, maxStreams = 5) {
   const runs: FakeRun[] = [];
   const waits: number[] = [];
   let open = 0;
   let maxOpen = 0;
+  const retired: number[] = [];
   const hub = new QuoteHub({
+    onRetire: (streamId) => retired.push(streamId),
     maxSymbols,
+    maxStreams,
     backoffBaseMs: 1000,
     backoffMaxMs: 4000,
-    run: (symbols, emit, signal) =>
+    run: (symbols, emit, signal, streamId) =>
       new Promise((resolve) => {
         open += 1;
         maxOpen = Math.max(maxOpen, open);
@@ -40,14 +44,14 @@ function harness(maxSymbols = 100) {
           resolve(outcome);
         };
         signal.addEventListener("abort", () => done("ended"), { once: true });
-        runs.push({ symbols, emit, signal, finish: done });
+        runs.push({ symbols, emit, signal, streamId, finish: done });
       }),
     wait: (ms) => {
       waits.push(ms);
       return Promise.resolve();
     },
   });
-  return { hub, runs, waits, maxOpen: () => maxOpen };
+  return { hub, runs, waits, retired, maxOpen: () => maxOpen };
 }
 
 function listener() {
@@ -116,6 +120,18 @@ describe("QuoteHub", () => {
     expect(runs[1]?.symbols).toEqual(["MSFT"]);
   });
 
+  it("reports a stream retired while it backs off, so its failure bookkeeping is dropped", async () => {
+    const { hub, runs, retired } = harness();
+    hub.watch("a", ["AAPL"], listener().value);
+    await tick();
+    const streamId = runs[0]?.streamId;
+    // Retired after the failure, before the backoff ends: no further run would clear it.
+    runs[0]?.finish("failed");
+    hub.release("a");
+    await tick();
+    expect(retired).toEqual([streamId]);
+  });
+
   it("reconnects with a growing delay when the stream breaks, and resets after data", async () => {
     const { hub, runs, waits } = harness();
     const a = listener();
@@ -137,10 +153,107 @@ describe("QuoteHub", () => {
     expect(a.seen).toContain("s:unavailable");
   });
 
-  it("refuses a screen that would pass the symbol limit and leaves it unsubscribed", async () => {
-    const { hub } = harness(2);
+  it("refuses a screen that would pass what the streams carry and leaves it unsubscribed", async () => {
+    const { hub } = harness(2, 1);
     expect(hub.watch("a", ["A", "B"], listener().value)).toBe(true);
     expect(hub.watch("b", ["C"], listener().value)).toBe(false);
     expect(hub.watch("b", ["A"], listener().value)).toBe(true);
+  });
+
+  describe("more symbols than one stream carries", () => {
+    const symbols = (count: number) => Array.from({ length: count }, (_, i) => `S${i}`);
+
+    it.each([100, 101, 180])("streams every one of %i symbols", async (count) => {
+      const { hub, runs } = harness();
+      const a = listener();
+      const wanted = symbols(count);
+      expect(hub.watch("a", wanted, a.value)).toBe(true);
+      await tick();
+      expect(runs).toHaveLength(Math.ceil(count / 100));
+      for (const run of runs) expect(run.symbols.length).toBeLessThanOrEqual(100);
+      expect(runs.flatMap((run) => [...run.symbols]).sort()).toEqual([...wanted].sort());
+      for (const symbol of wanted) {
+        const run = runs.find((candidate) => candidate.symbols.includes(symbol));
+        run?.emit({ kind: "quote", quote: quote(symbol) });
+      }
+      expect(a.seen.filter((entry) => entry.startsWith("q:"))).toHaveLength(count);
+    });
+
+    it("refuses a watch that would pass the total cap", async () => {
+      const { hub } = harness(100, 2);
+      expect(hub.watch("a", symbols(200), listener().value)).toBe(true);
+      expect(hub.watch("b", symbols(201), listener().value)).toBe(false);
+    });
+
+    it("forwards the heartbeat of every stream and announces live once", async () => {
+      const { hub, runs } = harness();
+      const a = listener();
+      hub.watch("a", symbols(150), a.value);
+      await tick();
+      runs[0]?.emit({ kind: "heartbeat" });
+      runs[1]?.emit({ kind: "heartbeat" });
+      expect(a.seen.filter((entry) => entry === "hb")).toHaveLength(2);
+      expect(a.seen.filter((entry) => entry === "s:live")).toHaveLength(1);
+    });
+
+    it("restarts only the stream whose symbols changed", async () => {
+      const { hub, runs } = harness();
+      hub.watch("a", symbols(150), listener().value);
+      await tick();
+      const [first, second] = runs;
+      const room = first && first.symbols.length < 100 ? first : second;
+      const full = room === first ? second : first;
+      hub.watch("b", ["EXTRA"], listener().value);
+      await tick();
+      expect(full?.signal.aborted).toBe(false);
+      expect(room?.signal.aborted).toBe(true);
+      expect(runs).toHaveLength(3);
+      expect(runs.at(-1)?.symbols).toContain("EXTRA");
+    });
+
+    it("fills the holes of released symbols before opening another stream", async () => {
+      const { hub, runs } = harness(2, 2);
+      hub.watch("a", ["A", "B"], listener().value);
+      hub.watch("b", ["C"], listener().value);
+      await tick();
+      hub.watch("a", ["A"], listener().value);
+      expect(hub.watch("c", ["D", "E"], listener().value)).toBe(true);
+      await tick();
+      expect(runs.filter((run) => !run.signal.aborted)).toHaveLength(2);
+      expect(hub.watch("d", ["F"], listener().value)).toBe(false);
+    });
+
+    it("goes live again when the lane that was down is released", async () => {
+      const { hub, runs } = harness(2, 2);
+      const a = listener();
+      hub.watch("a", ["A", "B"], a.value);
+      hub.watch("b", ["C"], listener().value);
+      await tick();
+      runs[0]?.emit({ kind: "heartbeat" });
+      runs[1]?.finish("failed");
+      await tick();
+      expect(hub.status).toBe("unavailable");
+      hub.release("b");
+      expect(hub.status).toBe("live");
+      expect(a.seen.filter((entry) => entry.startsWith("s:"))).toEqual([
+        "s:live",
+        "s:unavailable",
+        "s:live",
+      ]);
+    });
+
+    it("says unavailable while any stream is down, live again once it delivers", async () => {
+      const { hub, runs } = harness();
+      const a = listener();
+      hub.watch("a", symbols(150), a.value);
+      await tick();
+      runs[0]?.emit({ kind: "heartbeat" });
+      runs[1]?.emit({ kind: "heartbeat" });
+      runs[1]?.finish("failed");
+      await tick();
+      expect(a.seen).toContain("s:unavailable");
+      runs[2]?.emit({ kind: "heartbeat" });
+      expect(a.seen.at(-2)).toBe("s:live");
+    });
   });
 });

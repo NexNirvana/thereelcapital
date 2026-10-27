@@ -45,6 +45,7 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
   const timers: Array<{ ms: number; callback: () => void }> = [];
   const hub = new QuoteHub({
     maxSymbols: 100,
+    maxStreams: 1,
     backoffBaseMs: 1,
     backoffMaxMs: 1,
     run: (_symbols, onEvent, signal) =>
@@ -107,11 +108,11 @@ describe("LiveSockets", () => {
     }
   });
 
-  it("answers unavailable, leaving the socket open, to a watch over the stream's symbol limit", async () => {
+  it("answers unavailable, leaving the socket open, to a watch over what the streams can carry", async () => {
     const { sockets } = harness({});
     const socket = new FakeSocket();
     sockets.adopt(socket);
-    // The hub of this harness allows 100 symbols.
+    // The hub of this harness allows one stream of 100 symbols.
     socket.watch({
       type: "watch",
       symbols: Array.from({ length: 101 }, (_, index) => `S${index}`),
@@ -129,6 +130,33 @@ describe("LiveSockets", () => {
     expect(sockets.adopt(new FakeSocket())).toBe(false);
     a.close();
     expect(sockets.adopt(new FakeSocket())).toBe(true);
+  });
+
+  it("tells a screen that joins a stream already live", async () => {
+    const { sockets, heartbeats } = harness();
+    const first = new FakeSocket();
+    sockets.adopt(first);
+    first.watch({ type: "watch", symbols: ["AAPL"] });
+    await tick();
+    heartbeats[0]?.();
+    const joiner = new FakeSocket();
+    sockets.adopt(joiner);
+    joiner.watch({ type: "watch", symbols: ["AAPL"] });
+    await tick();
+    expect(joiner.sent).toEqual([{ type: "state", state: "live" }]);
+  });
+
+  it("also sends the quote of the entry's contract when the watch lists it as a symbol", async () => {
+    const { sockets, emits } = harness();
+    const socket = new FakeSocket();
+    sockets.adopt(socket);
+    socket.watch({ type: "watch", entry, symbols: [entry.symbol, "MSFT"] });
+    await tick();
+    emits[0]?.(quote(entry.symbol, 1));
+    await tick();
+    expect(socket.sent.filter((m) => m.type === "quote")).toEqual([
+      expect.objectContaining({ type: "quote", symbol: entry.symbol }),
+    ]);
   });
 
   it("answers unavailable when the broker has no stream", async () => {

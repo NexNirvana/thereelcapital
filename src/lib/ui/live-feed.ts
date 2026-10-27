@@ -189,7 +189,6 @@ export function startLiveFeed(options: LiveFeedOptions): LiveFeedHandle {
         unavailable = message.state === "unavailable";
       } else {
         lastDataAt = now();
-        unavailable = false;
       }
       options.onMessage(message);
       balance();

@@ -29,8 +29,8 @@ export interface SocketLike {
   addEventListener(type: "close" | "error", listener: () => void): void;
 }
 
-// No length cap here: the 16 KB message limit bounds the list, and a watch over the stream's symbol
-// limit is answered `unavailable` by the hub with the socket left open.
+// No length cap here: the 16 KB message limit bounds the list, and a watch over what the streams can
+// carry is answered `unavailable` by the hub with the socket left open.
 const Symbols = Schema.Array(Schema.String.check(Schema.isPattern(WATCH_SYMBOL)));
 const WatchMessage = Schema.Struct({
   type: Schema.Literal("watch"),
@@ -149,10 +149,13 @@ class Session implements HubListener {
       return;
     }
     if (!this.#deps.hub.watch(id, streamed, this)) {
-      // Too many symbols for one stream: this screen keeps polling.
+      // Too many symbols for the streams: this screen keeps polling.
       this.state("unavailable");
       return;
     }
+    // A screen that joins a stream already live or down hears it now; transitions reach it later.
+    const status = this.#deps.hub.status;
+    if (status !== null) this.state(status);
     if (entry !== null) {
       // The first sizing reads a snapshot; later ones use the streamed quotes. All go through the
       // same queue, so an old answer never lands after a newer one.

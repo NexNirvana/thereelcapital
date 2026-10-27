@@ -140,17 +140,19 @@ export const PASTE_REDIRECT_URI = "http://localhost:3000";
 export const EXPIRY_CLOSE_LEAD_MS = 15 * 60 * 1000;
 
 /**
- * Decided (D47): the live quote stream. One upstream stream per client carries the symbols of
+ * Decided (D47): the live quote stream. The upstream streams of a client carry the symbols of
  * every open screen. The numbers below are ours, not the broker's: the per-stream symbol limit and
- * the concurrent-stream limit are not stated in the specification we could read (verify on SIM), so
- * a screen asking for more than `LIVE_STREAM_MAX_SYMBOLS` symbols, or a seventh socket, is simply
- * left on snapshot polling. The upstream stream is restarted with a doubling delay after a failure
+ * the concurrent-stream limit are not stated in the specification we could read (verify on SIM).
+ * A union beyond `LIVE_STREAM_MAX_SYMBOLS` is spread over several upstream streams, at most
+ * `LIVE_STREAM_MAX_STREAMS` per client (500 symbols); a screen asking for more than that, or a
+ * seventh socket, is simply left on snapshot polling. The upstream stream is restarted with a doubling delay after a failure
  * (`LIVE_STREAM_BACKOFF_*`); a socket is closed after `LIVE_STREAM_SOCKET_MAX_MS` and the page
  * opens a new one, which checks the session again. The page falls back to polling when nothing
  * arrived on the socket for `LIVE_STREAM_SILENCE_MS` (the broker's heartbeat, forwarded, is every
  * 5 s when idle: verify).
  */
 export const LIVE_STREAM_MAX_SYMBOLS = 100;
+export const LIVE_STREAM_MAX_STREAMS = 5;
 export const LIVE_STREAM_MAX_SOCKETS = 6;
 export const LIVE_STREAM_BACKOFF_BASE_MS = 1000;
 export const LIVE_STREAM_BACKOFF_MAX_MS = 30 * 1000;
