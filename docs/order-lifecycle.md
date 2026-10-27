@@ -101,7 +101,7 @@ Each row is detected by the sync pass (`engine/src/sync.ts`) and logged as one e
 
 | Event | Condition | Loop |
 | --- | --- | --- |
-| `sync.token_expired` | the broker answered 401 | retries each tick while the token can be renewed; stops when the connection is expired or revoked, until a reconnect |
+| `sync.token_expired` | the broker answered 401 | retries each tick while the token can be renewed; stops when the connection is expired or revoked, until a reconnect. The history reads «TradeStation rechazó o cerró la conexión: reconéctala» (never «vencida»: a refresh TradeStation rejected is recorded as REVOKED, not as an expiry) |
 | `sync.rate_limited` | 429 | waits the broker's `Retry-After` (never less than a tick) |
 | `sync.broker_error` | rejected, timeout or an unusable answer | retries next tick |
 | `sync.recovered` | the next pass succeeded | hold lifted, protection back from `unverified` |

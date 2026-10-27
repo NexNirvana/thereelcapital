@@ -29,6 +29,11 @@ describe("history wording", () => {
     expect(eventLabel("protection.expiry_close_skipped")).not.toBe("Evento del sistema");
   });
 
+  it("does not call a connection TradeStation rejected expired", () => {
+    expect(eventLabel("sync.token_expired")).toContain("rechazó o cerró");
+    expect(eventLabel("sync.token_expired")).not.toContain("vencida");
+  });
+
   it("shows market time with daylight saving", () => {
     expect(formatWhen(Date.parse("2026-11-04T15:00:00Z"))).toBe("4 nov 2026, 10:00 ET");
     expect(formatWhen(Date.parse("2026-07-01T15:00:00Z"))).toBe("1 jul 2026, 11:00 ET");
