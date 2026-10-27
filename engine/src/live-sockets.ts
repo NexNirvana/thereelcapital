@@ -4,9 +4,10 @@
 // session and addressed this object by it, so nothing a browser sends names a client.
 //
 // What a browser may say is only a watch: an entry (account, symbol, kind) and symbols. Sizing is
-// the engine's: on each tick of the entry's symbol it computes the quantity again from the client's
-// SIZE and the streamed ask, with the same rules as prepareEntry. The order is still sized from a
-// fresh snapshot ask when it is sent.
+// the engine's: on each tick of the entry's symbol the quote goes out at once, then the quantity is
+// computed again from the client's SIZE and the streamed ask, with the same rules as prepareEntry,
+// from inputs the engine holds in memory (entry-inputs.ts). The order is still sized from a fresh
+// snapshot ask when it is sent.
 
 import { Schema } from "effect";
 import {
@@ -61,8 +62,6 @@ export interface LiveSocketsDeps {
   readonly now: () => number;
   readonly maxSockets: number;
   readonly maxLifetimeMs: number;
-  /** The least time between two sizings of one screen's entry. */
-  readonly entryMinGapMs: number;
   readonly setTimer: (callback: () => void, ms: number) => unknown;
   readonly clearTimer: (handle: unknown) => void;
 }
@@ -87,8 +86,6 @@ class Session implements HubListener {
   /** Bumped by every watch, so an answer to an older watch is dropped. */
   #generation = 0;
   #computing = false;
-  /** The earliest time the next sizing may start: the last one's start plus the minimum gap. */
-  #nextSizingAt = 0;
   /** The next sizing to do: a streamed quote, or `null` inside for the snapshot read of a new watch. */
   #pending: { readonly quote: Quote | null } | null = null;
   #closed = false;
@@ -117,11 +114,7 @@ class Session implements HubListener {
   }
 
   quote(quote: Quote): void {
-    if (this.#entry !== null && quote.symbol === this.#entry.symbol) {
-      this.#pending = { quote };
-      void this.#drain();
-      return;
-    }
+    // The price never waits for sizing, whether or not this is the entry's symbol.
     this.send({
       type: "quote",
       symbol: quote.symbol,
@@ -129,6 +122,10 @@ class Session implements HubListener {
       ask: quote.ask,
       receivedAt: quote.receivedAt,
     });
+    if (this.#entry !== null && quote.symbol === this.#entry.symbol) {
+      this.#pending = { quote };
+      void this.#drain();
+    }
   }
 
   heartbeat(): void {
@@ -170,27 +167,13 @@ class Session implements HubListener {
     this.#computing = true;
     try {
       while (this.#pending !== null && this.#entry !== null && !this.#closed) {
-        // Wait out the gap before taking the tick, so ticks that come meanwhile collapse into the
-        // latest, whether or not a sizing was running when they arrived.
-        const wait = this.#nextSizingAt - this.#deps.now();
-        if (wait > 0) {
-          await this.#pause(wait);
-          continue;
-        }
         const { quote } = this.#pending;
         this.#pending = null;
-        this.#nextSizingAt = this.#deps.now() + this.#deps.entryMinGapMs;
         await this.#compute(this.#entry, quote, this.#generation);
       }
     } finally {
       this.#computing = false;
     }
-  }
-
-  #pause(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.#deps.setTimer(resolve, ms);
-    });
   }
 
   async #compute(entry: WatchEntry, streamed: Quote | null, generation: number): Promise<void> {

@@ -38,6 +38,8 @@ export interface RefresherDeps {
   readonly clock: () => number;
   /** Pause before a retry of a refresh that TradeStation could not answer. */
   readonly retryDelayMs: number;
+  /** Called after anything that changes the stored connection, so a copy of it can be dropped. */
+  readonly changed?: () => void;
 }
 
 export type RefreshOutcome =
@@ -72,12 +74,14 @@ export class TokenRefresher {
   /** The token obtained when the client connected, so the first refresh waits for its time. */
   seed(accessToken: string, expiresInSeconds: number): void {
     this.#generation++;
+    this.deps.changed?.();
     this.#access = { token: accessToken, expiresAt: this.deps.clock() + expiresInSeconds * 1000 };
     this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
   }
 
   forget(): void {
     this.#generation++;
+    this.deps.changed?.();
     this.#access = null;
     this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
   }
@@ -256,6 +260,7 @@ export class TokenRefresher {
         if (generation === this.#generation) this.forget();
         return;
       }
+      this.deps.changed?.();
       if (generation === this.#generation) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
       if (row.refresh_expires_at === null) {
         logEvent({ sql, now }, "info", "broker.rotation_detected", { refreshExpiresAt });
@@ -275,6 +280,7 @@ export class TokenRefresher {
       )
       .bind(now, this.deps.userId, row.refresh_token_enc)
       .run();
+    this.deps.changed?.();
     this.#recovered(row, now);
   }
 
@@ -309,6 +315,7 @@ export class TokenRefresher {
         .bind(state, userId, row.refresh_token_enc)
         .run();
       recorded = written.meta.changes > 0;
+      this.deps.changed?.();
     } catch {
       // The block above already holds; the status is written again by the next failed refresh.
     }

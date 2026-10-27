@@ -81,10 +81,8 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
     now: () => 900,
     maxSockets: 2,
     maxLifetimeMs: 1000,
-    entryMinGapMs: 0,
-    // The lifetime timer is recorded to be fired by hand; the gap between sizings really waits.
-    setTimer: (callback, ms) =>
-      ms === 1000 ? timers.push({ ms, callback }) - 1 : setTimeout(callback, ms),
+    // The lifetime timer is recorded to be fired by hand.
+    setTimer: (callback, ms) => timers.push({ ms, callback }) - 1,
     clearTimer: () => undefined,
     ...over,
   });
@@ -157,8 +155,33 @@ describe("LiveSockets", () => {
     prepared[1]?.done();
     await tick();
     const kinds = socket.sent.map((m) => m.type);
-    expect(kinds).toEqual(["entry", "state", "entry"]);
-    expect(socket.sent[2]).toMatchObject({ update: { askMicros: 101_000_000 }, receivedAt: 500 });
+    expect(kinds).toEqual(["entry", "state", "quote", "entry"]);
+    expect(socket.sent[3]).toMatchObject({ update: { askMicros: 101_000_000 }, receivedAt: 500 });
+  });
+
+  it("sends the entry symbol's quote at once, without waiting for its sizing", async () => {
+    const { sockets, emits, prepared } = harness();
+    const socket = new FakeSocket();
+    sockets.adopt(socket);
+    socket.watch({ type: "watch", entry });
+    await tick();
+    prepared[0]?.done();
+    await tick();
+    socket.sent.length = 0;
+    emits[0]?.(quote("AAPL", 101_000_000));
+    // The sizing of this tick is still running: the price is on the socket already.
+    expect(prepared).toHaveLength(2);
+    expect(socket.sent.filter((m) => m.type === "entry")).toEqual([]);
+    expect(socket.sent).toContainEqual({
+      type: "quote",
+      symbol: "AAPL",
+      bid: 100_999_999,
+      ask: 101_000_000,
+      receivedAt: 500,
+    });
+    prepared[1]?.done();
+    await tick();
+    expect(socket.sent.map((m) => m.type)).toEqual(["state", "quote", "entry"]);
   });
 
   it("collapses ticks that arrive while sizing into the latest one", async () => {
@@ -177,42 +200,6 @@ describe("LiveSockets", () => {
     await tick();
     await tick();
     expect(prepared.map((p) => p.ask)).toEqual([null, 1, 3]);
-  });
-
-  it("collapses the ticks of one gap into the latest", async () => {
-    const { sockets, emits, prepared } = harness({ entryMinGapMs: 40, now: () => Date.now() });
-    const socket = new FakeSocket();
-    sockets.adopt(socket);
-    socket.watch({ type: "watch", entry });
-    await tick();
-    prepared[0]?.done();
-    await tick();
-    emits[0]?.(quote("AAPL", 1));
-    await tick();
-    emits[0]?.(quote("AAPL", 2));
-    await tick();
-    expect(prepared).toHaveLength(1);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    expect(prepared.map((p) => p.ask)).toEqual([null, 2]);
-  });
-
-  it("holds the gap even when the previous sizing finished long before the next tick", async () => {
-    let clock = 1000;
-    const { sockets, emits, prepared } = harness({ entryMinGapMs: 40, now: () => clock });
-    const socket = new FakeSocket();
-    sockets.adopt(socket);
-    socket.watch({ type: "watch", entry });
-    await tick();
-    prepared[0]?.done();
-    await tick();
-    // The first sizing is over; a tick 10 ms later is inside the gap and must wait for it.
-    clock += 10;
-    emits[0]?.(quote("AAPL", 1));
-    await tick();
-    expect(prepared).toHaveLength(1);
-    clock += 40;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(prepared.map((p) => p.ask)).toEqual([null, 1]);
   });
 
   it("drops the answer to a watch that a newer watch replaced", async () => {

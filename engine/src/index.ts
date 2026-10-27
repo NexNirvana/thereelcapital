@@ -8,7 +8,7 @@ import {
   type ConnectionView,
 } from "./connection.ts";
 import {
-  LIVE_ENTRY_MIN_GAP_MS,
+  LIVE_ENTRY_INPUTS_TTL_MS,
   LIVE_STREAM_BACKOFF_BASE_MS,
   LIVE_STREAM_BACKOFF_MAX_MS,
   LIVE_STREAM_MAX_SOCKETS,
@@ -44,6 +44,7 @@ import {
   type OptionContractView,
 } from "./chain.ts";
 import { writeEvent } from "./events.ts";
+import { EntryInputsCache } from "./entry-inputs.ts";
 import { LiveSockets } from "./live-sockets.ts";
 import { QuoteHub } from "./quote-hub.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
@@ -108,6 +109,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   readonly #strikes: StrikesCache = new Map();
   /** The one upstream quote stream of this client and the browser sockets it feeds (D47). */
   readonly #sockets: LiveSockets;
+  /** SIZE and the connection row for sizing the streamed entry; D1 owns both (entry-inputs.ts). */
+  private readonly entryInputs = new EntryInputsCache(() => this.#now(), LIVE_ENTRY_INPUTS_TTL_MS);
   /** The failure last logged for the quote stream, until it delivers again. */
   #streamFailure: string | null = null;
 
@@ -140,12 +143,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           "watchEntry",
           PrepareEntryArgs,
           { mode: "SIM", ...entry },
-          (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined),
+          (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined, this.entryInputs),
         ).catch(() => null),
       now: () => engineNow(this.env),
       maxSockets: LIVE_STREAM_MAX_SOCKETS,
       maxLifetimeMs: LIVE_STREAM_SOCKET_MAX_MS,
-      entryMinGapMs: LIVE_ENTRY_MIN_GAP_MS,
       setTimer: (callback, ms) => setTimeout(callback, ms),
       clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
     });
@@ -265,6 +267,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         );
       }
       return success({ reconciled: result.reconciled });
+    });
+  }
+
+  /**
+   * The admin saved the client's settings in D1: drop the copy of SIZE used to size the live
+   * preview. Carries nothing to apply; the next tick reads D1. Orders always read D1 themselves.
+   */
+  settingsChanged(input: unknown): EngineResult<null> {
+    return this.enter("settingsChanged", ModeOnlyArgs, input, () => {
+      this.entryInputs.invalidate();
+      return success(null);
     });
   }
 
@@ -608,6 +621,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       cipher: () => createCipher(this.env.CREDENTIALS_KEY, this.env.CREDENTIALS_KEY_PREVIOUS),
       clock: () => this.#now(),
       retryDelayMs: REFRESH_REQUEST_RETRY_DELAY_MS,
+      changed: () => this.entryInputs.invalidate(),
     });
     return this.#tokens;
   }
