@@ -115,6 +115,7 @@ export function reconcile(
     adoptOrders(ctx, orders, matches, unresolvedCandidates);
 
     const created = createPositions(ctx, snapshot, protection);
+    releaseSharedHolds(ctx, snapshot);
     adoptPositions(ctx, snapshot, protection);
     syncPositions(ctx, snapshot, created);
     // docs/order-lifecycle.md#degraded-states: an UNKNOWN intent on a position makes its protection
@@ -250,6 +251,17 @@ function createPositions(
       logOnce(ctx, entry.id, "warn", "reconcile.fill_price_missing", { intentId: entry.id });
       continue;
     }
+    // An external purchase adopted before a shared hold was set cannot be told from the other
+    // client's holding. While the holding lasts it waits (adoptPositions); once the account is
+    // flat it is dropped, since its shares are gone with the holding, so it never takes a slot
+    // (limitCounts) or becomes a position of ours when the symbol is bought again (D49).
+    if (entry.source === "external") {
+      if (heldLong(snapshot, entry.account_id, entry.symbol) === 0) {
+        ctx.sql.exec("DELETE FROM intents WHERE id = ?", entry.id);
+        continue;
+      }
+      if (ctx.storage.kv.get(sharedHoldKey(entry.account_id, entry.symbol)) !== undefined) continue;
+    }
     const open = ctx.sql
       .exec<{ id: string }>(
         "SELECT id FROM positions WHERE mode = 'SIM' AND symbol = ? AND status != 'CLOSED'",
@@ -334,9 +346,14 @@ function insertPosition(
 }
 
 /**
- * The broker is the authority on what is held: a position closes only when it reports zero
- * remaining, and a smaller holding than ours is a sale made elsewhere. Both wait while an exit of
- * ours is still unresolved, because that exit's fill may simply not be applied yet.
+ * The broker is the authority on what is held: a position closes when it reports zero remaining,
+ * and a smaller holding than ours is a sale made elsewhere. Both wait while an exit is still
+ * unresolved, because that exit's fill may simply not be applied yet.
+ *
+ * One exception, for a TradeStation account shared with other app clients (docs/decisions.md D49):
+ * their holding of the same symbol keeps the broker above zero for ever. A position whose own
+ * recorded exits (this DO's intents, `source = 'app'`) sold all of it, with none of them still in
+ * flight, closes from that ledger. An order of someone else in flight does not hold it open.
  */
 function syncPositions(
   ctx: ReconcileContext,
@@ -350,22 +367,27 @@ function syncPositions(
     .toArray();
   for (const position of open) {
     if (created.has(position.id)) continue;
-    const exitsInFlight = ctx.sql
-      .exec<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM intents
-          WHERE position_id = ? AND kind != 'entry'
-            AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')`,
+    const exits = ctx.sql
+      .exec<{ app_in_flight: number; other_in_flight: number; app_filled: number }>(
+        `SELECT
+           COALESCE(SUM(source = 'app' AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')), 0) AS app_in_flight,
+           COALESCE(SUM(source != 'app' AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')), 0) AS other_in_flight,
+           COALESCE(SUM(CASE WHEN source = 'app' THEN filled_qty ELSE 0 END), 0) AS app_filled
+          FROM intents
+         WHERE position_id = ? AND kind != 'entry'`,
         position.id,
       )
-      .one().n;
-    if (exitsInFlight > 0) continue;
-    const held =
-      snapshot.positions.find(
-        (candidate) =>
-          candidate.side === "long" &&
-          candidate.accountId === position.account_id &&
-          candidate.symbol === position.symbol,
-      )?.quantity ?? 0;
+      .one();
+    // sold_qty also holds fills adopted from orders made elsewhere (an accepted ambiguity, D49).
+    if (
+      exits.app_in_flight === 0 &&
+      (exits.app_filled >= position.original_qty || position.sold_qty >= position.original_qty)
+    ) {
+      closeFromLedger(ctx, snapshot, position);
+      continue;
+    }
+    if (exits.app_in_flight + exits.other_in_flight > 0) continue;
+    const held = heldLong(snapshot, position.account_id, position.symbol);
     const remaining = position.original_qty - position.sold_qty;
     if (held === 0) {
       ctx.sql.exec(
@@ -391,6 +413,50 @@ function syncPositions(
         remaining,
       });
     }
+  }
+}
+
+const SHARED_HOLD_PREFIX = "shared_hold:";
+interface SharedHold {
+  readonly accountId: string;
+  readonly symbol: string;
+}
+const sharedHoldKey = (accountId: string, symbol: string) =>
+  `${SHARED_HOLD_PREFIX}${accountId}\u0000${symbol}`;
+const heldLong = (snapshot: BrokerSnapshot, accountId: string, symbol: string) =>
+  snapshot.positions.find(
+    (candidate) =>
+      candidate.side === "long" && candidate.accountId === accountId && candidate.symbol === symbol,
+  )?.quantity ?? 0;
+
+/**
+ * Closes a position from our own fills. If the broker still holds the symbol, that holding is not
+ * ours (another app client on the same account, or a purchase made at the terminal): it is
+ * remembered so it is not adopted as a new position of ours, until the account holds none.
+ */
+function closeFromLedger(ctx: ReconcileContext, snapshot: BrokerSnapshot, position: PositionRow) {
+  ctx.sql.exec(
+    "UPDATE positions SET status = 'CLOSED', sold_qty = original_qty WHERE id = ?",
+    position.id,
+  );
+  const heldElsewhere = heldLong(snapshot, position.account_id, position.symbol);
+  if (heldElsewhere > 0) {
+    ctx.storage.kv.put<SharedHold>(sharedHoldKey(position.account_id, position.symbol), {
+      accountId: position.account_id,
+      symbol: position.symbol,
+    });
+  }
+  logEvent(ctx, "info", "reconcile.position_closed", {
+    positionId: position.id,
+    source: "ledger",
+    heldElsewhere,
+  });
+}
+
+/** The account no longer holds the symbol: a later holding is a new one. */
+function releaseSharedHolds(ctx: ReconcileContext, snapshot: BrokerSnapshot): void {
+  for (const [key, hold] of ctx.storage.kv.list<SharedHold>({ prefix: SHARED_HOLD_PREFIX })) {
+    if (heldLong(snapshot, hold.accountId, hold.symbol) === 0) ctx.storage.kv.delete(key);
   }
 }
 
@@ -569,6 +635,11 @@ function adoptOrders(
     }
     if ([...matches.values()].some((matched) => matched.orderId === order.orderId)) continue;
     const entry = ENTRY_ACTIONS.includes(order.tradeAction);
+    // While the account's leftover holding is shared, a new purchase of the symbol cannot be told
+    // from the other client's: it is not adopted, like the holding itself (adoptPositions).
+    if (entry && ctx.storage.kv.get(sharedHoldKey(order.accountId, order.symbol)) !== undefined) {
+      continue;
+    }
     const position = entry
       ? null
       : ctx.sql
@@ -626,6 +697,8 @@ function adoptPositions(
       });
       continue;
     }
+    // What is left after we sold ours out of a shared account is not ours to protect or to sell.
+    if (ctx.storage.kv.get(sharedHoldKey(held.accountId, held.symbol)) !== undefined) continue;
     const known = ctx.sql
       .exec<{ n: number }>(
         `SELECT (SELECT COUNT(*) FROM positions WHERE mode = 'SIM' AND symbol = ? AND status != 'CLOSED')

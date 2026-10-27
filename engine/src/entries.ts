@@ -165,7 +165,7 @@ interface LimitCounts {
 }
 
 /** What the limits count today, read synchronously (callers rely on that inside the reservation transaction). */
-function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
+export function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
   const date = sessionDate(new Date(ctx.now));
   const counters = ctx.sql
     .exec<{ consumed: number; reserved: number }>(
@@ -178,11 +178,14 @@ function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
       "SELECT COUNT(*) AS n FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'",
     )
     .one().n;
+  // A settled external entry that never became a position is another client's purchase held back
+  // by a shared hold (reconcile.ts, D49): it takes no slot.
   const reservedOpens = ctx.sql
     .exec<{ n: number }>(
       `SELECT COUNT(*) AS n FROM intents
          WHERE mode = 'SIM' AND kind = 'entry' AND position_id IS NULL
-           AND (state IN ${SLOT_HOLDING_STATES} OR filled_qty > 0)`,
+           AND (state IN ${SLOT_HOLDING_STATES} OR filled_qty > 0)
+           AND NOT (source = 'external' AND state IN ('FILLED', 'CANCELED', 'REJECTED'))`,
     )
     .one().n;
   return { ...counters, open, reservedOpens };
