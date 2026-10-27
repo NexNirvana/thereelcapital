@@ -1,16 +1,12 @@
-// Keeps a screen's prices live over the socket to the engine (D47) and falls back, by itself, to the
-// snapshot polling of D46 whenever the socket is not delivering. The prices are display only: the
-// socket carries what the screen watches out and quote updates in, never a price or a quantity the
-// engine would trust.
+// Keeps a screen's prices live over the app's one socket to the engine (D47, see `live-hub.ts`) and
+// falls back, by itself, to the snapshot polling of D46 whenever the socket is not delivering. The
+// prices are display only: the socket carries what the screen watches out and quote updates in,
+// never a price or a quantity the engine would trust.
 //
 // The screen is "on the stream" while the socket is open and something arrived within
 // `LIVE_STREAM_SILENCE_MS` (the broker's heartbeat, forwarded, counts). Otherwise the poll runs.
 
-import {
-  LIVE_STREAM_BACKOFF_BASE_MS,
-  LIVE_STREAM_BACKOFF_MAX_MS,
-  LIVE_STREAM_SILENCE_MS,
-} from "#lib/domain/config.ts";
+import { LIVE_STREAM_SILENCE_MS } from "#lib/domain/config.ts";
 import type { LiveMessage, WatchMessage } from "#lib/domain/live-protocol.ts";
 import {
   startLivePoll,
@@ -18,14 +14,9 @@ import {
   type LivePollPage,
   type LivePollTimers,
 } from "./live-poll.ts";
+import { createLiveHub, type FeedSocket, type LiveHub } from "./live-hub.ts";
 
-/** The part of a browser WebSocket the feed uses. */
-export interface FeedSocket {
-  send(data: string): void;
-  close(): void;
-  addEventListener(type: "open" | "close" | "error", listener: () => void): void;
-  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-}
+export type { FeedSocket };
 
 export interface LiveFeedOptions {
   /** What the screen watches; sent again every time the socket (re)opens. A function is read each time, so the screen can change it (see `rewatch`). */
@@ -39,13 +30,12 @@ export interface LiveFeedOptions {
    * stream cannot reach everything the poll reads).
    */
   readonly refreshMs?: number;
+  /** Gives the feed a hub of its own (tests) instead of the app's shared one; closed when the feed stops. */
   readonly createSocket?: (path: string) => FeedSocket;
   readonly page?: LivePollPage;
   readonly timers?: LivePollTimers;
   readonly now?: () => number;
 }
-
-export const LIVE_SOCKET_PATH = "/operar/en-vivo";
 
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -114,16 +104,22 @@ export function parseLiveMessage(text: unknown): LiveMessage | null {
   }
 }
 
-function browserSocket(path: string): FeedSocket {
-  const url = new URL(path, location.href);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return new WebSocket(url);
-}
-
 const BROWSER_TIMERS: LivePollTimers = {
   set: (callback, ms) => setTimeout(callback, ms),
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
+
+let sharedHub: LiveHub | null = null;
+/** The one socket of the signed-in app, created on first use in the browser. */
+function appLiveHub(): LiveHub {
+  sharedHub ??= createLiveHub({ parse: parseLiveMessage });
+  return sharedHub;
+}
+
+/** Opens the app's socket now and keeps it open until the returned function is called. */
+export function keepLiveSocketOpen(): () => void {
+  return appLiveHub().retain();
+}
 
 /** `stop` ends the feed for good (when the screen goes away); `rewatch` sends the watch again. */
 export interface LiveFeedHandle {
@@ -133,25 +129,29 @@ export interface LiveFeedHandle {
 
 /** Starts the feed; the returned function stops it, and its `rewatch` re-sends what is watched. */
 export function startLiveFeed(options: LiveFeedOptions): LiveFeedHandle {
-  const page = options.page ?? document;
   const timers = options.timers ?? BROWSER_TIMERS;
   const now = options.now ?? Date.now;
-  const createSocket = options.createSocket ?? browserSocket;
+  const hub =
+    options.createSocket === undefined
+      ? appLiveHub()
+      : createLiveHub({
+          parse: parseLiveMessage,
+          createSocket: options.createSocket,
+          page: options.page,
+          timers: options.timers,
+          now: options.now,
+        });
   const currentWatch = () =>
     typeof options.watch === "function" ? options.watch() : options.watch;
 
   let stopped = false;
-  let socket: FeedSocket | null = null;
-  let opened = false;
   let stopPoll: (() => void) | null = null;
   let lastDataAt: number | null = null;
-  let unavailable = false;
-  let reconnectFailures = 0;
-  let reconnectTimer: unknown = null;
+  let unavailable = hub.unavailable;
   let checkTimer: unknown = null;
 
   const onStream = () =>
-    socket !== null &&
+    hub.connected &&
     !unavailable &&
     lastDataAt !== null &&
     now() - lastDataAt < LIVE_STREAM_SILENCE_MS;
@@ -174,113 +174,40 @@ export function startLiveFeed(options: LiveFeedOptions): LiveFeedHandle {
     });
   };
 
-  const clearReconnect = () => {
-    if (reconnectTimer !== null) timers.clear(reconnectTimer);
-    reconnectTimer = null;
-  };
-
-  const closeSocket = () => {
-    const closing = socket;
-    socket = null;
-    lastDataAt = null;
-    unavailable = false;
-    opened = false;
-    try {
-      closing?.close();
-    } catch {
-      // Already closed.
-    }
-  };
-
-  const scheduleReconnect = () => {
-    clearReconnect();
-    if (stopped || page.visibilityState !== "visible") return;
-    const delay = Math.min(
-      LIVE_STREAM_BACKOFF_BASE_MS * 2 ** reconnectFailures,
-      LIVE_STREAM_BACKOFF_MAX_MS,
-    );
-    reconnectFailures += 1;
-    reconnectTimer = timers.set(open, delay);
-  };
-
-  function open() {
-    reconnectTimer = null;
-    if (stopped || socket !== null || page.visibilityState !== "visible") return;
-    let created: FeedSocket;
-    try {
-      created = createSocket(LIVE_SOCKET_PATH);
-    } catch {
-      scheduleReconnect();
-      return;
-    }
-    socket = created;
-    opened = false;
-    // A socket that ended, or a newer one that replaced it, is not this one's business.
-    const current = () => socket === created;
-    const ended = () => {
-      if (!current()) return;
-      closeSocket();
-      balance();
-      scheduleReconnect();
-    };
-    created.addEventListener("open", () => {
-      if (!current()) return;
-      opened = true;
-      created.send(JSON.stringify(currentWatch()));
-    });
-    created.addEventListener("message", (event) => {
-      if (!current()) return;
-      const message = parseLiveMessage(event.data);
-      if (message === null) return;
-      if (message.type === "state") {
-        unavailable = message.state === "unavailable";
-      } else {
-        lastDataAt = now();
-        unavailable = false;
-        reconnectFailures = 0;
-      }
-      options.onMessage(message);
-      balance();
-    });
-    created.addEventListener("close", ended);
-    created.addEventListener("error", ended);
-  }
-
   // Silence is noticed here, not by an event: nothing arrives to say that nothing arrives.
   const check = () => {
     checkTimer = timers.set(check, 1000);
     balance();
   };
 
-  const onVisibility = () => {
-    if (stopped) return;
-    if (page.visibilityState === "visible") {
-      reconnectFailures = 0;
-      open();
-    } else {
-      clearReconnect();
-      closeSocket();
-      balance();
-    }
-  };
-
-  page.addEventListener("visibilitychange", onVisibility);
   balance();
-  open();
+  const stopListening = hub.listen({
+    watch: currentWatch,
+    onMessage: (message) => {
+      if (stopped) return;
+      if (message.type === "state") {
+        unavailable = message.state === "unavailable";
+      } else {
+        lastDataAt = now();
+        unavailable = false;
+      }
+      options.onMessage(message);
+      balance();
+    },
+    onDown: () => {
+      lastDataAt = null;
+      unavailable = false;
+      balance();
+    },
+  });
   check();
   const stopFeed = () => {
     stopped = true;
-    page.removeEventListener("visibilitychange", onVisibility);
-    clearReconnect();
     if (checkTimer !== null) timers.clear(checkTimer);
-    closeSocket();
+    stopListening();
     stopPoll?.();
     stopPoll = null;
     pollPace = null;
   };
-  // Only an open socket can take it; a socket still connecting sends the current watch on open.
-  const rewatch = () => {
-    if (socket !== null && opened) socket.send(JSON.stringify(currentWatch()));
-  };
-  return Object.assign(stopFeed, { rewatch });
+  return Object.assign(stopFeed, { rewatch: () => hub.rewatch() });
 }
