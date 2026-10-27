@@ -173,6 +173,32 @@ describe("orders", () => {
     expect(JSON.stringify(skipped)).not.toContain("1.5");
   });
 
+  it("keeps an order whose average FilledPrice has more than six decimals", async () => {
+    const order = {
+      OrderID: "7",
+      AccountID: "A",
+      Status: "FLL",
+      FilledPrice: "0.5733333333",
+      OpenedDateTime: "2021-02-24T15:47:45Z",
+      Legs: [
+        {
+          AssetType: "STOCK",
+          BuyOrSell: "Buy",
+          OpenOrClose: "Open",
+          QuantityOrdered: "3",
+          ExecQuantity: "3",
+          QuantityRemaining: "0",
+          Symbol: "MSFT",
+        },
+      ],
+    };
+    const skipped: BrokerSkip[] = [];
+    const { transport } = withBody({ Orders: [order] });
+    const result = await run(orders.orders(transport, ["A"], skipped));
+    expect(skipped).toEqual([]);
+    expect(result.map((o) => [o.orderId, o.avgFillPriceMicros])).toEqual([["7", 573_333]]);
+  });
+
   it("keeps the broker's rejection reason, cut short", async () => {
     const order = {
       OrderID: "5",

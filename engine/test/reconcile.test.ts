@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
+import type { BrokerSkip } from "../src/broker/adapter.ts";
 import { reconcile } from "../src/reconcile.ts";
+import { makeTransport } from "../src/tradestation/http.ts";
+import * as tsOrders from "../src/tradestation/orders.ts";
 import {
   IN_SESSION,
   newClient,
@@ -12,6 +15,7 @@ import {
   usd,
   type Clock,
 } from "./sync-helpers.ts";
+import { json, okToken, scriptedFetch } from "./tradestation/helpers.ts";
 
 const target = (symbol: string) =>
   ({ mode: "SIM", accountId: "SIM-1", symbol, assetType: "equity" }) as const;
@@ -77,6 +81,51 @@ describe("applying order status and fills", () => {
       expect(
         ctx.sql.exec("SELECT COUNT(*) AS n FROM scaleout_steps WHERE state = 'available'").one(),
       ).toEqual({ n: 7 });
+    });
+  });
+
+  it("fills our own entry whose average FilledPrice carries more than six decimals", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const sim = newSim(clock);
+    const client = await newClient();
+    await inClient(client, clock, sim.adapter, async (ctx) => {
+      const id = await enter(ctx, "AAPL");
+      const [placed] = await run(sim.adapter.orders(["SIM-1"]));
+      if (placed === undefined) throw new Error("no order");
+      const wire = {
+        OrderID: placed.orderId,
+        AccountID: placed.accountId,
+        Status: "FLL",
+        FilledPrice: "200.5733333333",
+        OpenedDateTime: new Date(placed.openedAt).toISOString(),
+        ClosedDateTime: new Date(placed.openedAt).toISOString(),
+        Legs: [
+          {
+            AssetType: "STOCK",
+            BuyOrSell: "Buy",
+            OpenOrClose: "Open",
+            QuantityOrdered: String(placed.quantity),
+            ExecQuantity: String(placed.quantity),
+            QuantityRemaining: "0",
+            Symbol: placed.symbol,
+          },
+        ],
+      };
+      const script = scriptedFetch(() => json({ Orders: [wire] }));
+      const made = makeTransport({
+        mode: "SIM",
+        accessToken: okToken,
+        fetch: script.fetch,
+        retryDelayMs: 0,
+      });
+      if (!made.ok) throw new Error(made.reason);
+      const skipped: BrokerSkip[] = [];
+      const decoded = await run(tsOrders.orders(made.transport, ["SIM-1"], skipped));
+      expect(skipped).toEqual([]);
+      const snapshot = { ...(await readSnapshot(sim.adapter)), orders: decoded };
+      await reconcile({ sql: ctx.sql, storage: ctx.storage, now: ctx.now }, snapshot, PROTECTION);
+
+      expect(intent(ctx, id)).toMatchObject({ state: "FILLED", avg_fill_price: 200_573_333 });
     });
   });
 

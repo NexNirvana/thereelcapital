@@ -16,6 +16,7 @@ export const blankable = <S extends Schema.Top>(schema: S) =>
 
 const MICROS_PER_UNIT = 1_000_000;
 const MICROS_PATTERN = /^(-?)(\d+)(?:\.(\d{1,6}))?$/;
+const ROUNDED_MICROS_PATTERN = /^(-?)(\d+)(?:\.(\d+))?$/;
 const INTEGER_PATTERN = /^\d+(?:\.0+)?$/;
 
 /** Decodes `input` with `schema`, failing as Unknown (never retried) when the shape is wrong. */
@@ -33,6 +34,20 @@ export const decodeWire = <S extends Schema.Top & { readonly DecodingServices: n
 const invalid = (operation: BrokerOperation, field: string) =>
   new Unknown({ operation, detail: `invalid_value:${field}` });
 
+const toMicros = (
+  operation: BrokerOperation,
+  field: string,
+  sign: string | undefined,
+  whole: string | undefined,
+  fraction: string,
+  roundUp: boolean,
+): Effect.Effect<number, Unknown> => {
+  const micros =
+    Number(whole) * MICROS_PER_UNIT + Number(fraction.padEnd(6, "0")) + (roundUp ? 1 : 0);
+  if (!Number.isSafeInteger(micros)) return Effect.fail(invalid(operation, field));
+  return Effect.succeed(sign === "-" ? -micros : micros);
+};
+
 /** "212.87" → 212_870_000. At most six decimals; anything finer is refused rather than rounded. */
 export function microsOf(
   operation: BrokerOperation,
@@ -42,9 +57,26 @@ export function microsOf(
   const match = MICROS_PATTERN.exec(String(value).trim());
   if (match === null) return Effect.fail(invalid(operation, field));
   const [, sign, whole, fraction = ""] = match;
-  const micros = Number(whole) * MICROS_PER_UNIT + Number(fraction.padEnd(6, "0"));
-  if (!Number.isSafeInteger(micros)) return Effect.fail(invalid(operation, field));
-  return Effect.succeed(sign === "-" ? -micros : micros);
+  return toMicros(operation, field, sign, whole, fraction, false);
+}
+
+/**
+ * For prices the broker computes as an average (`FilledPrice`, position `AveragePrice`), which can
+ * carry more than six decimals ("0.5733333333" after fills at two prices): "0.5733333333" →
+ * 573_333, rounded half away from zero on the decimal string, never through floating point.
+ * The sign, digits-only shape and safe-integer checks of `microsOf` still apply.
+ */
+export function averageMicrosOf(
+  operation: BrokerOperation,
+  field: string,
+  value: WireNumber,
+): Effect.Effect<number, Unknown> {
+  const match = ROUNDED_MICROS_PATTERN.exec(String(value).trim());
+  if (match === null) return Effect.fail(invalid(operation, field));
+  const [, sign, whole, fraction = ""] = match;
+  const kept = fraction.slice(0, 6);
+  const roundUp = (fraction[6] ?? "0") >= "5";
+  return toMicros(operation, field, sign, whole, kept, roundUp);
 }
 
 /** "10" → 10. Fractional quantities are out of scope and refused. */
