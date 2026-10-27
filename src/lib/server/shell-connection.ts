@@ -26,10 +26,22 @@ export type ShellConnection =
           };
     };
 
-/** What the engine returns; structural, so the extra fields it carries are simply not named. */
+type ShellView = Extract<ShellConnection, { ok: true }>["view"];
+type ConnectedView = Extract<ShellView, { status: "CONNECTED" }>;
+
+/**
+ * What the engine returns; structural, so the extra fields it carries are simply not named. The web
+ * and engine Workers deploy separately and the Durable Object runs the previous engine code for a
+ * while, so a field added to the engine view is optional here (docs/architecture.md#deploy-order).
+ */
 type EngineConnection =
   | { readonly ok: false; readonly message: string }
-  | { readonly ok: true; readonly value: Extract<ShellConnection, { ok: true }>["view"] };
+  | {
+      readonly ok: true;
+      readonly value:
+        | { readonly status: "NOT_CONNECTED" }
+        | (Omit<ConnectedView, "lastSyncAt"> & { readonly lastSyncAt?: number | null });
+    };
 
 /** `null` when the engine could not be reached at all. */
 export function shellConnection(result: EngineConnection | null): ShellConnection | null {
@@ -45,7 +57,7 @@ export function shellConnection(result: EngineConnection | null): ShellConnectio
       entriesBlocked: view.entriesBlocked,
       accounts: view.accounts.map(({ accountId, accountType }) => ({ accountId, accountType })),
       refreshExpiresAt: view.refreshExpiresAt,
-      lastSyncAt: view.lastSyncAt,
+      lastSyncAt: view.lastSyncAt ?? null,
     },
   };
 }

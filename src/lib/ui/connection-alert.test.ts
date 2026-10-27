@@ -83,3 +83,33 @@ describe("unverified wording", () => {
     expect(unverifiedSince({ ok: true, view: { status: "NOT_CONNECTED" } })).toBeNull();
   });
 });
+
+describe("an engine view without lastSyncAt (previous engine code)", () => {
+  const old = (health: ConnectionHealth, entriesBlocked: boolean): ShellConnection => ({
+    ok: true,
+    view: {
+      status: "CONNECTED",
+      health,
+      entriesBlocked,
+      accounts: [],
+      refreshExpiresAt: null,
+      // @ts-expect-error the old engine omits the field; the type says null
+      lastSyncAt: undefined,
+    },
+  });
+
+  it("still builds the pending and lost alerts, without a time", () => {
+    const pending = connectionAlert(old({ status: "ok" }, true));
+    expect(pending).toMatchObject({ kind: "pending", since: null });
+    expect(pending?.lines.join(" ")).not.toContain("Última sincronización");
+    expect(connectionAlert(old({ status: "revoked" }, true))).toMatchObject({
+      kind: "lost",
+      since: null,
+    });
+  });
+
+  it("words the unverified line without a time", () => {
+    expect(unverifiedLine(undefined as unknown as null)).toBe("Datos sin verificar");
+    expect(unverifiedLine(Number.NaN)).toBe("Datos sin verificar");
+  });
+});

@@ -7,7 +7,12 @@ import { engineFor } from "#lib/server/engine.ts";
 import { INTENT_ID } from "#lib/server/entry-query.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import { TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
-import { cancelOutcome, exitBlockMessage, exitOutcome } from "#lib/ui/positions.ts";
+import {
+  cancelOutcome,
+  exitBlockMessage,
+  exitOutcome,
+  withVerification,
+} from "#lib/ui/positions.ts";
 import type { Actions, PageServerLoad } from "./$types";
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
@@ -34,10 +39,11 @@ export const load: PageServerLoad = async (event) => {
       error: "No pudimos leer tus posiciones. Inténtalo de nuevo.",
     };
   }
-  const { positions } = result.value;
+  const view = withVerification(result.value);
+  const { positions } = view;
   // An unknown or closed id falls back to the first open position.
   const selected = positions.find((position) => position.id === query.p) ?? positions[0];
-  return { view: result.value, selectedId: selected?.id ?? null, error: null };
+  return { view, selectedId: selected?.id ?? null, error: null };
 };
 
 // What a sell form carries: a position id and a step (or ALL OUT). No quantity, no price, no

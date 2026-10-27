@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { PositionView } from "#lib/domain/positions-view.ts";
 import {
+  withVerification,
   exitBlockMessage,
   formatExpiration,
   formatUnits,
@@ -181,5 +182,27 @@ describe("trailing activation", () => {
     expect(exitBlockMessage(["EXIT_PENDING"])).toContain("en curso");
     expect(exitBlockMessage(["ALREADY_ACTIVE"])).toContain("ya está activo");
     expect(exitBlockMessage(["QUOTE_UNAVAILABLE"])).toContain("precio");
+  });
+});
+
+describe("withVerification", () => {
+  const base = { positions: [], pending: [], maxPositions: 2 };
+
+  it("reads a view from the previous engine, with no verification, as verified", () => {
+    expect(withVerification(base).verification).toEqual({ status: "verified" });
+  });
+
+  it("keeps an unverified view, and drops a time that is not usable", () => {
+    expect(
+      withVerification({ ...base, verification: { status: "unverified", lastSyncAt: 5 } })
+        .verification,
+    ).toEqual({ status: "unverified", lastSyncAt: 5 });
+    expect(
+      withVerification({
+        ...base,
+        // @ts-expect-error the old shape has no time
+        verification: { status: "unverified" },
+      }).verification,
+    ).toEqual({ status: "unverified", lastSyncAt: null });
   });
 });

@@ -47,10 +47,12 @@ export function connectionAlert(connection: ShellConnection | null): ConnectionA
       since: null,
     };
   }
-  const lastGood =
-    view.lastSyncAt === null
-      ? []
-      : [`Última sincronización correcta: ${formatWhen(view.lastSyncAt)}.`];
+  // Never throws on a missing or bad time: an alert must not take the whole layout down.
+  const since =
+    typeof view.lastSyncAt === "number" && Number.isFinite(view.lastSyncAt)
+      ? view.lastSyncAt
+      : null;
+  const lastGood = since === null ? [] : [`Última sincronización correcta: ${formatWhen(since)}.`];
   if (brokerReachable(view.health)) {
     // The token is fine but no sync pass has confirmed the state yet (a pass failed, or the
     // connection just changed): the data on screen is unverified, entries are on hold.
@@ -64,7 +66,7 @@ export function connectionAlert(connection: ShellConnection | null): ConnectionA
         "Hasta entonces no podemos verificarlas, ni enviar nuevas órdenes.",
       ],
       action: "Ver la conexión",
-      since: view.lastSyncAt,
+      since,
     };
   }
   return {
@@ -72,13 +74,13 @@ export function connectionAlert(connection: ShellConnection | null): ConnectionA
     title: "La conexión con TradeStation no está activa",
     lines: [causeOf(view.health), ...lastGood, BLOCKED],
     action: "Reconectar con TradeStation",
-    since: view.lastSyncAt,
+    since,
   };
 }
 
 /** «Datos sin verificar desde 10:00 ET», or without the time when no pass ever completed. */
 export function unverifiedLine(lastSyncAt: number | null): string {
-  return lastSyncAt === null
+  return lastSyncAt === null || !Number.isFinite(lastSyncAt)
     ? "Datos sin verificar"
     : `Datos sin verificar desde ${formatWhen(lastSyncAt)}`;
 }
