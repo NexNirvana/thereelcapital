@@ -55,7 +55,7 @@ const EVENT_LABELS: Readonly<Record<string, string>> = {
   "reconcile.armed_never_sent": "Orden preparada que no se envió",
   "sync.broker_error": "Error al sincronizar con TradeStation",
   "sync.rate_limited": "TradeStation limitó las consultas",
-  "sync.token_expired": "Conexión vencida",
+  "sync.token_expired": "TradeStation rechazó o cerró la conexión: reconéctala",
   "sync.recovered": "Sincronización restablecida",
   "sync.unknown_pending": "Órdenes por verificar",
   "protection.stop_triggered": "Stop activado",
