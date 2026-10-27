@@ -94,7 +94,6 @@
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     pickedId = id;
-    confirming = false;
     // eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() is applied in positionHref
     replaceState(positionHref(id), {});
   };
@@ -118,7 +117,6 @@
 
   // One request at a time: a second click before the first answer must not become a second order.
   let sending = $state(false);
-  let confirming = $state(false);
   const submit = ({ cancel }: { cancel: () => void }) => {
     if (sending) {
       cancel();
@@ -128,7 +126,6 @@
     return async ({ update }: { update: () => Promise<void> }) => {
       await update();
       sending = false;
-      confirming = false;
       polls = 0;
     };
   };
@@ -287,36 +284,17 @@
         </dl>
 
         <div class="close">
-          {#if confirming}
-            <form
-              method="POST"
-              action={`?/salir&p=${encodeURIComponent(position.id)}`}
-              use:enhance={submit}
-            >
-              <input type="hidden" name="positionId" value={position.id} />
-              <input type="hidden" name="step" value="ALL_OUT" />
-              <Notice title="¿Cerrar la posición?">
-                Se venderá todo lo que queda de {headline(position)} a mercado. Esto no se puede deshacer.
-              </Notice>
-              <div class="confirm">
-                <Button type="submit" variant="primary" disabled={sending}>
-                  {sending ? "Enviando…" : "Confirmar cierre"}
-                </Button>
-                <Button type="button" variant="link" onclick={() => (confirming = false)}>
-                  Volver
-                </Button>
-              </div>
-            </form>
-          {:else}
-            <Button
-              type="button"
-              variant="primary"
-              disabled={sending || sellable === 0}
-              onclick={() => (confirming = true)}
-            >
-              Cerrar posición
+          <form
+            method="POST"
+            action={`?/salir&p=${encodeURIComponent(position.id)}`}
+            use:enhance={submit}
+          >
+            <input type="hidden" name="positionId" value={position.id} />
+            <input type="hidden" name="step" value="ALL_OUT" />
+            <Button type="submit" variant="primary" disabled={sending || sellable === 0}>
+              {sending ? "Enviando…" : "Cerrar posición"}
             </Button>
-          {/if}
+          </form>
           <p class="hint wide">{allOutHint(position, sellable)}</p>
           <p class="hint narrow">{allOutShortHint(position, sellable)}</p>
         </div>
@@ -567,11 +545,6 @@
     margin-top: 3rem;
     display: grid;
     gap: 0.75rem;
-  }
-  .confirm {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1rem;
   }
   .pending ul {
     border-top: 1px solid var(--rule);
