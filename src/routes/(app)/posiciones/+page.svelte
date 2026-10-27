@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import { afterNavigate, invalidate, replaceState } from "$app/navigation";
   import { resolve } from "$app/paths";
+  import { unverifiedLine } from "#lib/ui/connection-alert.ts";
   import { DEFAULT_TRAILING_PCT, TRAILING_PCT_OPTIONS } from "#lib/domain/config.ts";
   import Badge from "#lib/ui/Badge.svelte";
   import Button from "#lib/ui/Button.svelte";
@@ -37,6 +38,7 @@
   // either way.
   const POLL_MS = 3_000;
   const MAX_POLLS = 400;
+  const CONNECTION_EVERY_POLLS = 10;
   let polls = $state(0);
 
   $effect(() => {
@@ -45,6 +47,8 @@
       if (document.visibilityState !== "visible") return;
       polls += 1;
       void invalidate("app:positions");
+      // The shell alert reads the connection once per navigation: refresh it every ~30 s here.
+      if (polls % CONNECTION_EVERY_POLLS === 0) void invalidate("app:connection");
     };
     const timer = setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
@@ -69,6 +73,9 @@
   const positionHref = (id: string) =>
     `${resolve("/(app)/posiciones")}?${new URLSearchParams({ p: id })}`;
   const positions = $derived(data.view?.positions ?? []);
+  const unverified = $derived(
+    data.view?.verification.status === "unverified" ? data.view.verification : null,
+  );
   // A click picks from the positions already loaded: no new engine call. replaceState does not
   // update SvelteKit's own URL, so the poll reloads with the original `?p=`: the pick must survive
   // invalidations and reset only on a real navigation (the shell link, back/forward), to what the
@@ -134,7 +141,9 @@
     <div class="title">
       <h1><span class="wide">Posiciones</span><span class="narrow">Posición</span></h1>
       {#if data.view}
-        <p class="count wide">{positions.length} de {data.view.maxPositions} posiciones</p>
+        <p class="count wide" class:stale={unverified}>
+          {positions.length} de {data.view.maxPositions} posiciones
+        </p>
       {/if}
     </div>
     <p class="lead">Gestiona tus posiciones abiertas.</p>
@@ -174,11 +183,14 @@
           <p class="expiry"><Badge label={warning} /></p>
         {/if}
 
-        <p class="remaining">{remainingLine(position)}</p>
-        <p class="counts">
+        {#if unverified}
+          <p class="unverified">{unverifiedLine(unverified.lastSyncAt)}</p>
+        {/if}
+        <p class="remaining" class:stale={unverified}>{remainingLine(position)}</p>
+        <p class="counts" class:stale={unverified}>
           {countsLine(position)}
         </p>
-        <div class="progress">
+        <div class="progress" class:stale={unverified}>
           <ProgressBar value={soldPercent(position)} label={`${soldPercent(position)}% vendido`} />
         </div>
 
@@ -439,6 +451,15 @@
   }
   .expiry {
     margin-top: 0.75rem;
+  }
+  .unverified {
+    margin-top: 2rem;
+    margin-bottom: -1.75rem;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .stale {
+    opacity: 0.5;
   }
   .remaining {
     margin-top: 2rem;

@@ -13,7 +13,8 @@ import {
   SYNC_INTERVAL_MS,
   SYNC_MIN_INTERVAL_MS,
 } from "#lib/domain/config.ts";
-import { LAST_OK_KEY, runSync, syncWanted } from "../src/sync.ts";
+import { LAST_OK_KEY } from "../src/connection.ts";
+import { runSync, syncWanted } from "../src/sync.ts";
 import {
   ACCOUNTS,
   IN_SESSION,

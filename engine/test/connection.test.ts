@@ -352,6 +352,7 @@ describe("completeConnection", () => {
       ],
       refreshExpiresAt: null,
       lastOkAt: expect.any(Number),
+      lastSyncAt: null,
     });
     expectNoSecrets(JSON.stringify(result));
 
@@ -667,10 +668,22 @@ describe("positions view while the connection is down", () => {
     const client = await newClient();
     await connect(client);
     await openPosition(client);
+    // Connecting leaves a reconciliation hold: nothing is confirmed until the first pass.
+    expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+      value: { verification: { status: "unverified" } },
+    });
+    expect(await reconcile(client)).toBe(true);
     expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
       ok: true,
       value: { verification: { status: "verified" }, positions: [{ id: "p1" }] },
     });
+
+    // A failed pass places the hold again although the token is fine.
+    await runInDurableObject(client.stub, (_i, state) => holdForReconciliation(state.storage));
+    expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+      value: { verification: { status: "unverified" } },
+    });
+    expect(await reconcile(client)).toBe(true);
 
     await runInDurableObject(client.stub, (_i, state) =>
       state.storage.kv.put("sync_last_ok_at", 1234),
@@ -742,5 +755,33 @@ describe("reconnecting after a revoked connection", () => {
     });
     expect(outcome.dueAt).toBeTypeOf("number");
     expect(outcome).toMatchObject({ status: "CLOSED", closedEvents: 1 });
+  });
+});
+
+describe("positions view when D1 cannot answer", () => {
+  it("still returns the rows, unverified, with the last good sync", async () => {
+    const client = await newClient();
+    await runInDurableObject(client.stub, (_i, state) => {
+      state.storage.kv.put("sync_last_ok_at", 99);
+      state.storage.sql.exec(
+        `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
+           trailing_unlock_pct, protection_state, status, opened_on)
+         VALUES ('p9', 'SIM', 'SIM-1', 'AAPL', 5, 0, 1, 30, 70, 'none', 'OPEN', '2026-10-26')`,
+      );
+    });
+    const prepare = vi.spyOn(env.DB, "prepare").mockImplementation(() => {
+      throw new Error("D1 unavailable");
+    });
+    try {
+      expect(await client.stub.positions({ mode: "SIM" })).toMatchObject({
+        ok: true,
+        value: {
+          verification: { status: "unverified", lastSyncAt: 99 },
+          positions: [{ id: "p9" }],
+        },
+      });
+    } finally {
+      prepare.mockRestore();
+    }
   });
 });
