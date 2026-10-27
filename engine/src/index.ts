@@ -223,8 +223,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       ),
     );
     if (result._tag === "Success") {
-      // An aborted run (its stream replaced or retired) ends here: that stream no longer fails.
-      this.#streamFailures.delete(streamId);
+      // An aborted run is a predecessor that made way or a retired stream: the record is not its
+      // to clear (a failed successor wrote it; onRetire drops it with the stream).
+      if (!signal.aborted) this.#streamFailures.delete(streamId);
       return "ended";
     }
     // Only the kind and, for a refusal, its code: never the symbols, a token or a body.

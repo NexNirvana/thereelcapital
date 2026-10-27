@@ -79,7 +79,7 @@ describe("QuoteHub", () => {
     expect(b.seen).toEqual(["s:live", "hb"]);
   });
 
-  it("restarts when the set changes, never with two streams open", async () => {
+  it("replaces a stream that has not delivered yet at once, never with two open", async () => {
     const { hub, runs, maxOpen } = harness();
     hub.watch("a", ["AAPL"], listener().value);
     await tick();
@@ -93,6 +93,104 @@ describe("QuoteHub", () => {
     expect(maxOpen()).toBe(1);
   });
 
+  it("keeps the old stream delivering until the one for the new set delivers", async () => {
+    const { hub, runs, maxOpen } = harness();
+    const a = listener();
+    hub.watch("a", ["AAPL"], a.value);
+    await tick();
+    const [old] = runs;
+    old?.emit({ kind: "quote", quote: quote("AAPL") });
+    hub.watch("b", ["MSFT"], listener().value);
+    await tick();
+    const next = runs[1];
+    expect(next?.symbols).toEqual(["AAPL", "MSFT"]);
+    // The new stream is still connecting: AAPL keeps ticking on the old one.
+    expect(old?.signal.aborted).toBe(false);
+    old?.emit({ kind: "quote", quote: quote("AAPL") });
+    expect(a.seen).toEqual(["s:live", "q:AAPL", "q:AAPL"]);
+    // Once the new stream delivers, it takes over and the old one is closed.
+    next?.emit({ kind: "quote", quote: quote("AAPL") });
+    expect(old?.signal.aborted).toBe(true);
+    old?.emit({ kind: "quote", quote: quote("AAPL") });
+    expect(a.seen).toEqual(["s:live", "q:AAPL", "q:AAPL", "q:AAPL"]);
+    expect(maxOpen()).toBe(2);
+  });
+
+  it("keeps the last requested set when watches change while a stream is connecting", async () => {
+    const { hub, runs } = harness();
+    hub.watch("a", ["AAPL"], listener().value);
+    await tick();
+    runs[0]?.emit({ kind: "heartbeat" });
+    hub.watch("b", ["MSFT"], listener().value);
+    await tick();
+    hub.watch("c", ["TSLA"], listener().value);
+    await tick();
+    hub.release("b");
+    await tick();
+    await tick();
+    const open = runs.filter((run) => !run.signal.aborted);
+    expect(open.map((run) => run.symbols)).toEqual([["AAPL"], ["AAPL", "TSLA"]]);
+    runs.at(-1)?.emit({ kind: "heartbeat" });
+    expect(runs.filter((run) => !run.signal.aborted)).toHaveLength(1);
+    expect(runs.at(-1)?.symbols).toEqual(["AAPL", "TSLA"]);
+  });
+
+  it("falls back to a backoff restart when the new stream fails before delivering", async () => {
+    const { hub, runs, waits } = harness();
+    const a = listener();
+    hub.watch("a", ["AAPL"], a.value);
+    await tick();
+    runs[0]?.emit({ kind: "heartbeat" });
+    hub.watch("b", ["MSFT"], listener().value);
+    await tick();
+    runs[1]?.finish("failed");
+    await tick();
+    await tick();
+    expect(runs[0]?.signal.aborted).toBe(true);
+    expect(waits).toEqual([1000]);
+    expect(runs.at(-1)?.symbols).toEqual(["AAPL", "MSFT"]);
+    expect(a.seen).toContain("s:unavailable");
+  });
+
+  it("closes both the stream and its successor when the last screen leaves", async () => {
+    const { hub, runs } = harness();
+    hub.watch("a", ["AAPL"], listener().value);
+    await tick();
+    runs[0]?.emit({ kind: "heartbeat" });
+    hub.watch("b", ["MSFT"], listener().value);
+    await tick();
+    hub.release("a");
+    hub.release("b");
+    await tick();
+    expect(runs).toHaveLength(2);
+    expect(runs.every((run) => run.signal.aborted)).toBe(true);
+    expect(hub.watching).toBe(false);
+  });
+
+  it("applies a change made while the replaced stream is still closing", async () => {
+    const { hub, runs } = harness();
+    hub.watch("a", ["AAPL"], listener().value);
+    await tick();
+    runs[0]?.emit({ kind: "heartbeat" });
+    hub.watch("b", ["MSFT"], listener().value);
+    await tick();
+    // The successor delivers and the old stream is told to close, but has not settled yet.
+    runs[1]?.emit({ kind: "heartbeat" });
+    hub.watch("c", ["TSLA"], listener().value);
+    expect(runs).toHaveLength(2);
+    await tick();
+    await tick();
+    const open = runs.filter((run) => !run.signal.aborted);
+    expect(open.map((run) => run.symbols)).toEqual([
+      ["AAPL", "MSFT"],
+      ["AAPL", "MSFT", "TSLA"],
+    ]);
+    runs.at(-1)?.emit({ kind: "heartbeat" });
+    expect(runs.filter((run) => !run.signal.aborted).map((run) => run.symbols)).toEqual([
+      ["AAPL", "MSFT", "TSLA"],
+    ]);
+  });
+
   it("drops events of a run that was replaced, and keeps the screens' state quiet", async () => {
     const { hub, runs } = harness();
     const a = listener();
@@ -101,9 +199,11 @@ describe("QuoteHub", () => {
     const first = runs[0];
     first?.emit({ kind: "heartbeat" });
     hub.watch("a", ["AAPL", "MSFT"], a.value);
+    await tick();
+    runs[1]?.emit({ kind: "heartbeat" });
     first?.emit({ kind: "quote", quote: quote("AAPL") });
     await tick();
-    expect(a.seen).toEqual(["s:live", "hb"]);
+    expect(a.seen).toEqual(["s:live", "hb", "hb"]);
   });
 
   it("closes the stream when the last screen leaves and reopens for the next", async () => {

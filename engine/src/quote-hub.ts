@@ -6,11 +6,15 @@
 // allowed).
 //
 // A symbol stays on the lane it is on while any screen watches it; new symbols fill the lanes that
-// have room, so a change touches one lane, not all of them. Invariants, because screens come and go
-// while lanes are being restarted:
-//  - at most one upstream run exists per lane: a restart waits for the aborted run to finish;
-//  - the set a run was started with is compared with its lane's symbols every time it ends or a
-//    screen changes, so a subscribe or unsubscribe during a restart is never lost;
+// have room, so a change touches one lane, not all of them. A lane that is delivering is replaced
+// make-before-break (#276): the run for the new set is opened beside the old one, which keeps
+// delivering until the new one does, so a symbol that stays watched has no gap in ticks. A lane
+// that has not delivered yet has nothing to keep and is restarted at once. Invariants, because
+// screens come and go while lanes are being replaced:
+//  - a lane has at most two upstream runs (the delivering one and its successor), and a run that
+//    was aborted is waited for before the next is opened;
+//  - the set a run was started with is compared with its lane's symbols every time a run ends, a
+//    successor delivers or a screen changes, so a subscribe or unsubscribe is never lost;
 //  - events of a run that was aborted are dropped.
 // Everything here is synchronous bookkeeping on one thread: there is no await between reading and
 // writing the subscriber map, the lanes or a lane's current run (CLAUDE.md, never-break rule 6).
@@ -57,12 +61,18 @@ interface Subscriber {
 interface Run {
   readonly key: string;
   readonly controller: AbortController;
+  delivered: boolean;
 }
 
 /** One upstream stream and the symbols it carries. */
 class Lane {
   readonly symbols = new Set<string>();
+  /** The run that is delivering (or, before the first data, the one being opened). */
   run: Run | null = null;
+  /** The run for the lane's new symbols, opened beside `run` until it delivers. */
+  next: Run | null = null;
+  /** Runs aborted to make way that have not finished yet. */
+  draining = 0;
   /** Wakes the lane out of a backoff when its symbols change. */
   wake: AbortController | null = null;
   readonly id: number;
@@ -168,13 +178,10 @@ export class QuoteHub {
     }
     this.#lanes = layout;
     for (const lane of layout) {
-      if (!lanes.includes(lane)) {
-        void this.#supervise(lane);
-      } else if (lane.key !== before[lanes.indexOf(lane)]) {
-        // An open run is replaced only when it no longer matches; a backoff is cut short either way.
-        if (lane.run !== null && lane.run.key !== lane.key) lane.run.controller.abort();
-        lane.wake?.abort();
-      }
+      if (lane.key === before[lanes.indexOf(lane)] && lanes.includes(lane)) continue;
+      // A backoff is cut short by a change: its wake-up reconciles.
+      if (lane.wake !== null) lane.wake.abort();
+      else this.#reconcile(lane);
     }
     // A lane that went down may have just been released: the others may be all that is left.
     this.#syncState();
@@ -191,53 +198,108 @@ export class QuoteHub {
   #retire(lane: Lane): void {
     lane.retired = true;
     lane.run?.controller.abort();
+    lane.next?.controller.abort();
     lane.wake?.abort();
     this.#options.onRetire?.(lane.id);
   }
 
-  async #supervise(lane: Lane): Promise<void> {
-    while (!lane.retired) {
-      const symbols = [...lane.symbols].sort();
-      const controller = new AbortController();
-      const run: Run = { key: symbols.join("\n"), controller };
-      lane.run = run;
-      let delivered = false;
-      const outcome = await this.#options
-        .run(
-          symbols,
-          (event) => {
-            if (controller.signal.aborted) return;
-            if (!delivered) {
-              delivered = true;
-              lane.failures = 0;
-              lane.down = false;
-              lane.up = true;
-              this.#syncState();
-            }
-            this.#dispatch(event);
-          },
-          controller.signal,
-          lane.id,
-        )
-        .catch((): "failed" => "failed");
-      lane.run = null;
-      if (lane.retired) return;
-      // The lane's symbols changed while the run was up: start the next one at once, no penalty,
-      // and tell nobody the stream is down (the screens keep their prices).
-      if (controller.signal.aborted) continue;
-      lane.down = true;
-      lane.up = false;
-      this.#syncState();
-      if (outcome === "failed" || !delivered) lane.failures += 1;
-      const delay = Math.min(
-        this.#options.backoffBaseMs * 2 ** Math.max(0, lane.failures - 1),
-        this.#options.backoffMaxMs,
-      );
-      const wake = new AbortController();
-      lane.wake = wake;
-      await this.#options.wait(delay, wake.signal);
-      lane.wake = null;
+  /**
+   * Brings a lane's runs in line with its symbols. A delivering run is kept while its successor
+   * connects; a run that never delivered is simply replaced.
+   */
+  #reconcile(lane: Lane): void {
+    if (lane.retired || lane.wake !== null || lane.draining > 0) return;
+    const key = lane.key;
+    if (lane.next !== null) {
+      if (lane.next.key !== key) lane.next.controller.abort();
+      return;
     }
+    if (lane.run === null) {
+      this.#open(lane, false);
+    } else if (lane.run.key !== key) {
+      if (lane.run.delivered) this.#open(lane, true);
+      else lane.run.controller.abort();
+    }
+  }
+
+  #open(lane: Lane, successor: boolean): void {
+    const symbols = [...lane.symbols].sort();
+    const controller = new AbortController();
+    const run: Run = { key: symbols.join("\n"), controller, delivered: false };
+    if (successor) lane.next = run;
+    else lane.run = run;
+    void this.#options
+      .run(
+        symbols,
+        (event) => {
+          if (controller.signal.aborted) return;
+          if (!run.delivered) this.#delivered(lane, run);
+          this.#dispatch(event);
+        },
+        controller.signal,
+        lane.id,
+      )
+      .catch((): "failed" => "failed")
+      .then((outcome) => this.#ended(lane, run, outcome));
+  }
+
+  /** The run's first data: it becomes the lane's run and replaces its predecessor. */
+  #delivered(lane: Lane, run: Run): void {
+    run.delivered = true;
+    lane.failures = 0;
+    lane.down = false;
+    lane.up = true;
+    if (lane.next === run) {
+      const old = lane.run;
+      lane.run = run;
+      lane.next = null;
+      if (old !== null) {
+        lane.draining += 1;
+        old.controller.abort();
+      }
+    }
+    this.#syncState();
+  }
+
+  #ended(lane: Lane, run: Run, outcome: "ended" | "failed"): void {
+    const aborted = run.controller.signal.aborted;
+    if (aborted && lane.run !== run && lane.next !== run) {
+      // A predecessor that made way, or a run retired with its lane.
+      if (lane.draining > 0) lane.draining -= 1;
+      this.#reconcile(lane);
+      return;
+    }
+    if (lane.run === run) lane.run = null;
+    if (lane.next === run) lane.next = null;
+    if (lane.retired) return;
+    // Aborted before delivering because the lane's symbols changed: open the next at once, no
+    // penalty, and tell nobody the stream is down (the screens keep their prices).
+    if (aborted) {
+      this.#reconcile(lane);
+      return;
+    }
+    // The lane broke, or its successor failed before delivering: close what is left and back off.
+    for (const other of [lane.run, lane.next]) {
+      if (other === null) continue;
+      lane.draining += 1;
+      other.controller.abort();
+    }
+    lane.run = null;
+    lane.next = null;
+    lane.down = true;
+    lane.up = false;
+    this.#syncState();
+    if (outcome === "failed" || !run.delivered) lane.failures += 1;
+    const delay = Math.min(
+      this.#options.backoffBaseMs * 2 ** Math.max(0, lane.failures - 1),
+      this.#options.backoffMaxMs,
+    );
+    const wake = new AbortController();
+    lane.wake = wake;
+    void this.#options.wait(delay, wake.signal).then(() => {
+      lane.wake = null;
+      this.#reconcile(lane);
+    });
   }
 
   #dispatch(event: QuoteStreamEvent): void {
