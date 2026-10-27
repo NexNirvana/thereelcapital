@@ -20,7 +20,7 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 
 ## Engine (DO)
 
-- **Daily limit**: 4 concurrent entries across 2 accounts → exactly 3 reserve; a reject or zero-fill cancel releases; a partial fill keeps; UNKNOWN holds; a DO restart and a reconnect don't reset; the next session date renews; exits don't return entries.
+- **Daily limit**: 4 concurrent entries across 2 accounts → exactly 3 reserve (the default; with a client limit of 5 and one slot left, two concurrent entries reserve exactly one, and a fifth is accepted and a sixth rejected); a reject or zero-fill cancel releases; a partial fill keeps; UNKNOWN holds; a DO restart and a reconnect don't reset; the next session date renews; exits don't return entries.
 - **Slots**: 2 open + a pending third → rejected; a slot is freed only when the broker reports zero remaining.
 - **Idempotency**: the same intent sent twice → one broker order (same `OrderConfirmID`); a new intent → a new order.
 - **Races**: stop vs ALL OUT vs pending scale-out vs trailing never oversell; a cancel racing a fill ends in the broker's state.

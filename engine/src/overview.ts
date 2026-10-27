@@ -4,6 +4,7 @@
 import type { ClientOverview, OverviewOrder, OverviewPosition } from "#lib/domain/overview.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { entryLimits } from "./entries.ts";
+import { loadEntryInputs } from "./entry-inputs.ts";
 
 type PositionRow = {
   id: string;
@@ -27,7 +28,9 @@ type OrderRow = {
 
 export async function readOverview(ctx: ConnectionContext): Promise<ClientOverview> {
   const connection = await readConnection(ctx);
-  const limits = entryLimits(ctx);
+  // The client's own daily limit, from D1 where the admin sets it (D48).
+  const { maxDailyEntries } = await loadEntryInputs(ctx);
+  const limits = entryLimits(ctx, maxDailyEntries);
   const positions: OverviewPosition[] = ctx.sql
     .exec<PositionRow>(
       `SELECT id, account_id, symbol, original_qty, sold_qty, protection_state, status

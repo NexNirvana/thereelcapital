@@ -290,7 +290,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   /**
-   * The admin saved the client's settings in D1: drop the copy of SIZE used to size the live
+   * The admin saved the client's settings in D1: drop the copy of SIZE (and of the daily entries limit) held for the live
    * preview. Carries nothing to apply; the next tick reads D1. Orders always read D1 themselves.
    */
   settingsChanged(input: unknown): EngineResult<null> {
@@ -300,11 +300,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     });
   }
 
-  /** The counts behind «x/2 posiciones · y/3 entradas hoy». Read-only. */
-  limits(input: unknown): EngineResult<EntryLimits> {
-    return this.enter("limits", ModeOnlyArgs, input, () =>
-      success(entryLimits({ sql: this.ctx.storage.sql, now: engineNow(this.env) })),
-    );
+  /** The counts behind «x/2 posiciones · y/N entradas hoy». Read-only. */
+  limits(input: unknown): Promise<EngineResult<EntryLimits>> {
+    return this.enterWithConnection("limits", ModeOnlyArgs, input, async (ctx) => {
+      // The client's own daily limit comes through the cached settings read (D48).
+      const { maxDailyEntries } = await this.entryInputs.read(ctx);
+      return success(entryLimits(ctx, maxDailyEntries));
+    });
   }
 
   /** Expiration dates of an underlying's options. Read-only. */

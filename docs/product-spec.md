@@ -23,7 +23,7 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 | --- | --- | --- | --- |
 | SIZE per entry | US$20,000 initial | admin, increase only, per client | new entries |
 | Open positions | max 2 per client · mode, across accounts | fixed | — |
-| New entries | max 3 per client · mode · market day, across accounts | fixed | — |
+| New entries | max 3 per client · mode · market day, across accounts, by default; 1–1000 (D48) | admin, per client | new entries |
 | Initial stop | 30% below the average fill price; bounds 10–50% | admin, per client | new positions |
 | Trailing unlock | 70% of the original quantity sold (confirmed); bounds 30–90% | admin, per client | new positions |
 | Trailing % | one of {1, 5, 8, 10, 15, 20}; 10% default | client, at activation | selected position |

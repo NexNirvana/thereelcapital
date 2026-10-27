@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   canReserveEntry,
+  DEFAULT_DAILY_ENTRIES,
+  isValidDailyEntries,
   canReserveSlot,
   checkOrder,
   type OrderContext,
@@ -127,12 +129,30 @@ describe("checkOrder", () => {
 
 describe("entry and slot limits", () => {
   test("allows entries below 3 consumed plus reserved", () => {
-    expect(canReserveEntry({ consumed: 1, reserved: 1 })).toBe(true);
+    expect(canReserveEntry({ consumed: 1, reserved: 1 }, DEFAULT_DAILY_ENTRIES)).toBe(true);
   });
 
   test("rejects a fourth entry", () => {
-    expect(canReserveEntry({ consumed: 2, reserved: 1 })).toBe(false);
-    expect(canReserveEntry({ consumed: 3, reserved: 0 })).toBe(false);
+    expect(canReserveEntry({ consumed: 2, reserved: 1 }, DEFAULT_DAILY_ENTRIES)).toBe(false);
+    expect(canReserveEntry({ consumed: 3, reserved: 0 }, DEFAULT_DAILY_ENTRIES)).toBe(false);
+  });
+
+  test("follows a client's own daily limit", () => {
+    expect(canReserveEntry({ consumed: 3, reserved: 0 }, 5)).toBe(true);
+    expect(canReserveEntry({ consumed: 4, reserved: 0 }, 5)).toBe(true);
+    expect(canReserveEntry({ consumed: 4, reserved: 1 }, 5)).toBe(false);
+    expect(canReserveEntry({ consumed: 999, reserved: 0 }, 1000)).toBe(true);
+    expect(canReserveEntry({ consumed: 0, reserved: 0 }, 1)).toBe(true);
+    expect(canReserveEntry({ consumed: 1, reserved: 0 }, 1)).toBe(false);
+    // A lower limit than the default blocks sooner.
+    expect(canReserveEntry({ consumed: 2, reserved: 0 }, 2)).toBe(false);
+  });
+
+  test("accepts only whole daily limits from 1 to 1000", () => {
+    for (const ok of [1, 3, 1000]) expect(isValidDailyEntries(ok)).toBe(true);
+    for (const bad of [0, -1, 1001, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(isValidDailyEntries(bad)).toBe(false);
+    }
   });
 
   test("allows a slot below 2 open plus reserved", () => {
@@ -146,7 +166,7 @@ describe("entry and slot limits", () => {
 
   test("never rejects exits because of the entry or slot limits", () => {
     // checkOrder takes no counters: at 3/3 entries and 2/2 slots a sell still passes.
-    expect(canReserveEntry({ consumed: 3, reserved: 0 })).toBe(false);
+    expect(canReserveEntry({ consumed: 3, reserved: 0 }, DEFAULT_DAILY_ENTRIES)).toBe(false);
     expect(canReserveSlot({ open: 2, reservedOpens: 0 })).toBe(false);
     const exit = { ...equityBuy, tradeAction: "SELL" };
     expect(checkOrder(exit, { ...context, openSymbols: ["AAPL"] })).toEqual({ ok: true });

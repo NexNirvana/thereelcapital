@@ -39,7 +39,7 @@ Every action needs an admin session under 10 minutes old. On `REAUTH_REQUIRED`, 
 | Deactivate or reactivate | `/admin/clientes/[id]`. Sessions end and sign-in is blocked; broker orders and positions are not touched |
 | Revoke sessions | `/admin/clientes/[id]`, one session or all |
 | Recover a client (lost passkey and codes) | `/admin/clientes/[id]`, controlled recovery. Verify identity outside the app first, then tick «Verifiqué la identidad del cliente fuera de la app». Passkeys, codes and sessions are deleted and a new link is issued |
-| Change SIZE, stop %, unlock % | `/admin/clientes/[id]`. SIZE only goes up; values apply to new entries and positions |
+| Change SIZE, stop %, unlock %, daily entries limit | `/admin/clientes/[id]`, «Configuración». SIZE only goes up; the daily entries limit (1–1000, default 3) can go either way; values apply to new entries and positions |
 
 ## Secrets
 

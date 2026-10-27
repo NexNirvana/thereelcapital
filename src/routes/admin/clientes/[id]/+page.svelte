@@ -323,19 +323,34 @@
           cantidad original vendido para activar el trailing; solo posiciones nuevas.
         </span>
       </div>
+      <div class="field">
+        <label for="dailyEntries">Entradas por día de mercado</label>
+        <input
+          id="dailyEntries"
+          name="dailyEntries"
+          type="number"
+          inputmode="numeric"
+          min={client.bounds.dailyEntries.min}
+          max={client.bounds.dailyEntries.max}
+          step="1"
+          required
+          aria-describedby="dailyEntries-hint"
+          value={client.settings.maxDailyEntries}
+        />
+        <span id="dailyEntries-hint" class="hint">
+          Entre {client.bounds.dailyEntries.min} y {client.bounds.dailyEntries.max}. Máximo de
+          entradas nuevas por día de mercado; no limita salidas ni cancelaciones.
+        </span>
+      </div>
       <Button type="submit" disabled={busy !== null}>
         {busy === "updateSettings" ? "Guardando" : "Guardar configuración"}
       </Button>
     </form>
   {/if}
   <h3>Límites</h3>
-  <p class="hint">Fijos para todos los clientes; solo lectura.</p>
+  <p class="hint">Fijo para todos los clientes; solo lectura.</p>
   <dl>
     <DefinitionRow label="Posiciones abiertas" value={`máx. ${client.limits.openPositions}`} />
-    <DefinitionRow
-      label="Entradas por día de mercado"
-      value={`máx. ${client.limits.dailyEntries}`}
-    />
   </dl>
 </section>
 

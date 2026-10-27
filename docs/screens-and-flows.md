@@ -34,13 +34,14 @@ Designed screens are reproduced from their PNGs. Undesigned screens use the same
 
 ### Admin client settings
 
-`?/updateSettings` saves SIZE, stop % and trailing-unlock % of one client (`src/lib/server/admin-client-access.ts`). The three fields travel together; unknown fields are rejected (400).
+`?/updateSettings` saves SIZE, stop %, trailing-unlock % and the daily entries limit of one client (`src/lib/server/admin-client-access.ts`). The fields travel together (the daily entries limit may be omitted, which keeps the current one); unknown fields are rejected (400).
 
 - SIZE is whole US dollars (the `size_usd` column), increase only: a lower value is rejected (422 `SIZE_DECREASE`), and so is one whose micro-dollars exceed the safe-integer range (422 `SIZE_INVALID`). The same value is allowed when a percentage changes; a save that changes nothing is rejected (409 `SETTINGS_UNCHANGED`).
 - Stop % and unlock % are whole numbers inside the bounds of `src/lib/domain/config.ts`, checked by `validateStopPct` and `validateTrailingUnlockPct` (422 `STOP_PCT_OUT_OF_BOUNDS`, `TRAILING_UNLOCK_PCT_OUT_OF_BOUNDS`) with Spanish messages that quote the bounds.
 - The values apply to new entries and new positions only; every open position keeps the stop % and unlock % stored on it. The screen says so next to each field.
 - The UPDATE matches the values the check ran against, so a concurrent change fails (409 `SETTINGS_CHANGED`) rather than slipping under the increase-only rule; it commits in one batch with its audit row.
-- The 2 open positions and 3 entries per market day are shown read-only from the domain constants; no action changes them.
+- The daily entries limit (`max_daily_entries`, default 3) is a whole number from 1 to 1000 (`DAILY_ENTRIES_BOUNDS`; 422 `DAILY_ENTRIES_OUT_OF_BOUNDS`, Spanish message quoting the bounds, D48). Unlike SIZE it can go down as well as up, and it blocks new entries only, never exits or cancels. The client's screens show it: `x/2 posiciones · y/N entradas hoy`.
+- The 2 open positions are shown read-only from the domain constant; no action changes them.
 
 ## Not carried over from the demos
 

@@ -12,7 +12,7 @@ Before building a screen, open its PNG in `designs/desktop/` and `designs/mobile
 - Colors only from the tokens in `src/lib/ui/tokens.css`. Dark only; no other hues, gradients or shadows.
 - IBM Plex Mono only (self-hosted). Hierarchy from size, weight and case; numbers use `tabular-nums`.
 - Data sits in hairline-separated rows on the background, not in cards. One filled primary button per view.
-- Always visible: mode badge, account, connection state, `x/2 posiciones · y/3 entradas hoy`, protection state (`Activo` only when verified).
+- Always visible: mode badge, account, connection state, `x/2 posiciones · y/N entradas hoy` (N is the client's own limit, 3 by default), protection state (`Activo` only when verified).
 - Never: charts, P&L, editable SIZE/quantity/price, SIZE DOWN, demo test buttons.
 - Disabled controls state why. Pending order states are visible and not re-clickable.
 - Every value shown comes from the server; components don't compute quantities.

@@ -8,7 +8,11 @@ import { error, isHttpError } from "@sveltejs/kit";
 import { Schema } from "effect";
 import { STOP_PCT_BOUNDS, TRAILING_UNLOCK_PCT_BOUNDS } from "#lib/domain/config.ts";
 import { CLIENT_NAME_MAX_CHARS, normalizeClientName } from "#lib/domain/client-name.ts";
-import { MAX_DAILY_ENTRIES, MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
+import {
+  DAILY_ENTRIES_BOUNDS,
+  isValidDailyEntries,
+  MAX_OPEN_POSITIONS,
+} from "#lib/domain/guards.ts";
 import { validateSizeChange } from "#lib/domain/sizing.ts";
 import { validateStopPct, validateTrailingUnlockPct } from "#lib/domain/stop.ts";
 import {
@@ -102,6 +106,11 @@ export const settingsErrors = {
     code: "TRAILING_UNLOCK_PCT_OUT_OF_BOUNDS",
     message: `El desbloqueo debe ser un entero entre ${TRAILING_UNLOCK_PCT_BOUNDS.min} y ${TRAILING_UNLOCK_PCT_BOUNDS.max}.`,
   },
+  dailyEntriesOutOfBounds: {
+    status: 422,
+    code: "DAILY_ENTRIES_OUT_OF_BOUNDS",
+    message: `Las entradas por día deben ser un entero entre ${DAILY_ENTRIES_BOUNDS.min} y ${DAILY_ENTRIES_BOUNDS.max}.`,
+  },
   unchanged: { status: 409, code: "SETTINGS_UNCHANGED", message: "No hay cambios que guardar." },
   changedMeanwhile: {
     status: 409,
@@ -168,6 +177,7 @@ const SettingsRow = Schema.Struct({
   sizeUsd: Schema.Number,
   stopPct: Schema.Number,
   trailingUnlockPct: Schema.Number,
+  maxDailyEntries: Schema.Number,
 });
 export type ClientSettings = typeof SettingsRow.Type;
 
@@ -185,10 +195,14 @@ export interface ClientDetail {
   settings: ClientSettings | null;
   /** Lowest SIZE (whole USD) the form accepts: SIZE never goes below the stored one. */
   minSizeUsd: number | null;
-  /** Fixed limits, shown read-only (docs/product-spec.md#parameters). */
-  limits: { openPositions: number; dailyEntries: number };
+  /** The fixed open positions limit, shown read-only (docs/product-spec.md#parameters). */
+  limits: { openPositions: number };
   /** Allowed ranges for the form's hints; the server re-checks them with the domain validators. */
-  bounds: { stopPct: { min: number; max: number }; unlockPct: { min: number; max: number } };
+  bounds: {
+    stopPct: { min: number; max: number };
+    unlockPct: { min: number; max: number };
+    dailyEntries: { min: number; max: number };
+  };
   sessions: readonly {
     id: string;
     createdAt: number;
@@ -226,7 +240,8 @@ async function loadTarget<S extends AccessStatement>(
 async function loadSettings<S extends AccessStatement>(db: AccessDb<S>, userId: string) {
   const row = await db
     .prepare(
-      `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS trailingUnlockPct
+      `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS trailingUnlockPct,
+         max_daily_entries AS maxDailyEntries
        FROM client_settings WHERE user_id = ?`,
     )
     .bind(userId)
@@ -280,8 +295,12 @@ export async function getClientDetail<S extends AccessStatement>(
     link: { state: linkState, expiresAt: latest?.expiresAt ?? null },
     settings,
     minSizeUsd: settings?.sizeUsd ?? null,
-    limits: { openPositions: MAX_OPEN_POSITIONS, dailyEntries: MAX_DAILY_ENTRIES },
-    bounds: { stopPct: STOP_PCT_BOUNDS, unlockPct: TRAILING_UNLOCK_PCT_BOUNDS },
+    limits: { openPositions: MAX_OPEN_POSITIONS },
+    bounds: {
+      stopPct: STOP_PCT_BOUNDS,
+      unlockPct: TRAILING_UNLOCK_PCT_BOUNDS,
+      dailyEntries: DAILY_ENTRIES_BOUNDS,
+    },
     sessions: Schema.decodeUnknownSync(Schema.Array(SessionRow))(sessions.results)
       .map((session) => ({
         ...session,
@@ -624,6 +643,8 @@ const SettingsForm = Schema.Struct({
   sizeUsd: Schema.String.check(Schema.isMaxLength(12)),
   stopPct: Schema.String.check(Schema.isMaxLength(12)),
   unlockPct: Schema.String.check(Schema.isMaxLength(12)),
+  // Omitted keeps the client's current limit; the form always sends it.
+  dailyEntries: Schema.optional(Schema.String.check(Schema.isMaxLength(12))),
 });
 const wholeNumber = (text: string) => (/^\d+$/.test(text) ? Number(text) : NaN);
 
@@ -667,7 +688,7 @@ export function renameClient<L extends GuardLocals, S extends AccessStatement>(
 }
 
 /**
- * Saves a client's SIZE, stop % and trailing-unlock %. They apply to new entries and new
+ * Saves a client's SIZE, stop %, trailing-unlock % and daily entries limit. They apply to new entries and new
  * positions only: open positions keep the values stored on them. SIZE (whole US dollars, the
  * `size_usd` column) may only go up, and the bounds are the domain validators'. The UPDATE
  * matches the values the check ran against, so a concurrent change fails instead of slipping
@@ -690,8 +711,14 @@ export function updateClientSettings<L extends GuardLocals, S extends AccessStat
     if (!validateTrailingUnlockPct(trailingUnlockPct).ok) {
       return refuse(settingsErrors.unlockOutOfBounds);
     }
+    const requestedEntries =
+      input.dailyEntries === undefined ? null : wholeNumber(input.dailyEntries);
+    if (requestedEntries !== null && !isValidDailyEntries(requestedEntries)) {
+      return refuse(settingsErrors.dailyEntriesOutOfBounds);
+    }
     const before = await loadSettings(db, target.id);
     if (before === null) return refuse(settingsErrors.missing);
+    const maxDailyEntries = requestedEntries ?? before.maxDailyEntries;
     // Equal SIZE is a valid save (only the percentages change); the domain rule decides any change.
     if (sizeUsd !== before.sizeUsd) {
       const micros = sizeUsd * MICROS_PER_USD;
@@ -703,29 +730,34 @@ export function updateClientSettings<L extends GuardLocals, S extends AccessStat
         return refuse(settingsErrors.sizeDecrease);
       }
     }
-    const after: ClientSettings = { sizeUsd, stopPct, trailingUnlockPct };
+    const after: ClientSettings = { sizeUsd, stopPct, trailingUnlockPct, maxDailyEntries };
     if (
       after.sizeUsd === before.sizeUsd &&
       after.stopPct === before.stopPct &&
-      after.trailingUnlockPct === before.trailingUnlockPct
+      after.trailingUnlockPct === before.trailingUnlockPct &&
+      after.maxDailyEntries === before.maxDailyEntries
     ) {
       return refuse(settingsErrors.unchanged);
     }
     const [updated] = await db.batch([
       db
         .prepare(
-          `UPDATE client_settings SET size_usd = ?, stop_pct = ?, trailing_unlock_pct = ?, updated_at = ?
-           WHERE user_id = ? AND size_usd = ? AND stop_pct = ? AND trailing_unlock_pct = ?`,
+          `UPDATE client_settings SET size_usd = ?, stop_pct = ?, trailing_unlock_pct = ?,
+             max_daily_entries = ?, updated_at = ?
+           WHERE user_id = ? AND size_usd = ? AND stop_pct = ? AND trailing_unlock_pct = ?
+             AND max_daily_entries = ?`,
         )
         .bind(
           sizeUsd,
           stopPct,
           trailingUnlockPct,
+          maxDailyEntries,
           now,
           target.id,
           before.sizeUsd,
           before.stopPct,
           before.trailingUnlockPct,
+          before.maxDailyEntries,
         ),
       db
         .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`)

@@ -44,7 +44,7 @@ function newSim(now: () => number = () => IN_SESSION): LocalSim {
 let counter = 0;
 
 /** A connected client with SIZE $20,000 and two SIM accounts, and the Durable Object that serves it. */
-async function newClient(options: { sizeUsd?: number | null } = {}) {
+async function newClient(options: { sizeUsd?: number | null; maxDailyEntries?: number } = {}) {
   const userId = `entries-user-${++counter}`;
   await env.DB.prepare(
     `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, 'Test', ?, 1, 0, 0)`,
@@ -53,9 +53,11 @@ async function newClient(options: { sizeUsd?: number | null } = {}) {
     .run();
   if (options.sizeUsd !== null) {
     await env.DB.prepare(
-      "INSERT INTO client_settings (user_id, size_usd, stop_pct, trailing_unlock_pct, updated_at) VALUES (?, ?, 30, 70, 0)",
+      `INSERT INTO client_settings
+         (user_id, size_usd, stop_pct, trailing_unlock_pct, max_daily_entries, updated_at)
+       VALUES (?, ?, 30, 70, ?, 0)`,
     )
-      .bind(userId, options.sizeUsd ?? 20_000)
+      .bind(userId, options.sizeUsd ?? 20_000, options.maxDailyEntries ?? 3)
       .run();
   }
   await env.DB.prepare(
@@ -604,14 +606,14 @@ describe("entryLimits", () => {
   it("counts the entries and slots that block a new entry, today only", async () => {
     const client = await newClient();
     const counts = await inClient(client, async (ctx, state) => {
-      const empty = entryLimits(ctx);
+      const empty = entryLimits(ctx, 3);
       await send(ctx, "AAPL");
-      const afterOne = entryLimits(ctx);
+      const afterOne = entryLimits(ctx, 3);
       // Yesterday's consumed entries belong to another market day.
       state.storage.sql.exec(
         "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', '2026-11-03', 3, 0)",
       );
-      return { empty, afterOne, withOldDay: entryLimits(ctx) };
+      return { empty, afterOne, withOldDay: entryLimits(ctx, 3) };
     });
     expect(counts.empty).toEqual({ positions: 0, maxPositions: 2, entriesToday: 0, maxEntries: 3 });
     expect(counts.afterOne).toMatchObject({ positions: 1, entriesToday: 1 });
@@ -626,6 +628,91 @@ describe("entryLimits", () => {
     });
     expect(await client.stub.limits({ mode: "REAL" })).toMatchObject({ ok: false });
     expect(await client.stub.limits({ mode: "SIM", size: 1 })).toMatchObject({ ok: false });
+  });
+});
+
+describe("a per-client daily entries limit (D48)", () => {
+  /** Settles every entry so far like a filled, closed position: it counts as consumed and holds no slot. */
+  const settle = (state: DurableObjectState) => {
+    state.storage.sql.exec(
+      "UPDATE intents SET state = 'FILLED', filled_qty = qty, position_id = 'closed-' || id WHERE state = 'ACKNOWLEDGED'",
+    );
+    state.storage.sql.exec(
+      "UPDATE entry_counters SET consumed = consumed + reserved, reserved = 0",
+    );
+  };
+  const outcome = (result: Awaited<ReturnType<typeof send>>) =>
+    result.ok && "status" in result.value ? result.value.status : "?";
+
+  it("accepts a fifth entry and rejects a sixth for a client with limit 5", async () => {
+    const client = await newClient({ maxDailyEntries: 5 });
+    const { statuses, blocked, rows } = await inClient(client, async (ctx, state) => {
+      const statuses: string[] = [];
+      for (let entry = 0; entry < 5; entry += 1) {
+        statuses.push(outcome(await send(ctx, SYMBOLS[entry % SYMBOLS.length] ?? "AAPL")));
+        settle(state);
+      }
+      const blocked = await prepareEntry(ctx, target("AAPL"));
+      return { statuses, blocked, rows: snapshot(state) };
+    });
+    expect(statuses).toEqual(["PLACED", "PLACED", "PLACED", "PLACED", "PLACED"]);
+    expect(blocked).toMatchObject({ value: { status: "BLOCKED", reasons: ["DAILY_ENTRY_LIMIT"] } });
+    expect(rows.counters).toEqual([{ consumed: 5, reserved: 0 }]);
+  });
+
+  it("rejects the sixth send itself, placing nothing", async () => {
+    const client = await newClient({ maxDailyEntries: 5 });
+    const { sixth, orders } = await inClient(client, async (ctx, state, sim) => {
+      state.storage.sql.exec(
+        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', '2026-11-04', 5, 0)",
+      );
+      return { sixth: await send(ctx, "AAPL"), orders: await orderCount(sim) };
+    });
+    expect(sixth).toMatchObject({ value: { status: "BLOCKED", reasons: ["DAILY_ENTRY_LIMIT"] } });
+    expect(orders).toBe(0);
+  });
+
+  it("accepts only one of two entries sent at once with one slot left", async () => {
+    const client = await newClient({ maxDailyEntries: 5 });
+    const { results, rows } = await inClient(client, async (ctx, state) => {
+      state.storage.sql.exec(
+        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', '2026-11-04', 4, 0)",
+      );
+      const results = await Promise.all([
+        send(ctx, "AAPL", { accountId: "SIM-1" }),
+        send(ctx, "MSFT", { accountId: "SIM-2" }),
+      ]);
+      return { results, rows: snapshot(state) };
+    });
+    expect(results.map(outcome).sort()).toEqual(["BLOCKED", "PLACED"]);
+    expect(rows.counters).toEqual([{ consumed: 4, reserved: 1 }]);
+  });
+
+  it("keeps the default of 3 for a client whose limit was never changed", async () => {
+    const client = await newClient();
+    const blocked = await inClient(client, async (ctx, state) => {
+      state.storage.sql.exec(
+        "INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', '2026-11-04', 3, 0)",
+      );
+      return prepareEntry(ctx, target("AAPL"));
+    });
+    expect(blocked).toMatchObject({ value: { status: "BLOCKED", reasons: ["DAILY_ENTRY_LIMIT"] } });
+  });
+
+  it("reports the client's own limit through the limits RPC, and follows a change after settingsChanged", async () => {
+    const client = await newClient({ maxDailyEntries: 5 });
+    expect(await client.stub.limits({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: { maxEntries: 5 },
+    });
+    await env.DB.prepare("UPDATE client_settings SET max_daily_entries = 1000 WHERE user_id = ?")
+      .bind(client.userId)
+      .run();
+    await client.stub.settingsChanged({ mode: "SIM" });
+    expect(await client.stub.limits({ mode: "SIM" })).toMatchObject({
+      ok: true,
+      value: { maxEntries: 1000 },
+    });
   });
 });
 

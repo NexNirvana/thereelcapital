@@ -238,6 +238,11 @@ test("asks a stale admin session to confirm with a passkey, then deactivates", a
   expect(audited("client.deactivate", client.userId)).toBe(1);
 });
 
+const dailyEntriesOf = (userId: string) =>
+  d1(
+    `SELECT max_daily_entries AS maxDailyEntries FROM client_settings WHERE user_id = '${userId}'`,
+  );
+
 const settingsOf = (userId: string) =>
   d1(
     `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS unlockPct FROM client_settings WHERE user_id = '${userId}'`,
@@ -254,7 +259,7 @@ test("saves a client's settings with an audit row, refuses a lower SIZE and show
   await page.goto(`/admin/clientes/${client.userId}`, { waitUntil: "networkidle" });
 
   await expect(page.getByText("máx. 2", { exact: true })).toBeVisible();
-  await expect(page.getByText("máx. 3", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Entradas por día de mercado")).toHaveValue("3");
   await expect(page.getByLabel("Posiciones abiertas")).toHaveCount(0);
 
   await page.getByLabel("SIZE por entrada (USD)").fill("25000");
@@ -277,6 +282,23 @@ test("saves a client's settings with an audit row, refuses a lower SIZE and show
   expect(await stop.text()).toContain("El stop debe ser un entero entre 10 y 50.");
   expect(settingsOf(client.userId)).toEqual([{ sizeUsd: 25000, stopPct: 25, unlockPct: 60 }]);
   expect(audited("client_settings.update", client.userId)).toBe(1);
+
+  await page.getByLabel("Entradas por día de mercado").fill("1000");
+  await page.getByRole("button", { name: "Guardar configuración" }).click();
+  // The first save's message is still on screen, so wait on the stored value instead.
+  await expect.poll(() => dailyEntriesOf(client.userId)).toEqual([{ maxDailyEntries: 1000 }]);
+  expect(dailyEntriesOf(other.userId)).toEqual([{ maxDailyEntries: 3 }]);
+  expect(audited("client_settings.update", client.userId)).toBe(2);
+  const tooMany = await post({
+    sizeUsd: "25000",
+    stopPct: "25",
+    unlockPct: "60",
+    dailyEntries: "1001",
+  });
+  expect(await tooMany.text()).toContain(
+    "Las entradas por día deben ser un entero entre 1 y 1000.",
+  );
+  expect(dailyEntriesOf(client.userId)).toEqual([{ maxDailyEntries: 1000 }]);
 });
 
 test("renames a client with an audit row of the old and new name and refuses an empty name", async ({

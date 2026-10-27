@@ -565,7 +565,7 @@ describe("renameClient", () => {
 describe("updateClientSettings", () => {
   const save = (
     s: ReturnType<typeof setup>,
-    values: Partial<Record<"sizeUsd" | "stopPct" | "unlockPct", string>>,
+    values: Partial<Record<"sizeUsd" | "stopPct" | "unlockPct" | "dailyEntries", string>>,
     id = "c1",
   ) =>
     updateClientSettings(
@@ -579,7 +579,7 @@ describe("updateClientSettings", () => {
     s.db.sqlite
       .query(
         `SELECT size_usd AS sizeUsd, stop_pct AS stopPct, trailing_unlock_pct AS unlockPct,
-           updated_at AS updatedAt FROM client_settings WHERE user_id = ?`,
+           max_daily_entries AS dailyEntries, updated_at AS updatedAt FROM client_settings WHERE user_id = ?`,
       )
       .get(id);
 
@@ -592,6 +592,7 @@ describe("updateClientSettings", () => {
       sizeUsd: 30000,
       stopPct: 25,
       unlockPct: 60,
+      dailyEntries: 3,
       updatedAt: now,
     });
     const [row, ...rest] = audits(s.db, "client_settings.update");
@@ -601,11 +602,13 @@ describe("updateClientSettings", () => {
       sizeUsd: 20000,
       stopPct: 30,
       trailingUnlockPct: 70,
+      maxDailyEntries: 3,
     });
     expect(JSON.parse(row?.after_json ?? "")).toEqual({
       sizeUsd: 30000,
       stopPct: 25,
       trailingUnlockPct: 60,
+      maxDailyEntries: 3,
     });
   });
 
@@ -678,6 +681,45 @@ describe("updateClientSettings", () => {
     expect(n(s.db, "audit_log")).toBe(0);
   });
 
+  test("changes the daily entries limit with its audit row, leaving the rest alone", async () => {
+    const s = setup();
+    expect(await save(s, { dailyEntries: "1000" })).toEqual({ ok: true });
+    expect(settingsOf(s, "c1")).toMatchObject({ sizeUsd: 20000, dailyEntries: 1000 });
+    const [row, ...rest] = audits(s.db, "client_settings.update");
+    expect(rest).toEqual([]);
+    expect(JSON.parse(row?.before_json ?? "")).toMatchObject({ maxDailyEntries: 3 });
+    expect(JSON.parse(row?.after_json ?? "")).toMatchObject({ maxDailyEntries: 1000 });
+  });
+
+  test("can lower the daily entries limit again, unlike SIZE", async () => {
+    const s = setup();
+    await save(s, { dailyEntries: "50" });
+    expect(await save(s, { dailyEntries: "2" })).toEqual({ ok: true });
+    expect(settingsOf(s, "c1")).toMatchObject({ dailyEntries: 2 });
+  });
+
+  test("keeps the current daily entries limit when the form omits it", async () => {
+    const s = setup();
+    await save(s, { dailyEntries: "7" });
+    expect(await save(s, { stopPct: "25" })).toEqual({ ok: true });
+    expect(settingsOf(s, "c1")).toMatchObject({ stopPct: 25, dailyEntries: 7 });
+  });
+
+  test.each(["0", "1001", "-1", "2.5", "abc", "", "1e2"])(
+    "rejects a daily entries limit of %j with its Spanish message",
+    async (value) => {
+      const s = setup();
+      const stored = settingsOf(s, "c1");
+      expect(await save(s, { dailyEntries: value })).toEqual({
+        ok: false,
+        error: settingsErrors.dailyEntriesOutOfBounds,
+      });
+      expect(settingsErrors.dailyEntriesOutOfBounds.message).toContain("entre 1 y 1000");
+      expect(settingsOf(s, "c1")).toEqual(stored);
+      expect(n(s.db, "audit_log")).toBe(0);
+    },
+  );
+
   test("accepts both ends of the bounds", async () => {
     const s = setup();
     expect(await save(s, { stopPct: "10", unlockPct: "30" })).toEqual({ ok: true });
@@ -727,9 +769,10 @@ describe("updateClientSettings", () => {
   test("shows the settings and the fixed limits in the detail", async () => {
     const s = setup();
     expect(await getClientDetail(s.db, "c1", now)).toMatchObject({
-      settings: { sizeUsd: 20000, stopPct: 30, trailingUnlockPct: 70 },
+      settings: { sizeUsd: 20000, stopPct: 30, trailingUnlockPct: 70, maxDailyEntries: 3 },
       minSizeUsd: 20000,
-      limits: { openPositions: 2, dailyEntries: 3 },
+      limits: { openPositions: 2 },
+      bounds: { dailyEntries: { min: 1, max: 1000 } },
     });
   });
 });
