@@ -38,7 +38,10 @@ class FakeSocket implements SocketLike {
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+const clock = { now: 900 };
+
 function harness(over: Partial<LiveSocketsDeps> = {}) {
+  clock.now = 900;
   const emits: Array<(quote: Quote) => void> = [];
   const heartbeats: Array<() => void> = [];
   const prepared: Array<{ symbol: string; ask: number | null; done: () => void }> = [];
@@ -79,9 +82,10 @@ function harness(over: Partial<LiveSocketsDeps> = {}) {
             } as never),
         });
       }),
-    now: () => 900,
+    now: () => clock.now,
     maxSockets: 2,
     maxLifetimeMs: 1000,
+    entryRetryMs: 5000,
     // The lifetime timer is recorded to be fired by hand.
     setTimer: (callback, ms) => timers.push({ ms, callback }) - 1,
     clearTimer: () => undefined,
@@ -185,6 +189,60 @@ describe("LiveSockets", () => {
     const kinds = socket.sent.map((m) => m.type);
     expect(kinds).toEqual(["entry", "state", "quote", "entry"]);
     expect(socket.sent[3]).toMatchObject({ update: { askMicros: 101_000_000 }, receivedAt: 500 });
+  });
+
+  it("does not size the entry on every tick while its sizing keeps failing", async () => {
+    let calls = 0;
+    const { sockets, emits } = harness({
+      prepare: () => {
+        calls += 1;
+        return Promise.resolve(null);
+      },
+    });
+    const socket = new FakeSocket();
+    sockets.adopt(socket);
+    socket.watch({ type: "watch", entry });
+    await tick();
+    expect(calls).toBe(1);
+    for (const ask of [1, 2, 3]) {
+      emits[0]?.(quote("AAPL", ask));
+      await tick();
+    }
+    // The prices still reach the page; only the sizing waits out the retry delay.
+    expect(socket.sent.filter((m) => m.type === "quote")).toHaveLength(3);
+    expect(calls).toBe(1);
+    clock.now += 5000;
+    emits[0]?.(quote("AAPL", 4));
+    await tick();
+    expect(calls).toBe(2);
+  });
+
+  it("does not size the entry on every tick while its symbol is rejected", async () => {
+    let calls = 0;
+    const { sockets, emits } = harness({
+      prepare: () => {
+        calls += 1;
+        return Promise.resolve({
+          ok: true,
+          value: { status: "BLOCKED", reasons: ["SYMBOL_DETAILS_MISSING"] },
+        } as never);
+      },
+    });
+    const socket = new FakeSocket();
+    sockets.adopt(socket);
+    socket.watch({ type: "watch", entry });
+    await tick();
+    for (const ask of [1, 2, 3]) {
+      emits[0]?.(quote("AAPL", ask));
+      await tick();
+    }
+    expect(calls).toBe(1);
+    // The screen still hears why the entry is blocked.
+    expect(socket.sent.filter((m) => m.type === "entry")).toHaveLength(1);
+    clock.now += 5000;
+    emits[0]?.(quote("AAPL", 4));
+    await tick();
+    expect(calls).toBe(2);
   });
 
   it("sends the entry symbol's quote at once, without waiting for its sizing", async () => {

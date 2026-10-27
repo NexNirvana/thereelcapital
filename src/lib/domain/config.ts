@@ -167,6 +167,12 @@ export const LIVE_STREAM_SILENCE_MS = 8 * 1000;
  */
 export const LIVE_ENTRY_INPUTS_TTL_MS = 60 * 1000;
 /**
+ * After a failed sizing of the streamed entry (the symbol details read failed or the symbol was
+ * rejected), ticks of that symbol are not sized again for this long, so a failure costs one
+ * broker call and one event row per interval instead of one per tick. Ours, not TradeStation's.
+ */
+export const LIVE_ENTRY_RETRY_MS = 5 * 1000;
+/**
  * A stream that delivers nothing, not even a heartbeat, for this long is treated as broken and
  * restarted. (verify) The heartbeat interval is documented as 5 s; this leaves room for six.
  */
