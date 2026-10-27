@@ -40,7 +40,7 @@ export async function exchangeCode(args: {
   code: string;
   redirectUri: string;
 }): Promise<BrokerResult<Tokens>> {
-  const sent = await send(`${AUTH_BASE_URL}/oauth/token`, {
+  const sent = await send("auth", `${AUTH_BASE_URL}/oauth/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -73,7 +73,7 @@ export async function revokeRefreshToken(args: {
   clientSecret: string;
   refreshToken: string;
 }): Promise<BrokerResult<null>> {
-  const sent = await send(`${AUTH_BASE_URL}/oauth/revoke`, {
+  const sent = await send("auth", `${AUTH_BASE_URL}/oauth/revoke`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -113,7 +113,7 @@ export async function refreshAccessToken(
   retryDelayMs: number,
 ): Promise<BrokerResult<RefreshedTokens>> {
   const once = Effect.promise(() =>
-    send(`${AUTH_BASE_URL}/oauth/token`, {
+    send("auth", `${AUTH_BASE_URL}/oauth/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

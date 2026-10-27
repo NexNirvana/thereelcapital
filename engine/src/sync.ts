@@ -31,6 +31,7 @@ import { monitorProtection } from "./protection.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { logEvent, pruneEvents, type EventLevel } from "./events.ts";
 import { logOnce } from "./reconcile.ts";
+import { timedD1 } from "./timing.ts";
 
 export interface SyncContext extends ConnectionContext {
   readonly broker: BrokerAdapterShape;
@@ -230,10 +231,13 @@ async function protectionSettings(ctx: SyncContext): Promise<ProtectionSettings>
     return cached.settings;
   }
   const readAt = wallNow(ctx);
-  const row = await ctx.db
-    .prepare("SELECT stop_pct, trailing_unlock_pct FROM client_settings WHERE user_id = ?")
-    .bind(ctx.userId)
-    .first<{ stop_pct: number; trailing_unlock_pct: number }>();
+  const row = await timedD1(
+    "protection_settings",
+    ctx.db
+      .prepare("SELECT stop_pct, trailing_unlock_pct FROM client_settings WHERE user_id = ?")
+      .bind(ctx.userId)
+      .first<{ stop_pct: number; trailing_unlock_pct: number }>(),
+  );
   const settings = {
     stopPct: row?.stop_pct ?? DEFAULT_STOP_PCT,
     trailingUnlockPct: row?.trailing_unlock_pct ?? DEFAULT_TRAILING_UNLOCK_PCT,
