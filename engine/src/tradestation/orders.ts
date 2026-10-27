@@ -22,7 +22,7 @@ import {
   epochOf,
   failingField,
   integerOf,
-  microsOf,
+  averageMicrosOf,
 } from "./values.ts";
 
 /** The docs recommend batches of 10 account ids (the endpoints take 1 to 25). */
@@ -178,7 +178,7 @@ const toBrokerOrder = (
       filledQty: yield* integerOf(operation, "ExecQuantity", leg.ExecQuantity),
       remainingQty: yield* integerOf(operation, "QuantityRemaining", leg.QuantityRemaining),
       avgFillPriceMicros:
-        filledPrice == null ? null : yield* microsOf(operation, "FilledPrice", filledPrice),
+        filledPrice == null ? null : yield* averageMicrosOf(operation, "FilledPrice", filledPrice),
       status: mapOrderStatus(order.Status),
       rawStatus: order.Status,
       openedAt: yield* epochOf(operation, "OpenedDateTime", opened),
@@ -298,7 +298,7 @@ export const positions = (
                 "Quantity",
                 String(position.Quantity).replace(/^-/, ""),
               ),
-              avgPriceMicros: microsOf("positions", "AveragePrice", position.AveragePrice),
+              avgPriceMicros: averageMicrosOf("positions", "AveragePrice", position.AveragePrice),
             }),
           );
           if (sized._tag === "Failure") {
