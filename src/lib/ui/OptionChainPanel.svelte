@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { goto, invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { navigating, page } from "$app/state";
@@ -8,6 +9,7 @@
     LIVE_QUOTE_MAX_POLLS,
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
+  import type { LiveMessage } from "#lib/domain/live-protocol.ts";
   import Button from "./Button.svelte";
   import {
     DEFAULT_STRIKE_COUNT,
@@ -26,13 +28,14 @@
   import ComboField, { type ComboOption } from "./ComboField.svelte";
   import ExpirationField from "./ExpirationField.svelte";
   import {
-    chainFromMessage,
+    chainFromMessages,
     chainSymbols,
-    chainWithUnderlying,
+    indexChain,
     readLiveChain,
     type LiveChain,
   } from "./live-chain.ts";
   import { startLiveFeed } from "./live-feed.ts";
+  import { createFrameBatch } from "./frame-batch.ts";
   import Notice from "./Notice.svelte";
   import {
     formatAge,
@@ -99,11 +102,18 @@
 
   // ---- The chain: the server's load, replaced by the live poll while the screen is open (D46). The
   // prices are display only: picking a contract carries just its symbol.
-  let live = $state<{ loaded: string; chain: LiveChain } | null>(null);
+  // Raw: each tick replaces the chain whole, and nothing reads it through a deep proxy.
+  let live = $state.raw<{ loaded: string; chain: LiveChain } | null>(null);
+  // The last full read. It names every contract on screen and changes only when a full read
+  // arrives, so what hangs on it (the strikes and their positions) is not rebuilt on every tick.
+  let fullRead = $state.raw<{ loaded: string; chain: LiveChain } | null>(null);
   const loaded = $derived(
     view.chain === null ? null : `${view.underlying} ${view.expiration} ${view.chain.receivedAt}`,
   );
   const shown = $derived(live !== null && live.loaded === loaded ? live.chain : view.chain);
+  const structure = $derived(
+    fullRead !== null && fullRead.loaded === loaded ? fullRead.chain : view.chain,
+  );
   const quotesHref = $derived(
     view.chain === null
       ? null
@@ -123,24 +133,28 @@
     const source = loaded;
     if (href === null || source === null) return;
     const base = view.chain;
+    if (base === null) return;
     // The last full read: it names the contracts to watch and to recognize in the pushes.
-    let reference: LiveChain | null = base;
+    // The effect can restart on the same chain (another account): start from the full read already
+    // on screen, not the page load, so ticks for contracts that read brought in still find their row.
+    let reference: LiveChain = untrack(() =>
+      fullRead !== null && fullRead.loaded === source ? fullRead.chain : base,
+    );
+    let index = indexChain(reference);
+    // The ticks of one frame apply together: one update of the table, whatever the burst.
+    const ticks = createFrameBatch<LiveMessage>((messages) => {
+      const current = live !== null && live.loaded === source ? live.chain : base;
+      const next = chainFromMessages(current, messages, index, view.underlying);
+      if (next !== null) live = { loaded: source, chain: next };
+    });
     // The socket pushes every tick of the contracts on screen (D47); the poll of D46 runs only
     // while it is not delivering.
     const feed = startLiveFeed({
       watch: () => ({
         type: "watch",
-        symbols: reference === null ? [] : [view.underlying, ...chainSymbols(reference)],
+        symbols: [view.underlying, ...chainSymbols(reference)],
       }),
-      onMessage: (message) => {
-        const current = live !== null && live.loaded === source ? live.chain : base;
-        const next =
-          current === null
-            ? null
-            : (chainWithUnderlying(current, message, view.underlying) ??
-              chainFromMessage(current, message, reference ?? current));
-        if (next !== null) live = { loaded: source, chain: next };
-      },
+      onMessage: (message) => ticks.add(message),
       // Contracts with no market at load are not watched; a slow full read brings them in.
       refreshMs: pollMs * LIVE_CHAIN_REFRESH_FACTOR,
       poll: {
@@ -151,28 +165,40 @@
           const answer = await readLiveChain(href, fetch, signal);
           // An answer for a chain that is no longer on screen is dropped.
           if (answer !== null && !signal.aborted) {
+            // The full read is newer than any tick still waiting for its frame.
+            ticks.clear();
             live = { loaded: source, chain: answer };
+            fullRead = { loaded: source, chain: answer };
             // A contract that has a market now joins the stream.
-            const changed =
-              reference === null || chainSymbols(answer).join() !== chainSymbols(reference).join();
+            const changed = chainSymbols(answer).join() !== chainSymbols(reference).join();
             reference = answer;
+            index = indexChain(answer);
             if (changed) feed.rewatch();
           }
           return answer !== null;
         },
       },
     });
-    return feed;
+    return () => {
+      feed();
+      ticks.stop();
+    };
   });
 
   // The age counts from the moment this snapshot reached the page; a local clock for the label only.
   let elapsedMs = $state(0);
+  let snapshotAt = Date.now();
   $effect(() => {
     if (shown === null) return;
     void shown.receivedAt;
+    snapshotAt = Date.now();
     elapsedMs = 0;
-    const startedAt = Date.now();
-    const timer = setInterval(() => (elapsedMs = Date.now() - startedAt), 1000);
+  });
+  // One timer for as long as there is a chain: a tick moves `snapshotAt`, it does not restart the timer.
+  const hasChain = $derived(shown !== null);
+  $effect(() => {
+    if (!hasChain) return;
+    const timer = setInterval(() => (elapsedMs = Date.now() - snapshotAt), 1000);
     return () => clearInterval(timer);
   });
   const stale = $derived(isStale(elapsedMs));
@@ -188,14 +214,19 @@
 
   // ---- What is on screen: `count` strikes around the typed strike, or around the price.
   const price = $derived(shown?.underlyingPrice ?? null);
-  const strikes = $derived(shown?.strikes.map((row) => row.strike) ?? []);
+  const strikes = $derived(structure?.strikes.map((row) => row.strike) ?? []);
+  // A live chain keeps the full read's rows in the same order, so a strike's position finds its row.
+  const positionOf = $derived(new Map(strikes.map((strike, position) => [strike, position])));
   // Without a typed strike the window follows the strike nearest the price, so it moves only when
   // the price crosses into a different strike gap and not on every tick.
   const nearest = $derived(strikeNearest(strikes, price));
   const focus = $derived(center ?? nearest);
   const onScreen = $derived(strikeWindow(strikes, count, focus));
   const rows = $derived(
-    onScreen.flatMap((strike) => shown?.strikes.find((row) => row.strike === strike) ?? []),
+    onScreen.flatMap((strike) => {
+      const position = positionOf.get(strike);
+      return (position === undefined ? undefined : shown?.strikes[position]) ?? [];
+    }),
   );
   const lineBefore = $derived(priceLineBefore(onScreen, price));
 
