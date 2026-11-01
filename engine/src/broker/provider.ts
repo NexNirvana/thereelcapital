@@ -1,6 +1,6 @@
 // Builds the BrokerAdapter a client's Durable Object trades through: TradeStation in the requested
 // mode (REAL is refused by the transport unless the REAL_TRADING switch is open; the Durable Object
-// still asks only for SIM), or the local simulation, which needs the explicit opt-in that
+// asks for the mode of each call), or the local simulation, which needs the explicit opt-in that
 // `selectBroker` checks. There is no other path to a broker (CLAUDE.md, no real money).
 
 import type { BrokerAdapterShape } from "./adapter.ts";
@@ -66,10 +66,11 @@ function developmentOptions(now: number): ReadonlyArray<SimSymbol> {
   );
 }
 
-const developmentConfig = (now: () => number, seed: string): LocalSimConfig => ({
+/** The local simulation's REAL account is distinct from SIM's, as a live account is from a SIM one. */
+const developmentConfig = (now: () => number, seed: string, mode: Mode): LocalSimConfig => ({
   now,
-  seed,
-  accounts: [{ accountId: "SIM-1" }],
+  seed: `${seed}:${mode}`,
+  accounts: [{ accountId: mode === "REAL" ? "REAL-1" : "SIM-1" }],
   symbols: [
     { symbol: "MSFT", assetType: "equity", bid: usd(100), ask: usd(101) },
     ...developmentOptions(now()),
@@ -78,18 +79,22 @@ const developmentConfig = (now: () => number, seed: string): LocalSimConfig => (
 });
 
 /**
- * The simulation of one client. A test passes `config` to script it; the first call fixes it, and
- * `reset` replaces it. Only reachable through `resolveBroker` after `selectBroker` allowed it.
+ * The simulation of one client in one mode: SIM and REAL each get their own, with their own
+ * accounts and orders, so the REAL broker is a simulation too and never a TradeStation transport.
+ * A test passes `config` to script it; the first call fixes it, and `reset` replaces it. Only
+ * reachable through `resolveBroker` after `selectBroker` allowed it.
  */
 export function localSimFor(
   userId: string,
   config?: LocalSimConfig,
-  options: { reset?: boolean } = {},
+  options: { reset?: boolean; mode?: Mode } = {},
 ): LocalSim {
-  const existing = localSims.get(userId);
+  const mode = options.mode ?? "SIM";
+  const key = `${userId}:${mode}`;
+  const existing = localSims.get(key);
   if (existing !== undefined && options.reset !== true) return existing;
-  const created = makeLocalSim(config ?? developmentConfig(Date.now, userId));
-  localSims.set(userId, created);
+  const created = makeLocalSim(config ?? developmentConfig(Date.now, userId, mode));
+  localSims.set(key, created);
   return created;
 }
 
@@ -104,7 +109,10 @@ export function resolveBroker(args: {
   const choice = selectBroker(args.settings);
   if (!choice.ok) return { ok: false, reason: choice.reason };
   if (choice.broker === "local-sim") {
-    return { ok: true, broker: withScenarios(localSimFor(args.userId)) };
+    return {
+      ok: true,
+      broker: withScenarios(localSimFor(args.userId, undefined, { mode: args.mode })),
+    };
   }
   // The transport enforces the locks: REAL needs `realTrading`, and the base URL follows the mode.
   const made = makeTradeStationAdapter({

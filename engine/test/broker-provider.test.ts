@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { resolveBroker } from "../src/broker/provider.ts";
 import { okToken } from "./tradestation/helpers.ts";
 
@@ -40,5 +41,18 @@ describe("resolveBroker", () => {
     ]) {
       expect(resolveBroker({ ...base, settings }).ok).toBe(false);
     }
+  });
+
+  it("gives REAL its own local simulation and never builds a TradeStation transport", async () => {
+    const settings = { BROKER: "local-sim", ENVIRONMENT: "test" };
+    const ids = async (mode: "SIM" | "REAL") => {
+      // Even with the switch open: the choice of broker comes first.
+      const resolved = resolveBroker({ ...base, mode, realTrading: true, settings });
+      if (!resolved.ok) throw new Error(resolved.reason);
+      expect(resolved.broker.source).toBe("local-sim");
+      return (await Effect.runPromise(resolved.broker.accounts())).map((a) => a.accountId);
+    };
+    expect(await ids("SIM")).toEqual(["SIM-1"]);
+    expect(await ids("REAL")).toEqual(["REAL-1"]);
   });
 });

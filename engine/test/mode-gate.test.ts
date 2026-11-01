@@ -94,3 +94,26 @@ describe("the REAL gate of the RPC surface", () => {
     expect(await client.stub.disconnect({ mode: "REAL" })).toMatchObject(REFUSED);
   });
 });
+
+describe("modes", () => {
+  it("reports what the client may enter and exit", async () => {
+    const client = await newClient();
+    expect(await client.stub.modes()).toEqual({
+      ok: true,
+      value: { entries: ["SIM"], exits: ["SIM"] },
+    });
+    await openDeployment(client);
+    expect(await client.stub.modes()).toMatchObject({
+      value: { entries: ["SIM"], exits: ["SIM"] },
+    });
+    await setClientFlag(client, true);
+    expect(await client.stub.modes()).toMatchObject({
+      value: { entries: ["SIM", "REAL"], exits: ["SIM", "REAL"] },
+    });
+    await setClientFlag(client, false);
+    await openRealPosition(client);
+    expect(await client.stub.modes()).toMatchObject({
+      value: { entries: ["SIM"], exits: ["SIM", "REAL"] },
+    });
+  });
+});

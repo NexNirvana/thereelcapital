@@ -123,4 +123,4 @@ Every order, whatever its mode, also passes lock 3 (the account is listed by tha
 
 The limits of §3 and §4 are per mode: SIM and REAL each have their own daily entries count and their own 2 open positions, so a full SIM day never blocks a REAL entry and the reverse. The daily limit value is the client's one setting for both. A REAL entry is sized from the client's SIZE and the ask the REAL broker reports when the order is sent, so it can differ slightly from the preview the terminal showed with SIM data.
 
-The engine reads `allowedModes` through `activeModes` (`engine/src/mode.ts`), which decides the modes its background passes serve, and through `modeAllowedNow` for each RPC.
+The engine reads `allowedModes` through `activeModes` (`engine/src/mode.ts`), which decides the modes its background passes serve, and through `modeAllowedNow` for each RPC. The `modes` RPC returns the same `{ entries, exits }` to the web.
