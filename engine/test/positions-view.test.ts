@@ -97,7 +97,7 @@ describe("positions view", () => {
 
   it("refuses REAL and unknown fields", async () => {
     const stub = client();
-    expect(await stub.positions({ mode: "REAL" })).toMatchObject({ code: "MODE_NOT_SIM" });
+    expect(await stub.positions({ mode: "REAL" })).toMatchObject({ code: "MODE_NOT_ENABLED" });
     expect(await stub.positions({ mode: "SIM", positionId: "x" })).toMatchObject({
       code: "INVALID_INPUT",
     });

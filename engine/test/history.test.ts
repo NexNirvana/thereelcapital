@@ -174,12 +174,15 @@ describe("history", () => {
     expect((await history(alice)).intents).toHaveLength(1);
   });
 
-  it("refuses REAL and malformed arguments without reading", async () => {
+  it("refuses a closed REAL and malformed arguments without reading", async () => {
     const stub = stubFor("hist-refuse");
     await seed(stub, [{ id: "r", createdAt: 1 }]);
-    expect(await stub.history({ mode: "REAL" })).toMatchObject({ ok: false, code: "MODE_NOT_SIM" });
+    expect(await stub.history({ mode: "REAL" })).toMatchObject({
+      ok: false,
+      code: "MODE_NOT_ENABLED",
+    });
     expect(await stub.history({ mode: "REAL", from: "nope" })).toMatchObject({
-      code: "MODE_NOT_SIM",
+      code: "INVALID_INPUT",
     });
     for (const bad of [
       { from: "2026-13-01" },

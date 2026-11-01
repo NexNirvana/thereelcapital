@@ -695,7 +695,7 @@ describe("mode", () => {
       ["disconnect", {}],
     ] as const) {
       expect(await client.stub[method]({ ...args, mode: "REAL" })).toMatchObject({
-        code: "MODE_NOT_SIM",
+        code: "MODE_NOT_ENABLED",
       });
     }
     expect(calls).toEqual([]);

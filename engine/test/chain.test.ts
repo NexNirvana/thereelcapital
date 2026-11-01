@@ -244,6 +244,6 @@ describe("option RPCs", () => {
     ).toMatchObject({ code: "INVALID_INPUT" });
     expect(
       await stub().optionChain({ mode: "REAL", underlying: "MSFT", expiration: "2026-11-20" }),
-    ).toMatchObject({ code: "MODE_NOT_SIM" });
+    ).toMatchObject({ code: "MODE_NOT_ENABLED" });
   });
 });

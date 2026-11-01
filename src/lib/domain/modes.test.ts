@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { allowedModes, type Mode } from "./modes.ts";
+import { allowedModes, modeAllowed, type Mode } from "./modes.ts";
 
 const SIM: Mode[] = ["SIM"];
 const BOTH: Mode[] = ["SIM", "REAL"];
@@ -52,5 +52,35 @@ describe("allowedModes", () => {
         }
       }
     }
+  });
+});
+
+describe("modeAllowed", () => {
+  const closed = { deploymentOpen: false, clientEnabled: true, hasOpenReal: true };
+  const flagOff = { deploymentOpen: true, clientEnabled: false, hasOpenReal: false };
+  const flagOffOpen = { ...flagOff, hasOpenReal: true };
+  const on = { deploymentOpen: true, clientEnabled: true, hasOpenReal: false };
+
+  test("SIM is allowed for every action whatever the locks", () => {
+    for (const action of ["entry", "exit", "read"] as const) {
+      expect(modeAllowed(action, "SIM", closed)).toBe(true);
+    }
+  });
+
+  test("REAL is never allowed while the deployment is closed", () => {
+    for (const action of ["entry", "exit", "read"] as const) {
+      expect(modeAllowed(action, "REAL", closed)).toBe(false);
+    }
+  });
+
+  test("REAL entries need the client's flag; exits also pass with a REAL position open", () => {
+    expect(modeAllowed("entry", "REAL", flagOffOpen)).toBe(false);
+    expect(modeAllowed("exit", "REAL", flagOff)).toBe(false);
+    expect(modeAllowed("exit", "REAL", flagOffOpen)).toBe(true);
+    expect(modeAllowed("entry", "REAL", on)).toBe(true);
+  });
+
+  test("REAL reads need only the deployment", () => {
+    expect(modeAllowed("read", "REAL", flagOff)).toBe(true);
   });
 });

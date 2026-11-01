@@ -12,6 +12,7 @@
 import { isRegularSession, type InstrumentKind } from "#lib/domain/calendar.ts";
 import { allOutQty, scaleOutQty } from "#lib/domain/scaleout.ts";
 import { checkOrder, type RejectionReason } from "#lib/domain/guards.ts";
+import { currentAllowedModes } from "./mode.ts";
 import type { ConnectionHealth } from "#lib/domain/connection.ts";
 import type { BrokerAdapterShape, OrderRequest } from "./broker/adapter.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
@@ -191,6 +192,7 @@ function reserve(
         },
         available: quantities.originalQty - quantities.soldQty - quantities.committedQty,
         openSymbols: [],
+        modes: currentAllowedModes(ctx.storage),
         now: new Date(ctx.now),
       },
     );

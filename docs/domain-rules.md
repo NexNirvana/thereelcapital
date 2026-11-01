@@ -110,4 +110,17 @@ Not supported in the pilot (D21): the guard in §5 rejects a BUY on an instrumen
 | open | off | yes | SIM | SIM, REAL |
 | open | on | any | SIM, REAL | SIM, REAL |
 
-The engine reads `allowedModes` through `activeModes` (`engine/src/mode.ts`), which decides the modes its background passes serve (issue #316); the web reads it with the entries issue.
+Which lock each action needs (the engine's RPC surface and `checkOrder` both apply it; a refusal is `MODE_NOT_ENABLED`, «El modo REAL no está habilitado para esta cuenta.»):
+
+| Action | REAL needs |
+| --- | --- |
+| Entry (`prepareEntry`, `sendEntry`) and the chain reads | deployment and client flag (`entries`) |
+| Exit, cancel, trailing activation, `sync`, and the engine's own protection and expiry sells | deployment, and the client flag or an open REAL position or intent (`exits`) |
+| Read-only views (`state`, `history`, `positions`, `limits`, `connection`, `overview`) | the deployment only, so an admin can read a client whose flag is off |
+| Connection (`beginConnection`, `completeConnection`, `disconnect`) | never: one connection serves both modes |
+
+Every order, whatever its mode, also passes lock 3 (the account is listed by that mode's host and stored for that mode) and lock 4 (the transport checks the request against the mode's base URL).
+
+The limits of §3 and §4 are per mode: SIM and REAL each have their own daily entries count and their own 2 open positions, so a full SIM day never blocks a REAL entry and the reverse. The daily limit value is the client's one setting for both. A REAL entry is sized from the client's SIZE and the ask the REAL broker reports when the order is sent, so it can differ slightly from the preview the terminal showed with SIM data.
+
+The engine reads `allowedModes` through `activeModes` (`engine/src/mode.ts`), which decides the modes its background passes serve, and through `modeAllowedNow` for each RPC.

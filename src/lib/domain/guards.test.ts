@@ -34,6 +34,7 @@ const context: OrderContext = {
   available: 10,
   openSymbols: [],
   now: openNow,
+  modes: { entries: ["SIM"], exits: ["SIM"] },
 };
 
 function rejection(request: OrderRequest, ctx: OrderContext = context): RejectionReason | null {
@@ -50,8 +51,51 @@ describe("checkOrder", () => {
     expect(checkOrder(optionBuy, context)).toEqual({ ok: true });
   });
 
-  test("rejects a mode that is not SIM", () => {
-    expect(rejection({ ...equityBuy, mode: "REAL" })).toBe("MODE_NOT_SIM");
+  describe("REAL", () => {
+    const realBuy: OrderRequest = { ...equityBuy, mode: "REAL", accountId: "REAL1" };
+    const realSell: OrderRequest = { ...realBuy, tradeAction: "SELL" };
+    const realContext: OrderContext = {
+      ...context,
+      account: { ...context.account, id: "REAL1" },
+    };
+    const withModes = (modes: OrderContext["modes"]): OrderContext => ({ ...realContext, modes });
+    const BOTH = ["SIM", "REAL"] as const;
+
+    test("accepts a REAL entry when entries allow REAL", () => {
+      expect(rejection(realBuy, withModes({ entries: BOTH, exits: BOTH }))).toBeNull();
+    });
+
+    test("rejects a REAL entry when only exits allow REAL (client flag off)", () => {
+      expect(rejection(realBuy, withModes({ entries: ["SIM"], exits: BOTH }))).toBe(
+        "MODE_NOT_ENABLED",
+      );
+    });
+
+    test("accepts a REAL exit with the flag off while a REAL position is open", () => {
+      expect(rejection(realSell, withModes({ entries: ["SIM"], exits: BOTH }))).toBeNull();
+    });
+
+    test("rejects a REAL exit and a REAL option exit when the deployment is closed", () => {
+      const closed = withModes({ entries: ["SIM"], exits: ["SIM"] });
+      expect(rejection(realSell, closed)).toBe("MODE_NOT_ENABLED");
+      const optionSell: OrderRequest = {
+        ...realSell,
+        instrument: { kind: "option", symbol: "AAPL 261120C200", legs: 1 },
+        tradeAction: "SELLTOCLOSE",
+      };
+      expect(rejection(optionSell, closed)).toBe("MODE_NOT_ENABLED");
+    });
+
+    test("rejects a REAL order whose account belongs to another client", () => {
+      const other = withModes({ entries: BOTH, exits: BOTH });
+      expect(rejection(realBuy, { ...other, account: { ...other.account, clientId: "c2" } })).toBe(
+        "ACCOUNT_NOT_OWNED",
+      );
+    });
+
+    test("rejects every order when no mode is allowed", () => {
+      expect(rejection(equityBuy, withModes({ entries: [], exits: [] }))).toBe("MODE_NOT_ENABLED");
+    });
   });
 
   test("rejects an account of another client", () => {
