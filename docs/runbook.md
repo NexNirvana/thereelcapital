@@ -6,7 +6,7 @@ How to run the pilot. It links to the docs that own each rule instead of repeati
 
 No TradeStation call may spend real money ([CLAUDE.md](../CLAUDE.md)). Only `https://sim-api.tradestation.com/v3` is used. To check:
 
-- `git grep -n "api.tradestation.com" -- ':!docs'` lists every mention of the live host outside `docs/`. Only the OAuth audience constant and test fixtures may appear (the allow list is in `.githooks/no-live-host`).
+- `git grep -n "api.tradestation.com" -- ':!docs'` lists every mention of the live host outside `docs/`. Only the OAuth audience constant, the single `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts` (D52) and test fixtures may appear (the allow list is in `.githooks/no-live-host`).
 - The `pre-commit` hook blocks a new line naming the live host, and the `guards` job in `.github/workflows/policy.yml` re-runs the check over every commit of a pull request ([CONTRIBUTING.md](../CONTRIBUTING.md#hooks)).
 - The adapter refuses any URL whose origin is not the SIM API ([tradestation-integration.md](tradestation-integration.md#adapter-enginesrctradestation)).
 

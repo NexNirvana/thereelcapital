@@ -74,6 +74,34 @@ describe("no-live-host", () => {
     expect(check("engine/src/tradestation/endpoints.ts", line).rejected).toBe(true);
   });
 
+  describe("live base URL declaration", () => {
+    const endpoints = "engine/src/tradestation/endpoints.ts";
+    const declaration = `export const LIVE_API_BASE_URL = "https://${live}/v3";\n`;
+
+    test("allows the whole declaration in endpoints.ts", () => {
+      expect(check(endpoints, declaration).rejected).toBe(false);
+    });
+
+    test.each(["src/live.ts", "engine/src/tradestation/http.ts", "engine/test/live.test.ts"])(
+      "rejects the same declaration in %s",
+      (path) => {
+        expect(check(path, declaration).rejected).toBe(true);
+      },
+    );
+
+    test.each([
+      ["a second constant", `export const OTHER_BASE_URL = "https://${live}/v3";\n`],
+      ["a different version", `export const LIVE_API_BASE_URL = "https://${live}/v2";\n`],
+      ["a deeper path", `export const LIVE_API_BASE_URL = "https://${live}/v3/brokerage";\n`],
+      ["a port", `export const LIVE_API_BASE_URL = "https://${live}:443/v3";\n`],
+      ["a mixed case host in a fetch", `fetch("HTTPS://${live.toUpperCase()}/V3");\n`],
+      ["a fetch of the host", `fetch("https://${live}/v3/brokerage/accounts");\n`],
+      ["a fetch on the declaration line", `${declaration.trim()} fetch("https://${live}/v3/x");\n`],
+    ])("rejects %s in endpoints.ts", (_name, line) => {
+      expect(check(endpoints, line).rejected).toBe(true);
+    });
+  });
+
   test("allows documentation links in Markdown but not an API route", () => {
     expect(check("NOTES.md", `[spec](https://${live}/docs/fundamentals/)\n`).rejected).toBe(false);
     expect(check("NOTES.md", `call https://${live}/v3/orders\n`).rejected).toBe(true);

@@ -209,7 +209,7 @@ docs: record the stop residency decision from the SIM spike
 
 - **pre-commit**: blocks the wrong git identity, secrets (`.dev.vars`, `.env`, private keys, provider tokens), merge-conflict markers and files over 5 MB. After scaffolding it also runs the formatter and linter on staged files.
 - **commit-msg**: enforces the format above and rejects AI attribution.
-- **check-branch-name** and **no-live-host**: helpers (not hooks) shared with CI, which re-runs them and `commit-msg` in the `guards` job of `policy.yml`, using the base branch's copy of the scripts.
+- **check-branch-name** and **no-live-host**: helpers (not hooks) shared with CI, which re-runs them and `commit-msg` in the `guards` job of `policy.yml`, using the base branch's copy of the scripts. `no-live-host` rejects any added line naming the live API host outside `docs/`, except an explicit allowlist: the OAuth `audience` value, documentation links in Markdown, and the one `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts` (D52). Tests import that constant instead of spelling the host.
 - **pre-push**: rejects pushes to `main`, branch names outside the table above, and any pushed commit whose message breaks the rules.
 
 Don't bypass them with `--no-verify`. If a hook is wrong, fix the hook.
