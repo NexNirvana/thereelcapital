@@ -50,12 +50,14 @@ export function logEvent(
 
 /** An event about the broker connection, which serves every active mode: logged under each. */
 export function logConnectionEvent(
-  ctx: { readonly sql: SqlStorage; readonly now: number },
+  ctx: { readonly storage: DurableObjectStorage; readonly now: number },
   level: EventLevel,
   type: string,
   data?: Readonly<Record<string, unknown>>,
 ): void {
-  for (const mode of activeModes()) logEvent({ ...ctx, mode }, level, type, data);
+  const { storage, now } = ctx;
+  for (const mode of activeModes(storage))
+    logEvent({ sql: storage.sql, now, mode }, level, type, data);
 }
 
 /** Drops a mode's events past the retention window (D22); scoped by mode to use `events_by_mode_at`. */

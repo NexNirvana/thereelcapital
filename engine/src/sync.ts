@@ -66,7 +66,7 @@ const DEGRADED_KEY = "sync_degraded";
  */
 export function syncWanted(storage: DurableObjectStorage): boolean {
   const { sql } = storage;
-  return activeModes().some((mode) => {
+  return activeModes(storage).some((mode) => {
     const connected =
       sql
         .exec<{ n: number }>("SELECT COUNT(*) AS n FROM broker_accounts WHERE mode = ?", mode)

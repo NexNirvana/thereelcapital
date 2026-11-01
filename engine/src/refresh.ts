@@ -259,7 +259,7 @@ export class TokenRefresher {
     refreshToken: string,
     now: number,
   ): Promise<void> {
-    const { db, userId, sql } = this.deps;
+    const { db, userId } = this.deps;
     try {
       const refreshTokenEnc = await cipher.encrypt(refreshToken, refreshContext(userId));
       // Before the D1 write, and synchronously after the await above: from here on the token
@@ -303,12 +303,17 @@ export class TokenRefresher {
       this.deps.changed?.();
       if (generation === this.#generation) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
       if (row.refresh_expires_at === null) {
-        logConnectionEvent({ sql, now }, "info", "broker.rotation_detected", { refreshExpiresAt });
+        logConnectionEvent(
+          { storage: this.deps.storage, now },
+          "info",
+          "broker.rotation_detected",
+          { refreshExpiresAt },
+        );
       }
       this.#recovered(row, now);
     } catch {
       // The token stays in DO storage and the next refresh writes it, whatever the response says.
-      logConnectionEvent({ sql, now }, "error", "broker.rotation_not_saved");
+      logConnectionEvent({ storage: this.deps.storage, now }, "error", "broker.rotation_not_saved");
     }
   }
 
@@ -326,7 +331,7 @@ export class TokenRefresher {
 
   #recovered(row: ConnectionRow, now: number): void {
     if (row.status !== "ERROR") return;
-    logConnectionEvent({ sql: this.deps.sql, now }, "info", "broker.refresh_recovered");
+    logConnectionEvent({ storage: this.deps.storage, now }, "info", "broker.refresh_recovered");
   }
 
   /**
@@ -341,7 +346,7 @@ export class TokenRefresher {
     httpStatus?: number,
     detail: Record<string, unknown> = {},
   ): Promise<RefreshOutcome> {
-    const { sql, storage, db, userId, clock } = this.deps;
+    const { storage, db, userId, clock } = this.deps;
     if (generation !== this.#generation) return { kind: "none" };
     const state: StoredConnectionState = outcome.kind === "terminal" ? outcome.state : "ERROR";
     if (outcome.kind === "terminal") this.#access = null;
@@ -360,7 +365,7 @@ export class TokenRefresher {
     } catch {
       // The block above already holds; the status is written again by the next failed refresh.
     }
-    logConnectionEvent({ sql, now: clock() }, "warn", "broker.refresh_failed", {
+    logConnectionEvent({ storage, now: clock() }, "warn", "broker.refresh_failed", {
       state,
       reason,
       status: httpStatus ?? null,
@@ -378,7 +383,7 @@ export class TokenRefresher {
  */
 export function holdForReconciliation(storage: DurableObjectStorage): void {
   storage.transactionSync(() => {
-    for (const mode of activeModes()) {
+    for (const mode of activeModes(storage)) {
       storage.sql.exec(
         "UPDATE positions SET protection_state = 'unverified' WHERE mode = ? AND status != 'CLOSED'",
         mode,

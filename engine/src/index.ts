@@ -77,7 +77,13 @@ import {
 import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
 import { Effect, type Schema } from "effect";
-import { activeModes, isRealTradingOpen, type Mode } from "./mode.ts";
+import {
+  activeModes,
+  isRealTradingOpen,
+  readModeLocks,
+  recordModeLocks,
+  type Mode,
+} from "./mode.ts";
 import { logColo } from "./timing.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
@@ -91,10 +97,10 @@ function errorTag(error: unknown): string {
 }
 
 /**
- * The mode of work no RPC names (live sockets, the quote stream, alarm failures): the first active
- * mode. The REAL issues replace it with the mode of the socket or stream (D52).
+ * The mode of work no RPC names (browser sockets, the quote stream, alarm failures). SIM until the
+ * issue that opens REAL entries gives the sockets and streams a mode of their own (D52).
  */
-const [LIVE_MODE] = activeModes();
+const STREAM_MODE: Mode = "SIM";
 
 const ALARM_RETRY_DELAY_MS = {
   refresh: REFRESH_RETRY_DELAY_MS,
@@ -110,7 +116,8 @@ type Row = Record<string, SqlStorageValue>;
  */
 export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
-  #broker: BrokerAdapterShape | null = null;
+  /** One adapter per mode, built on first use; REAL never exists while the switch is closed. */
+  readonly #brokers = new Map<Mode, BrokerAdapterShape>();
   readonly #alarms: AlarmScheduler;
   /** A pass already running is shared, so two never apply snapshots out of order. */
   #syncing = new Map<Mode, Promise<SyncResult>>();
@@ -128,6 +135,11 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     // Once per instance, off the request path: where this Durable Object runs (#279). Production
     // only, so tests that count outbound fetches never see the probe.
     if (env.ENVIRONMENT === "production") ctx.waitUntil(logColo());
+    // A switch closed since the last run takes effect before anything reads the active modes.
+    recordModeLocks(ctx.storage, {
+      deploymentOpen: isRealTradingOpen(env),
+      clientEnabled: readModeLocks(ctx.storage).clientEnabled,
+    });
     this.#alarms = new AlarmScheduler(ctx.storage, () => this.#now());
     this.#sockets = new LiveSockets({
       hub: new QuoteHub({
@@ -152,14 +164,14 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         backoffMaxMs: LIVE_STREAM_BACKOFF_MAX_MS,
       }),
       streamAvailable: () => {
-        const connection = this.connectionContext(LIVE_MODE);
+        const connection = this.connectionContext(STREAM_MODE);
         return connection !== null && this.brokerFor(connection)?.quoteStream !== undefined;
       },
       prepare: (entry, streamed) =>
         this.enterWithBroker(
           "watchEntry",
           PrepareEntryArgs,
-          { mode: LIVE_MODE, ...entry },
+          { mode: STREAM_MODE, ...entry },
           (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined, this.entryInputs),
         ).catch(() => null),
       now: () => engineNow(this.env),
@@ -194,7 +206,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket", { status: 426 });
     }
-    if (this.connectionContext(LIVE_MODE) === null)
+    if (this.connectionContext(STREAM_MODE) === null)
       return new Response("Not available", { status: 409 });
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
@@ -213,7 +225,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     signal: AbortSignal,
     streamId: number,
   ): Promise<"ended" | "failed"> {
-    const connection = this.connectionContext(LIVE_MODE);
+    const connection = this.connectionContext(STREAM_MODE);
     const broker = connection === null ? null : this.brokerFor(connection);
     if (broker?.quoteStream === undefined) return "failed";
     const result = await Effect.runPromise(
@@ -244,7 +256,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     const alreadyLogged = [...this.#streamFailures.values()].includes(kind);
     this.#streamFailures.set(streamId, kind);
     if (!alreadyLogged) {
-      this.log("warn", LIVE_MODE, "quote_stream.failed", "quoteStream", kind);
+      this.log("warn", STREAM_MODE, "quote_stream.failed", "quoteStream", kind);
     }
     return "failed";
   }
@@ -476,7 +488,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         await this.runTask(task);
       } catch (error) {
         // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
-        this.log("error", LIVE_MODE, "alarm.task_failed", task, errorTag(error));
+        this.log("error", STREAM_MODE, "alarm.task_failed", task, errorTag(error));
         await this.#alarms.schedule(task, this.#now() + ALARM_RETRY_DELAY_MS[task]);
         continue;
       }
@@ -504,10 +516,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       }
       case "sync": {
         let nextInMs: number | null = null;
-        for (const mode of activeModes()) {
+        await this.refreshModeLocks();
+        for (const mode of activeModes(this.ctx.storage)) {
           const ctx = this.connectionContext(mode);
           const broker = ctx === null ? null : this.brokerFor(ctx);
-          if (ctx === null || broker === null) return;
+          // No connection ends the loop for every mode; a mode without a broker is skipped.
+          if (ctx === null) return;
+          if (broker === null) continue;
           const result = await this.syncOnce({ ...ctx, broker });
           if (result.nextInMs !== null) nextInMs = Math.min(nextInMs ?? Infinity, result.nextInMs);
         }
@@ -517,6 +532,36 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         );
         return;
       }
+    }
+  }
+
+  /**
+   * Reads the client's REAL flag from D1 (lock 2, the way entry-inputs.ts reads client_settings)
+   * and keeps it for the synchronous passes. Not read while the deployment switch is closed: the
+   * answer would not matter. A failed read keeps the last value.
+   */
+  private async refreshModeLocks(): Promise<void> {
+    const userId = this.ctx.id.name;
+    const deploymentOpen = isRealTradingOpen(this.env);
+    if (!deploymentOpen || userId === undefined) {
+      recordModeLocks(this.ctx.storage, { deploymentOpen, clientEnabled: false });
+      return;
+    }
+    try {
+      const row = await this.env.DB.prepare(
+        "SELECT real_trading_enabled FROM client_settings WHERE user_id = ?",
+      )
+        .bind(userId)
+        .first<{ real_trading_enabled: number }>();
+      recordModeLocks(this.ctx.storage, {
+        deploymentOpen,
+        clientEnabled: row?.real_trading_enabled === 1,
+      });
+    } catch {
+      recordModeLocks(this.ctx.storage, {
+        deploymentOpen,
+        clientEnabled: readModeLocks(this.ctx.storage).clientEnabled,
+      });
     }
   }
 
@@ -565,7 +610,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       // The input is never logged: it may carry anything the caller sent.
       this.log(
         "warn",
-        decoded.code === "MODE_NOT_SIM" ? "REAL" : LIVE_MODE,
+        decoded.code === "MODE_NOT_SIM" ? "REAL" : STREAM_MODE,
         `rpc.${decoded.code.toLowerCase()}`,
         method,
       );
@@ -594,13 +639,20 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     });
   }
 
-  /** One adapter per Durable Object, so the SIM account guard's cache is shared by its requests. */
+  /**
+   * One adapter per mode and Durable Object, so an account guard's cache is shared by its requests.
+   * The same connection and token serve both modes (T2; that one token serves both is unverified,
+   * docs/tradestation-integration.md#environments). REAL is built only with the switch open and
+   * then with `realTrading: true`; the transport refuses a live adapter otherwise (D52 lock 4), so
+   * nothing here can reach the live host through a closed switch.
+   */
   private brokerFor(ctx: ConnectionContext): BrokerAdapterShape | null {
-    if (this.#broker !== null) return this.#broker;
+    const held = this.#brokers.get(ctx.mode);
+    if (held !== undefined) return held;
+    if (ctx.mode === "REAL" && !isRealTradingOpen(this.env)) return null;
     const resolved = resolveBroker({
-      // The Durable Object serves SIM only until the engine issue of D52 adds REAL.
-      mode: "SIM",
-      realTrading: isRealTradingOpen(this.env),
+      mode: ctx.mode,
+      realTrading: ctx.mode === "REAL",
       settings: this.env,
       userId: ctx.userId,
       now: () => this.#now(),
@@ -613,8 +665,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       this.log("error", ctx.mode, "broker.unavailable", resolved.reason);
       return null;
     }
-    this.#broker = resolved.broker;
-    return this.#broker;
+    this.#brokers.set(ctx.mode, resolved.broker);
+    return resolved.broker;
   }
 
   private async enterWithConnection<
@@ -631,6 +683,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   ): Promise<EngineResult<T>> {
     const decoded = this.enter(method, schema, input, (args) => success(args));
     if (!decoded.ok) return decoded;
+    await this.refreshModeLocks();
     const context = this.connectionContext(decoded.value.mode);
     if (context === null) return failure("INVALID_INPUT");
     try {
