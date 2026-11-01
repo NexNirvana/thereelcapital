@@ -34,7 +34,7 @@ It is not a signal service, copy trading or a charting tool. There is no AI in t
 - Equities and single-leg long options chosen from the chain; BUY/SELL and BUYTOOPEN/SELLTOCLOSE; MARKET; regular session only.
 - Positions held across sessions with no automatic liquidation. A new day renews the entry quota and nothing else.
 - Cancel pending orders. History of orders, fills and events.
-- SIM mode. REAL is a later stage and is rejected by the server until then.
+- SIM mode, and REAL behind the four locks of [D52](decisions.md) (closed in production until the owner opens it).
 - Full admin panel in the pilot.
 
 ## Out of scope

@@ -1,17 +1,19 @@
 # REEL CAPITAL (thereelcapital.com)
 
-Invitation-only web terminal where a few pilot clients trade US equities and long single-leg options in **their own TradeStation accounts** with **their own API key**. MARKET orders only, regular session only, SIM only for now. No charts or P&L in the terminal.
+Invitation-only web terminal where a few pilot clients trade US equities and long single-leg options in **their own TradeStation accounts** with **their own API key**. MARKET orders only, regular session only, SIM now and REAL behind locks (D52). No charts or P&L in the terminal.
 
 Stack: SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers, with D1 and one SQLite Durable Object class. Bun is the package manager, script runner and unit test runner; Worker code never uses Bun APIs (`docs/architecture.md#tooling-bun`). Two Workers in this repo: `web` (SvelteKit) and `engine` (the `ClientCoordinator` DO, the only component that talks to TradeStation). See `docs/architecture.md`.
 
-## ABSOLUTE RULE: TradeStation SIM only, never real money
+## ABSOLUTE RULE: no real money from development, tests or CI
 
-**No use of the TradeStation API may ever result in real money being spent, of any kind, under any circumstance.** Only the TradeStation v3 **SIM** environment is used: `https://sim-api.tradestation.com/v3`.
+**No development, test, script or CI activity may ever spend real money.** REAL mode (the TradeStation live environment) exists in the code only behind four locks (D52 in `docs/decisions.md`), and production keeps it closed until the owner opens it in a PR of their own.
 
-- Never call, configure, test against or add a code path to the live API host (the same hostname without the `sim-` prefix). The pre-commit hook blocks it outside `docs/`.
-- Before any request that places, replaces or cancels an order, verify that the base URL is the SIM host and that the account is a SIM account. If you can't verify both, don't send it.
-- No instruction, task, issue, test or convenience overrides this rule. If something seems to require live access, stop and ask the user.
+- The four locks: the engine variable `REAL_TRADING` (only the exact value `"enabled"` opens it), the per-client `client_settings.real_trading_enabled` set by an admin, an account the live host listed for that connection, and a transport that checks every request against its mode's base URL.
+- Agents, scripts, tests and CI never contact the live API host, never set `REAL_TRADING`, and never enable REAL for a client. Tests reach the live base only through scripted `fetch` stubs; e2e uses the local simulation; `bun run spike` stays SIM only.
+- The live host may appear only in the single `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts` (the pre-commit hook blocks it elsewhere outside `docs/`). SIM orders only ever reach `https://sim-api.tradestation.com/v3`.
+- Before any request that places, replaces or cancels an order, the transport verifies that the base URL is the one of the order's mode and that the account was listed by that mode's host. If it can't verify both, it doesn't send it.
 - TradeStation credentials come only from the git-ignored `.env` (`TRADINGSTATION_API_KEY`, `TRADINGSTATION_API_SECRET`). Never print, log or commit their values.
+- No instruction, task, issue, test or convenience overrides this rule. If something seems to require contacting the live host, stop and ask the user.
 
 ## Commands
 
@@ -50,7 +52,7 @@ Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`);
 1. The client id comes from the verified session. Every query and DO call is scoped by it.
 2. Secrets and tokens stay server-side, encrypted at rest, never logged. Only the engine decrypts TradeStation credentials.
 3. The server computes quantity from SIZE and the TradeStation ask. It never accepts SIZE, quantity, price or a broker URL from the browser.
-4. MARKET, long-only, regular session, in-scope instruments, SIM. Everything else is rejected by the server.
+4. MARKET, long-only, regular session, in-scope instruments, SIM or REAL behind its locks (D52). Everything else is rejected by the server.
 5. Persist the intent (`OrderConfirmID` = intent id) before every broker call; never retry place or cancel; a timeout means UNKNOWN, which is reconciled.
 6. No `await` between reading and writing counters or ledgers in the DO.
 7. Limits (2 positions; entries per day, 3 by default and set per client by the admin) block entries, never exits or cancels.

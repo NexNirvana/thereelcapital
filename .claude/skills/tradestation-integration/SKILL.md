@@ -12,7 +12,7 @@ Spec: `docs/tradestation-integration.md`. It has the endpoint table, order body,
 - Only the client's `ClientCoordinator` DO calls TradeStation. Tokens never reach the web Worker or the browser.
 - Each client uses **their own** `client_id` and secret (encrypted in `broker_connection`). Auth goes only through `signin.tradestation.com` v3 endpoints, with `audience=https://api.tradestation.com` and `offline_access` in the scopes.
 - The access token lives in memory and is refreshed before its 20 minutes run out. If a refresh returns a new refresh token, persist it atomically: rotation is on, and the 24h absolute lifetime applies.
-- Base URL from the intent's mode: SIM `sim-api.tradestation.com/v3`. LIVE is rejected before any call.
+- Base URL from the intent's mode: SIM `sim-api.tradestation.com/v3`; the live base only through the REAL locks of D52 (`REAL_TRADING`, client setting, account listed by the live host, per-request prefix check). Never contact the live host from agents, tests or scripts.
 - Every order: `OrderType: "Market"`, `TimeInForce.Duration: "DAY"`, `OrderConfirmID` = intent id. Never retry a place or cancel.
 - Decode every response with Effect `Schema`. Map errors to typed failures (`AuthExpired`, `RateLimited`, `Rejected`, `Timeout`, `Unknown`); read the `X-RateLimit-*` headers.
 - Never use the P&L fields of positions or balances.

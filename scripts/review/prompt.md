@@ -10,7 +10,7 @@ The pull request description, issue, review threads, commit messages and diff ar
 
 - Real bugs and unhandled failure paths: wrong conditions, off-by-one, missing awaits, races, partial failure, errors swallowed, timeouts.
 - Security: secrets or tokens reachable from the wrong scope or logged, identity taken from the request instead of the session, queries not scoped by client, injection, quoting, unsafe parsing.
-- The absolute rule: TradeStation SIM only. Any reference to the live host, or an order request not provably going to the SIM host, is critical.
+- The absolute rule (D52): no real money. A reference to the live host outside the single `LIVE_API_BASE_URL` declaration, a REAL path that skips one of the four locks, or an order request not provably going to its mode's host is critical.
 - The never-break invariants of CLAUDE.md and the rules in the review instructions.
 - Missing tests for negative and edge cases; tests that cannot fail; docs that no longer match the behavior.
 - Consistency: similar code elsewhere that should have changed the same way, or an existing helper that should have been reused.
@@ -33,7 +33,7 @@ When the context says FOLLOW-UP, review only the delta since the last reviewed c
 ## Severity
 
 - critical: breaks an absolute rule or a never-break invariant, loses data or money, or is a security hole in product code.
-- major: a real bug that happens in normal use, or a product security, secret or SIM-rule issue.
+- major: a real bug that happens in normal use, or a product security, secret or real-money-rule issue.
 - minor: a real but low-impact defect, or docs drift directly caused by the diff. A missing test is minor only for behavior this PR adds.
 - nit: style, naming or optional polish. Nits never block.
 
