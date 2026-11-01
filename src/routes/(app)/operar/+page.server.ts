@@ -18,6 +18,7 @@ import { engineFor } from "#lib/server/engine.ts";
 import { exactStrike, parseStrikeCount } from "#lib/ui/chain-window.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 export const load: PageServerLoad = async (event) => {
   const { parent } = event;
@@ -40,10 +41,10 @@ export const load: PageServerLoad = async (event) => {
   const now = new Date();
   const typedUnderlying = (query.subyacente ?? "").trim().toUpperCase();
   const chainOf = (underlying: string, expiration: string) =>
-    loadChainView(engine, underlying, expiration, now);
+    loadChainView(engine, modeFor(event), underlying, expiration, now);
   // The connection comes from the layout; the other reads start now so they overlap with it.
   const others = Promise.all([
-    engine.limits({ mode: "SIM" }).catch(() => null),
+    engine.limits({ mode: modeFor(event) }).catch(() => null),
     env.DB.prepare("SELECT stop_pct FROM client_settings WHERE user_id = ?")
       .bind(user.id)
       .first<{ stop_pct: number }>()
@@ -51,7 +52,7 @@ export const load: PageServerLoad = async (event) => {
     // What the chosen option symbol stands for, so the screen shows the underlying and the
     // contract apart. The symbol came back from the chain; the engine says what it is.
     tipo === "opciones" && SYMBOL.test(symbol)
-      ? engine.optionContract({ mode: "SIM", symbol }).catch(() => null)
+      ? engine.optionContract({ mode: modeFor(event), symbol }).catch(() => null)
       : null,
     tipo === "opciones" && typedUnderlying !== ""
       ? chainOf(typedUnderlying, (query.vencimiento ?? "").trim())
@@ -112,7 +113,7 @@ export const load: PageServerLoad = async (event) => {
 
   const prepared = await engine
     .prepareEntry({
-      mode: "SIM",
+      mode: modeFor(event),
       accountId,
       symbol,
       assetType: ASSET_TYPE[tipo],
@@ -183,7 +184,7 @@ export const actions: Actions = {
 
     const sent = await engineFor(env.ENGINE, event)
       .sendEntry({
-        mode: "SIM",
+        mode: modeFor(event),
         accountId: cuenta,
         symbol: simbolo,
         assetType: ASSET_TYPE[tipo],

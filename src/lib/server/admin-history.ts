@@ -1,6 +1,7 @@
 // The admin's cross-client history (docs/screens-and-flows.md#admin, /admin/historial). The page
 // calls requireAdmin; this module fans the engine's `history` RPC out to each client's Durable
 // Object (the same read the client's own screen uses, so no P&L, balance or broker id) and merges.
+import type { TradingMode } from "./trading-mode.ts";
 import { Schema } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
 import { ORDER_STATES } from "#lib/domain/order-states.ts";
@@ -115,12 +116,13 @@ export async function readAdminHistory(
   filters: AdminHistoryFilters,
   cursor: string | undefined,
   read: HistoryReader,
+  mode: TradingMode,
   timeoutMs?: number,
 ): Promise<AdminHistoryPage> {
   const targets =
     filters.cliente === "" ? clients : clients.filter((c) => c.id === filters.cliente);
   const args: Record<string, string> = {
-    mode: "SIM",
+    mode,
     ...(filters.cuenta === "" ? {} : { accountId: filters.cuenta }),
     ...(filters.simbolo === "" ? {} : { symbol: filters.simbolo }),
     ...(filters.estado === "" ? {} : { state: filters.estado }),

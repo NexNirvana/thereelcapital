@@ -14,6 +14,7 @@ import {
   withVerification,
 } from "#lib/ui/positions.ts";
 import type { Actions, PageServerLoad } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
 // The only thing the browser may say about the view: which open position to show.
@@ -30,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
   const p = event.url.searchParams.get("p");
   const query = decode(Query, p === null ? {} : { p });
   const result = await engineFor(env.ENGINE, event)
-    .positions({ mode: "SIM" })
+    .positions({ mode: modeFor(event) })
     .catch(() => null);
   if (result === null || !result.ok) {
     return {
@@ -80,7 +81,11 @@ export const actions: Actions = {
     const { positionId, step } = parsed.success;
 
     const sent = await engineFor(env.ENGINE, event)
-      .exit({ mode: "SIM", positionId, step: step === "ALL_OUT" ? step : STEP_INDEX[step] })
+      .exit({
+        mode: modeFor(event),
+        positionId,
+        step: step === "ALL_OUT" ? step : STEP_INDEX[step],
+      })
       // The order may have left before the failure: the screen shows what the engine holds.
       .catch(() => null);
     if (sent === null) {
@@ -110,7 +115,7 @@ export const actions: Actions = {
       return fail(400, { message: "Los datos enviados no son válidos." });
 
     const sent = await engineFor(env.ENGINE, event)
-      .cancel({ mode: "SIM", intentId: parsed.success.intentId })
+      .cancel({ mode: modeFor(event), intentId: parsed.success.intentId })
       .catch(() => null);
     if (sent === null) {
       return fail(502, {
@@ -145,7 +150,7 @@ export const actions: Actions = {
     }
 
     const sent = await engineFor(env.ENGINE, event)
-      .activateTrailing({ mode: "SIM", positionId, trailingPct })
+      .activateTrailing({ mode: modeFor(event), positionId, trailingPct })
       .catch(() => null);
     if (sent === null) {
       return fail(502, {

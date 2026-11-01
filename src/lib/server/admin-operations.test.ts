@@ -51,6 +51,7 @@ describe("startOverviews", () => {
           return Promise.resolve({ ok: true as const, value: overview });
         },
       }),
+      "SIM",
       20,
     );
     const rows = await Promise.all(
@@ -86,6 +87,7 @@ describe("startOverviews", () => {
       (id) => ({
         overview: () => (id === "slow" ? slow : Promise.resolve({ ok: true, value: overview })),
       }),
+      "SIM",
       1_000,
     );
     expect(started.map((r) => r.id)).toEqual(["fast", "slow"]);

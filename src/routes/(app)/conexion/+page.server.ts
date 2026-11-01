@@ -13,6 +13,7 @@ import {
 import { engineFor } from "#lib/server/engine.ts";
 import { guardErrors, requireFreshSession, requireUser } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 /** Shown only when the client must register our callback on their key (decision D35). */
 const callbackUrl = () =>
@@ -101,7 +102,7 @@ export const actions: Actions = {
 
     const result = await engineFor(env.ENGINE, event)
       .beginConnection({
-        mode: "SIM",
+        mode: modeFor(event),
         clientId: input.success.clientId.trim(),
         clientSecret: input.success.clientSecret.trim(),
         redirectUri: connectRedirectUri(env.APP_ORIGIN),
@@ -144,7 +145,7 @@ export const actions: Actions = {
     // The state is consumed in the engine before anything else; a rejection must not become a 500.
     const result = await engineFor(env.ENGINE, event)
       .completeConnection({
-        mode: "SIM",
+        mode: modeFor(event),
         code: parsed.code,
         state: parsed.state,
         redirectUri: connectRedirectUri(env.APP_ORIGIN),
@@ -167,7 +168,7 @@ export const actions: Actions = {
     const stale = staleSession(event);
     if (stale) return stale;
     const result = await engineFor(env.ENGINE, event)
-      .disconnect({ mode: "SIM" })
+      .disconnect({ mode: modeFor(event) })
       .catch(() => null);
     if (result === null) return unavailable();
     if (!result.ok) return fail(502, { code: result.code, message: result.message });

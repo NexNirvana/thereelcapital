@@ -7,6 +7,7 @@ import { decode } from "#lib/server/decode.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 // Everything the browser may say about the history: which rows to narrow to and where the next page
 // starts. The client id is the session's and the mode is SIM; unknown parameters are a 400.
@@ -39,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
     hasta: query.hasta ?? "",
   };
   const args = {
-    mode: "SIM",
+    mode: modeFor(event),
     ...(filters.cuenta === "" ? {} : { accountId: filters.cuenta }),
     ...(filters.simbolo === "" ? {} : { symbol: filters.simbolo }),
     ...(filters.desde === "" ? {} : { from: filters.desde }),

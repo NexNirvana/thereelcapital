@@ -70,7 +70,7 @@ describe("readAdminHistory", () => {
     const seen: string[] = [];
     let cursor: string | undefined;
     do {
-      const page = await readAdminHistory(clients, none, cursor, readerOf(rows));
+      const page = await readAdminHistory(clients, none, cursor, readerOf(rows), "SIM");
       expect(page.intents.length).toBeLessThanOrEqual(ADMIN_HISTORY_PAGE_SIZE);
       seen.push(...page.intents.map((r) => r.id));
       cursor = page.nextCursor ?? undefined;
@@ -83,7 +83,7 @@ describe("readAdminHistory", () => {
 
   test("offers a next page when one client has more rows than the merge shows", async () => {
     const rows = { c1: Array.from({ length: 30 }, (_, i) => intent(`a${i}`, 1000 + i)) };
-    const first = await readAdminHistory(clients, none, undefined, readerOf(rows));
+    const first = await readAdminHistory(clients, none, undefined, readerOf(rows), "SIM");
     expect(first.intents.length).toBe(ADMIN_HISTORY_PAGE_SIZE);
     expect(first.nextCursor).not.toBeNull();
     const second = await readAdminHistory(
@@ -91,6 +91,7 @@ describe("readAdminHistory", () => {
       none,
       first.nextCursor ?? undefined,
       readerOf(rows),
+      "SIM",
     );
     expect(second.intents.length).toBe(5);
     expect(second.nextCursor).toBeNull();
@@ -98,7 +99,7 @@ describe("readAdminHistory", () => {
 
   test("tags each row with its client and narrows to one client", async () => {
     const rows = { c1: [intent("x", 5)], c2: [intent("y", 6)] };
-    const all = await readAdminHistory(clients, none, undefined, readerOf(rows));
+    const all = await readAdminHistory(clients, none, undefined, readerOf(rows), "SIM");
     expect(all.intents.map((r) => [r.id, r.clientEmail])).toEqual([
       ["y", "b@example.com"],
       ["x", "a@example.com"],
@@ -109,6 +110,7 @@ describe("readAdminHistory", () => {
       filtersOf({ cliente: "c1" }),
       undefined,
       readerOf(rows, seen),
+      "SIM",
     );
     expect(one.intents.map((r) => r.id)).toEqual(["x"]);
     expect(seen.map((s) => s.clientId)).toEqual(["c1"]);
@@ -128,6 +130,7 @@ describe("readAdminHistory", () => {
       }),
       "5:abc",
       readerOf({}, seen),
+      "SIM",
     );
     expect(seen[0]?.args).toEqual({
       mode: "SIM",
@@ -145,7 +148,7 @@ describe("readAdminHistory", () => {
     const good = readerOf({ c2: [intent("y", 6)] });
     const read: HistoryReader = (id, args) =>
       id === "c1" ? Promise.reject(new Error("boom: secret-detail")) : good(id, args);
-    const page = await readAdminHistory(clients, none, undefined, read);
+    const page = await readAdminHistory(clients, none, undefined, read, "SIM");
     expect(page.intents.map((r) => r.id)).toEqual(["y"]);
     expect(page.failures).toEqual([
       { clientEmail: "a@example.com", message: "No pudimos leer su historial." },
@@ -157,7 +160,7 @@ describe("readAdminHistory", () => {
     const good = readerOf({ c2: [intent("y", 6)] });
     const read: HistoryReader = (id, args) =>
       id === "c1" ? new Promise(() => {}) : good(id, args);
-    const page = await readAdminHistory(clients, none, undefined, read, 20);
+    const page = await readAdminHistory(clients, none, undefined, read, "SIM", 20);
     expect(page.intents.map((r) => r.id)).toEqual(["y"]);
     expect(page.failures).toEqual([
       { clientEmail: "a@example.com", message: "No pudimos leer su historial." },
@@ -171,7 +174,7 @@ describe("readAdminHistory", () => {
     const good = readerOf(rows);
     const read: HistoryReader = (id, args) =>
       id === "c1" ? Promise.reject(new Error("down")) : good(id, args);
-    const page = await readAdminHistory(clients, none, undefined, read);
+    const page = await readAdminHistory(clients, none, undefined, read, "SIM");
     expect(page.intents.length).toBe(ADMIN_HISTORY_PAGE_SIZE);
     expect(page.nextCursor).toBeNull();
   });
@@ -181,7 +184,7 @@ describe("readAdminHistory", () => {
       ok: false,
       message: "Los datos enviados no son válidos.",
     });
-    const page = await readAdminHistory(clients, none, undefined, read);
+    const page = await readAdminHistory(clients, none, undefined, read, "SIM");
     expect(page.failures.length).toBe(2);
     expect(page.intents).toEqual([]);
   });
@@ -196,10 +199,22 @@ describe("readAdminHistory", () => {
         nextCursor: null,
       },
     });
-    const orders = await readAdminHistory(clients, filtersOf({ tipo: "ordenes" }), undefined, read);
+    const orders = await readAdminHistory(
+      clients,
+      filtersOf({ tipo: "ordenes" }),
+      undefined,
+      read,
+      "SIM",
+    );
     expect(orders.events).toEqual([]);
     expect(orders.intents.length).toBe(2);
-    const events = await readAdminHistory(clients, filtersOf({ tipo: "eventos" }), undefined, read);
+    const events = await readAdminHistory(
+      clients,
+      filtersOf({ tipo: "eventos" }),
+      undefined,
+      read,
+      "SIM",
+    );
     expect(events.intents).toEqual([]);
     expect(events.events.length).toBe(2);
   });

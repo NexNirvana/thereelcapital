@@ -5,6 +5,7 @@ import { engineFor } from "#lib/server/engine.ts";
 import { shellConnection } from "#lib/server/shell-connection.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { LayoutServerLoad } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 /** Recovery codes the user can still redeem; `undefined` when unreadable, so no false prompt. */
 async function unusedRecoveryCodes(userId: string): Promise<number | undefined> {
@@ -32,7 +33,7 @@ export const load: LayoutServerLoad = async (event) => {
   event.depends("app:connection");
   const [result, unusedCodes] = await Promise.all([
     engineFor(env.ENGINE, event)
-      .connection({ mode: "SIM" })
+      .connection({ mode: modeFor(event) })
       .catch(() => null),
     unusedRecoveryCodes(user.id),
   ]);

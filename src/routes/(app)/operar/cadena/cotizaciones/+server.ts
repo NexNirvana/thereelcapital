@@ -5,6 +5,7 @@ import { decode } from "#lib/server/decode.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { RequestHandler } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 // The live bid and ask of one expiration's chain (D46). Display only: the same read-only engine
 // call the page load makes, and the engine lists the strikes once and then reads only quotes.
@@ -24,7 +25,7 @@ export const GET: RequestHandler = async (event) => {
   }
 
   const chain = await engineFor(env.ENGINE, event)
-    .optionChain({ mode: "SIM", underlying, expiration })
+    .optionChain({ mode: modeFor(event), underlying, expiration })
     .catch(() => null);
   if (chain === null) return json({ status: "unavailable" }, { status: 502, headers: noStore });
   if (!chain.ok) {

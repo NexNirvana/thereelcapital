@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { modeFor } from "#lib/server/trading-mode.ts";
 import { listClients } from "#lib/server/admin-clients.ts";
 import {
   AdminHistoryQuery,
@@ -26,7 +27,13 @@ export const load: PageServerLoad = async (event) => {
   const query = decode(AdminHistoryQuery, Object.fromEntries(event.url.searchParams));
   const filters = filtersOf(query);
   const clients = await listClients(env.DB);
-  const page = await readAdminHistory(clients, filters, query.despues, readClientHistory(event));
+  const page = await readAdminHistory(
+    clients,
+    filters,
+    query.despues,
+    readClientHistory(event),
+    modeFor(event),
+  );
   const next = new URLSearchParams(
     Object.entries({ ...filters, despues: page.nextCursor ?? "" }).filter(
       ([, value]) => value !== "",

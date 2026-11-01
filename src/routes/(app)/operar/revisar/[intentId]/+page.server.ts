@@ -5,6 +5,7 @@ import { engineFor } from "#lib/server/engine.ts";
 import { INTENT_ID } from "#lib/server/entry-query.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { PageServerLoad } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 export const load: PageServerLoad = async (event) => {
   if (!event.locals.user) redirect(303, resolve("/acceso"));
@@ -18,7 +19,7 @@ export const load: PageServerLoad = async (event) => {
 
   // The engine is this client's own Durable Object, so only their intents can be found.
   const history = await engineFor(env.ENGINE, event)
-    .history({ mode: "SIM" })
+    .history({ mode: modeFor(event) })
     .catch(() => null);
   if (history === null || !history.ok) {
     return { intent: null, message: "No pudimos leer el estado de la orden. Inténtalo de nuevo." };
