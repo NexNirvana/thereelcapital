@@ -27,7 +27,7 @@ Browser ──HTTPS──► web Worker (SvelteKit, adapter-cloudflare 8)
 | `ClientCoordinator` DO (`idFromName(userId)`) | **the only TradeStation gateway for that client**: token refresh, accounts, quotes, chain, orders, positions; intents, ledgers, daily counters, slots, scale-out steps, stop/trailing, reconciliation, operational event log; both modes in one store, separated by a `mode` column | trust identifiers from the browser; run when nothing is open (alarms stop) |
 | D1 | identity, settings, connection credentials (encrypted), audit | order or position state |
 
-One DO per **client** rather than per (client, mode): one connection serves both modes, so a single owner removes token-refresh races and keeps one place for the per-client limits. Mode isolation is enforced on every row, key and query (`mode` column, mode-prefixed idempotency, separate counters). REAL is rejected at the DO entry point until it is enabled.
+One DO per **client** rather than per (client, mode): one connection serves both modes, so a single owner removes token-refresh races and keeps one place for the per-client limits. Mode isolation is enforced on every row, key and query (`mode` column, mode-prefixed idempotency, separate counters). REAL is rejected at the DO entry point until it is enabled. Inside the DO there is one broker adapter per mode: the REAL one is built only while `REAL_TRADING` is open, and the background passes (sync, reconcile, protection, trailing) run for each active mode with that mode's broker and rows ([tradestation-integration.md](tradestation-integration.md#environments)). D1 `real_account_bindings` records which client owns a live account.
 
 ## Data model
 
@@ -41,6 +41,7 @@ invitations        id, user_id, token_hash, expires_at, used_at, revoked_at, cre
 recovery_codes     id, user_id, code_hash, used_at
 broker_connection  user_id PK, client_id, client_secret_enc, refresh_token_enc, key_id,
                    refresh_expires_at (NULL = unknown, set to now + 24 h when a rotation is first seen, D44), status, last_ok_at
+real_account_bindings  account_id PK, user_id (FK, cascade), created_at   -- the client that owns a live account (D49, D52 lock 3)
 audit_log          id, at, actor_id, action, target_user_id, before_json, after_json   -- no secrets
 ```
 

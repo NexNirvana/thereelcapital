@@ -110,4 +110,4 @@ Not supported in the pilot (D21): the guard in §5 rejects a BUY on an instrumen
 | open | off | yes | SIM | SIM, REAL |
 | open | on | any | SIM, REAL | SIM, REAL |
 
-Nothing reads `allowedModes` yet: the engine will (issue #316), and the web after it.
+The engine reads `allowedModes` through `activeModes` (`engine/src/mode.ts`), which decides the modes its background passes serve (issue #316); the web reads it with the entries issue.

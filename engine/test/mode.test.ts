@@ -1,7 +1,9 @@
 import { runInDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { activeModes, isRealTradingOpen, recordModeLocks } from "../src/mode.ts";
 import { ClientCoordinator } from "../src/index.ts";
+import { logOnce } from "../src/reconcile.ts";
 import { newClient } from "./sync-helpers.ts";
 
 describe("activeModes", () => {
@@ -41,6 +43,27 @@ describe("activeModes", () => {
   });
 });
 
+describe("the client flag", () => {
+  it("is read from D1 only while the deployment is open", async () => {
+    const client = await newClient();
+    await env.DB.prepare("UPDATE client_settings SET real_trading_enabled = 1 WHERE user_id = ?")
+      .bind(client.userId)
+      .run();
+    await runInDurableObject(client.stub, async (instance: ClientCoordinator, state) => {
+      await instance["refreshModeLocks"]();
+      expect(activeModes(state.storage)).toEqual(["SIM"]); // the test deployment is closed
+      // The argument stands in for the deployment switch; the variable itself stays closed.
+      await instance["refreshModeLocks"](true);
+      expect(activeModes(state.storage)).toEqual(["SIM", "REAL"]);
+      await env.DB.prepare("UPDATE client_settings SET real_trading_enabled = 0 WHERE user_id = ?")
+        .bind(client.userId)
+        .run();
+      await instance["refreshModeLocks"](true);
+      expect(activeModes(state.storage)).toEqual(["SIM"]);
+    });
+  });
+});
+
 describe("the broker per mode", () => {
   it("builds no REAL broker while the switch is closed, and a REAL one only with it open", async () => {
     const client = await newClient();
@@ -52,10 +75,10 @@ describe("the broker per mode", () => {
       expect(instance["brokerFor"](sim)).not.toBeNull();
       expect(instance["brokerFor"](real)).toBeNull();
       expect(instance["brokerFor"](sim)).toBe(instance["brokerFor"](sim));
-      // The switch is the deployment's: opening it for the instance is what a deploy would do.
-      Object.assign(instance["env"], { REAL_TRADING: "enabled" });
-      expect(instance["brokerFor"](real)).not.toBeNull();
-      expect(instance["brokerFor"](real)).not.toBe(instance["brokerFor"](sim));
+      // The argument stands in for the deployment switch; the variable itself stays closed.
+      const opened = instance["brokerFor"](real, true);
+      expect(opened).not.toBeNull();
+      expect(opened).not.toBe(instance["brokerFor"](sim));
       void state;
     });
   });
@@ -78,5 +101,25 @@ describe("isRealTradingOpen", () => {
       expect(isRealTradingOpen({ REAL_TRADING: value })).toBe(false);
     }
     expect(isRealTradingOpen({})).toBe(false);
+  });
+});
+
+describe("conditions logged once", () => {
+  it("log once per mode, not once for both passes", async () => {
+    const client = await newClient();
+    await runInDurableObject(client.stub, (instance: ClientCoordinator, state) => {
+      for (const mode of ["SIM", "REAL"] as const) {
+        const ctx = instance["connectionContext"](mode);
+        if (ctx === null) throw new Error("no connection context");
+        logOnce(ctx, "2", "warn", "sync.unknown_pending");
+        logOnce(ctx, "2", "warn", "sync.unknown_pending");
+      }
+      const rows = state.storage.sql
+        .exec<{ mode: string }>(
+          "SELECT mode FROM events WHERE type = 'sync.unknown_pending' ORDER BY mode",
+        )
+        .toArray();
+      expect(rows.map((row) => row.mode)).toEqual(["REAL", "SIM"]);
+    });
   });
 });

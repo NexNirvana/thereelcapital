@@ -32,7 +32,7 @@ import {
   reconciliationPending,
   reconciliationTicket,
 } from "./refresh.ts";
-import { activeModes } from "./mode.ts";
+import { activeModes, modeKey } from "./mode.ts";
 import { monitorProtection } from "./protection.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { logEvent, pruneEvents, type EventLevel } from "./events.ts";
@@ -88,7 +88,7 @@ export function syncWanted(storage: DurableObjectStorage): boolean {
 
 /** A pass completed within the minimum interval and nothing has asked for a new one since. */
 function recentlySynced(ctx: SyncContext): boolean {
-  const lastOkAt = ctx.storage.kv.get<number>(LAST_OK_KEY);
+  const lastOkAt = ctx.storage.kv.get<number>(modeKey(LAST_OK_KEY, ctx.mode));
   if (lastOkAt === undefined || reconciliationPending(ctx.storage)) return false;
   const age = wallNow(ctx) - lastOkAt;
   return age >= 0 && age < SYNC_MIN_INTERVAL_MS;
@@ -137,12 +137,12 @@ export async function runSync(
   if (reconciled) restoreProtection(ctx);
   // After the hold is lifted: the monitor sets verified or unverified and fires the engine-held stop.
   await monitorProtection(ctx);
-  if (ctx.storage.kv.get(DEGRADED_KEY) !== undefined) {
-    ctx.storage.kv.delete(DEGRADED_KEY);
+  if (ctx.storage.kv.get(modeKey(DEGRADED_KEY, ctx.mode)) !== undefined) {
+    ctx.storage.kv.delete(modeKey(DEGRADED_KEY, ctx.mode));
     logEvent(ctx, "info", "sync.recovered");
   }
   pruneEvents(ctx.sql, ctx.now, ctx.mode);
-  ctx.storage.kv.put(LAST_OK_KEY, wallNow(ctx));
+  ctx.storage.kv.put(modeKey(LAST_OK_KEY, ctx.mode), wallNow(ctx));
   if (summary.unknownLeft > 0) {
     // A stuck intent waits for a human: log when the count changes, not on every tick.
     logOnce(
@@ -346,8 +346,9 @@ function restoreProtection(ctx: SyncContext): void {
   if (reconciliationPending(ctx.storage)) return;
   ctx.sql.exec(
     `UPDATE positions SET protection_state = 'none'
-      WHERE status != 'CLOSED' AND protection_state = 'unverified'
+      WHERE mode = ? AND status != 'CLOSED' AND protection_state = 'unverified'
         AND id NOT IN (SELECT position_id FROM intents WHERE state = 'UNKNOWN' AND position_id IS NOT NULL)`,
+    ctx.mode,
   );
 }
 
@@ -371,8 +372,8 @@ async function degrade(ctx: SyncContext, error: BrokerError): Promise<SyncResult
         ? error.code.slice(0, 64)
         : null;
   const condition = `${type}|${error.operation}|${detail ?? ""}`;
-  if (ctx.storage.kv.get<string>(DEGRADED_KEY) !== condition) {
-    ctx.storage.kv.put(DEGRADED_KEY, condition);
+  if (ctx.storage.kv.get<string>(modeKey(DEGRADED_KEY, ctx.mode)) !== condition) {
+    ctx.storage.kv.put(modeKey(DEGRADED_KEY, ctx.mode), condition);
     logEvent(ctx, level, type, {
       operation: error.operation,
       failure: error._tag,

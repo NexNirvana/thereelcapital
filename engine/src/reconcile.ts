@@ -91,7 +91,7 @@ export function logOnce(
   type: string,
   data?: Record<string, unknown>,
 ): void {
-  const flag = `logged:${type}:${key}`;
+  const flag = `logged:${ctx.mode}:${type}:${key}`;
   if (ctx.storage.kv.get(flag) !== undefined) return;
   ctx.storage.kv.put(flag, ctx.now);
   logEvent(ctx, level, type, data);
@@ -125,8 +125,9 @@ export function reconcile(
     // unverified until the intent is resolved.
     ctx.sql.exec(
       `UPDATE positions SET protection_state = 'unverified'
-        WHERE status != 'CLOSED'
+        WHERE mode = ? AND status != 'CLOSED'
           AND id IN (SELECT position_id FROM intents WHERE state = 'UNKNOWN' AND position_id IS NOT NULL)`,
+      ctx.mode,
     );
 
     const unknownLeft = ctx.sql
@@ -537,7 +538,8 @@ function matchIntents(
   const taken = new Set(
     ctx.sql
       .exec<{ broker_order_id: string }>(
-        "SELECT broker_order_id FROM intents WHERE broker_order_id IS NOT NULL",
+        "SELECT broker_order_id FROM intents WHERE mode = ? AND broker_order_id IS NOT NULL",
+        ctx.mode,
       )
       .toArray()
       .map((row) => row.broker_order_id),
@@ -632,7 +634,8 @@ function adoptOrders(
   const known = new Set(
     ctx.sql
       .exec<{ broker_order_id: string }>(
-        "SELECT broker_order_id FROM intents WHERE broker_order_id IS NOT NULL",
+        "SELECT broker_order_id FROM intents WHERE mode = ? AND broker_order_id IS NOT NULL",
+        ctx.mode,
       )
       .toArray()
       .map((row) => row.broker_order_id),

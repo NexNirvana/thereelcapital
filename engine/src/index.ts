@@ -122,6 +122,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   readonly #brokers = new Map<Mode, BrokerAdapterShape>();
   /** The live accounts were listed for the current connection; reset by a connect, retried on failure. */
   #realAccountsListed = false;
+  /** When the live listing was last tried: requests wake a sync for it at most once per retry delay. */
+  #realListingAttemptAt: number | null = null;
   readonly #alarms: AlarmScheduler;
   /** A pass already running is shared, so two never apply snapshots out of order. */
   #syncing = new Map<Mode, Promise<SyncResult>>();
@@ -470,6 +472,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         if (result.ok) {
           // The new grant may list other live accounts.
           this.#realAccountsListed = false;
+          this.#realListingAttemptAt = null;
           await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
           // Orders may have moved while we were not connected: reconcile before anything else.
           // One tick from now, so the first read does not race the connection settling.
@@ -523,7 +526,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       case "sync": {
         let nextInMs: number | null = null;
         await this.refreshModeLocks();
-        if (activeModes(this.ctx.storage).includes("REAL")) await this.ensureRealAccounts();
+        if (activeModes(this.ctx.storage).includes("REAL")) {
+          // A D1 failure here must not keep the SIM pass from running.
+          await this.ensureRealAccounts().catch(() => {
+            this.log("warn", "REAL", "real_accounts.failed", "ensureRealAccounts", "D1_ERROR");
+          });
+        }
         for (const mode of activeModes(this.ctx.storage)) {
           const ctx = this.connectionContext(mode);
           const broker = ctx === null ? null : this.brokerFor(ctx);
@@ -533,6 +541,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
           const result = await this.syncOnce({ ...ctx, broker });
           if (result.nextInMs !== null) nextInMs = Math.min(nextInMs ?? Infinity, result.nextInMs);
         }
+        // The pass guarantees its own retry while the live accounts are unlisted (D52 lock 3), so
+        // the schedule below is never null for them and a request's wake-up it overwrites is harmless.
+        if (this.realListingPossible()) nextInMs ??= SYNC_RETRY_DELAY_MS;
         await this.#alarms.schedule(
           "sync",
           nextInMs === null ? null : this.#now() + syncDelayMs(this.env, nextInMs),
@@ -547,9 +558,10 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    * and keeps it for the synchronous passes. Not read while the deployment switch is closed: the
    * answer would not matter. A failed read keeps the last value.
    */
-  private async refreshModeLocks(): Promise<void> {
+  private async refreshModeLocks(
+    deploymentOpen: boolean = isRealTradingOpen(this.env),
+  ): Promise<void> {
     const userId = this.ctx.id.name;
-    const deploymentOpen = isRealTradingOpen(this.env);
     if (!deploymentOpen || userId === undefined) {
       recordModeLocks(this.ctx.storage, { deploymentOpen, clientEnabled: false });
       return;
@@ -573,11 +585,28 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   }
 
   /** Lock 3 (D52): list the live accounts once per connection, before the first REAL pass. */
+  /**
+   * The live accounts are wanted and a listing can happen: REAL is active, they are not listed yet,
+   * and the client is connected (a SIM account exists) with a REAL broker. A client that cannot list
+   * never keeps the sync loop alive; a reconnect or a later request starts it again.
+   */
+  private realListingPossible(): boolean {
+    if (!activeModes(this.ctx.storage).includes("REAL") || this.#realAccountsListed) return false;
+    const connected =
+      this.ctx.storage.sql
+        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM broker_accounts WHERE mode = 'SIM'")
+        .one().n > 0;
+    if (!connected) return false;
+    const ctx = this.connectionContext("REAL");
+    return ctx !== null && this.brokerFor(ctx) !== null;
+  }
+
   private async ensureRealAccounts(): Promise<void> {
     if (this.#realAccountsListed) return;
     const ctx = this.connectionContext("REAL");
     const broker = ctx === null ? null : this.brokerFor(ctx);
     if (ctx === null || broker === null) return;
+    this.#realListingAttemptAt = this.#now();
     const listed = await listRealAccounts(ctx, broker);
     if (listed.ok) this.#realAccountsListed = true;
     else logOnce(ctx, listed.reason, "warn", "real_accounts.failed", { reason: listed.reason });
@@ -664,10 +693,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    * then with `realTrading: true`; the transport refuses a live adapter otherwise (D52 lock 4), so
    * nothing here can reach the live host through a closed switch.
    */
-  private brokerFor(ctx: ConnectionContext): BrokerAdapterShape | null {
+  private brokerFor(
+    ctx: ConnectionContext,
+    deploymentOpen: boolean = isRealTradingOpen(this.env),
+  ): BrokerAdapterShape | null {
     const held = this.#brokers.get(ctx.mode);
     if (held !== undefined) return held;
-    if (ctx.mode === "REAL" && !isRealTradingOpen(this.env)) return null;
+    if (ctx.mode === "REAL" && !deploymentOpen) return null;
     const resolved = resolveBroker({
       mode: ctx.mode,
       realTrading: ctx.mode === "REAL",
@@ -702,6 +734,14 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     const decoded = this.enter(method, schema, input, (args) => success(args));
     if (!decoded.ok) return decoded;
     await this.refreshModeLocks();
+    // A flag turned on for an idle client: the sync loop is stopped, so wake it to list the live accounts.
+    if (
+      this.realListingPossible() &&
+      (this.#realListingAttemptAt === null ||
+        this.#now() - this.#realListingAttemptAt >= SYNC_RETRY_DELAY_MS)
+    ) {
+      await this.#alarms.scheduleNoLater("sync", this.#now());
+    }
     const context = this.connectionContext(decoded.value.mode);
     if (context === null) return failure("INVALID_INPUT");
     try {

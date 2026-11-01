@@ -16,6 +16,15 @@ export function isRealTradingOpen(settings: {
   return settings.REAL_TRADING === "enabled";
 }
 
+/**
+ * A per-pass Durable Object key (degraded condition, last good pass): SIM keeps the plain name, so
+ * nothing stored before REAL changes, and every other mode gets its own, so two passes in one tick
+ * never clear or read each other's state.
+ */
+export function modeKey(key: string, mode: Mode): string {
+  return mode === "SIM" ? key : `${key}:${mode}`;
+}
+
 const MODE_LOCKS_KEY = "mode_locks";
 
 /** The deployment switch and the client's flag as the Durable Object last read them. */
