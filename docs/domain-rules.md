@@ -98,3 +98,16 @@ Not supported in the pilot (D21): the guard in §5 rejects a BUY on an instrumen
 ## 10. Market calendar
 
 `isRegularSession(instrument, now)` and `sessionDate(now)` in America/New_York. Sessions, holidays and early closes come from the `market-calendar` library (equities: `NYSE`; options: `CBOE_Equity_Options`), never from hand-kept dates. The regular session is 09:30–16:00 ET, or 13:00 on early-close days. This includes ETF options, whose exchange session runs to 16:15: the app stops at 16:00 for every option (D30). `Instrument.kind` is the `equity | option` union, so a kind without an exchange calendar cannot be expressed.
+
+## 11. Trading modes (D52)
+
+`allowedModes({ deploymentOpen, clientEnabled, hasOpenReal })` in `src/lib/domain/modes.ts` returns `{ entries, exits }`, the modes a client may use now. SIM is always in both. `deploymentOpen` is lock 1 (the engine's `REAL_TRADING` is exactly `"enabled"`), `clientEnabled` is lock 2 (`client_settings.real_trading_enabled`, set by an admin), `hasOpenReal` is an open REAL position or unfinished REAL intent. The account lock (3) and the transport lock (4) are checked per order, not here. Turning the client switch off blocks new REAL entries but never exits or protections of what is open.
+
+| deployment | client | open REAL | entries | exits |
+| --- | --- | --- | --- | --- |
+| closed | any | any | SIM | SIM |
+| open | off | no | SIM | SIM |
+| open | off | yes | SIM | SIM, REAL |
+| open | on | any | SIM, REAL | SIM, REAL |
+
+Nothing reads `allowedModes` yet: the engine will (issue #316), and the web after it.
