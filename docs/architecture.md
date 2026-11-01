@@ -36,7 +36,7 @@ One DO per **client** rather than per (client, mode): one connection serves both
 **D1, app tables:**
 
 ```
-client_settings    user_id PK, size_usd, stop_pct, trailing_unlock_pct, max_daily_entries, updated_at
+client_settings    user_id PK, size_usd, stop_pct, trailing_unlock_pct, max_daily_entries, real_trading_enabled (0/1, default 0, D52 lock 2), updated_at
 invitations        id, user_id, token_hash, expires_at, used_at, revoked_at, created_by   -- activation links, shared by the admin
 recovery_codes     id, user_id, code_hash, used_at
 broker_connection  user_id PK, client_id, client_secret_enc, refresh_token_enc, key_id,

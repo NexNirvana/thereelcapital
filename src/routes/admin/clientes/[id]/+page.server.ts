@@ -11,6 +11,7 @@ import {
   revokeAllSessions,
   revokeLink,
   revokeSession,
+  setClientRealTrading,
   updateClientSettings,
   type Issued,
   type Outcome,
@@ -81,6 +82,13 @@ export const actions: Actions = {
     }
     return respond(event, "updateSettings", result);
   },
+  // Lock 2 of REAL mode (D52): only the flag; the engine does not read it yet.
+  setRealTrading: async (event) =>
+    respond(
+      event,
+      "setRealTrading",
+      await setClientRealTrading(event, context(), event.params.id, await form(event)),
+    ),
   rename: async (event) =>
     respond(
       event,

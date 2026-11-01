@@ -15,6 +15,8 @@ import {
   nameErrors,
   renameClient,
   revokeSession,
+  realTradingErrors,
+  setClientRealTrading,
   settingsErrors,
   updateClientSettings,
 } from "./admin-client-access.ts";
@@ -96,6 +98,8 @@ const mutations: Record<string, Mutation> = {
   revokeAll: (s, e, id = "c1") => revokeAllSessions(e, s.ctx, id, now),
   updateSettings: (s, e, id = "c1") =>
     updateClientSettings(e, s.ctx, id, { sizeUsd: "25000", stopPct: "30", unlockPct: "70" }, now),
+  setRealTrading: (s, e, id = "c1") =>
+    setClientRealTrading(e, s.ctx, id, { realTrading: "on", confirmed: "on" }, now),
   rename: (s, e, id = "c1") => renameClient(e, s.ctx, id, { name: "Ana Pérez" }, now),
   recover: (s, e, id = "c1") => recoverClient(e, s.ctx, id, { verified: "on" }, now),
 };
@@ -774,5 +778,152 @@ describe("updateClientSettings", () => {
       limits: { openPositions: 2 },
       bounds: { dailyEntries: { min: 1, max: 1000 } },
     });
+  });
+});
+
+describe("setClientRealTrading", () => {
+  const set = (s: ReturnType<typeof setup>, realTrading: unknown, id = "c1", event = admin()) =>
+    setClientRealTrading(
+      event,
+      s.ctx,
+      id,
+      { realTrading, ...(realTrading === "on" ? { confirmed: "on" } : {}) },
+      now,
+    );
+  const flag = (s: ReturnType<typeof setup>, id: string) =>
+    s.db.sqlite
+      .query<{ flag: number }, [string]>(
+        `SELECT real_trading_enabled AS flag FROM client_settings WHERE user_id = ?`,
+      )
+      .get(id)?.flag;
+
+  test("starts off for every client", () => {
+    const s = setup();
+    expect(flag(s, "c1")).toBe(0);
+    expect(flag(s, "c2")).toBe(0);
+  });
+
+  test("turns REAL on then off with one audit row of before and after each", async () => {
+    const s = setup();
+    expect(await set(s, "on")).toEqual({ ok: true });
+    expect(flag(s, "c1")).toBe(1);
+    expect(flag(s, "c2")).toBe(0);
+    expect(await set(s, "off")).toEqual({ ok: true });
+    expect(flag(s, "c1")).toBe(0);
+    const rows = audits(s.db, "client_settings.real_trading");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => [row.actor_id, row.target_user_id])).toEqual([
+      ["admin-1", "c1"],
+      ["admin-1", "c1"],
+    ]);
+    // Rows share one timestamp, so pair each with its change instead of relying on their order.
+    const changes = rows.map((row) =>
+      [row.before_json, row.after_json].map((json) => JSON.parse(json).realTradingEnabled),
+    );
+    expect(changes).toContainEqual([false, true]);
+    expect(changes).toContainEqual([true, false]);
+  });
+
+  test("shows the state in the client detail", async () => {
+    const s = setup();
+    expect((await getClientDetail(s.db, "c1", now)).realTradingEnabled).toBe(false);
+    await set(s, "on");
+    expect((await getClientDetail(s.db, "c1", now)).realTradingEnabled).toBe(true);
+  });
+
+  test("refuses the value the client already has and writes no audit row", async () => {
+    const s = setup();
+    expect(await set(s, "off")).toEqual({ ok: false, error: realTradingErrors.unchanged });
+    await set(s, "on");
+    expect(await set(s, "on")).toEqual({ ok: false, error: realTradingErrors.unchanged });
+    expect(audits(s.db, "client_settings.real_trading")).toHaveLength(1);
+  });
+
+  test("fails instead of overwriting when the flag changed after the check", async () => {
+    const s = setup();
+    const racing = {
+      ...s.ctx,
+      db: new Proxy(s.db, {
+        get(target, key, receiver) {
+          if (key !== "batch") return Reflect.get(target, key, receiver);
+          return (statements: Parameters<typeof s.db.batch>[0]) => {
+            s.db.sqlite.run(
+              `UPDATE client_settings SET real_trading_enabled = 1 WHERE user_id = 'c1'`,
+            );
+            return target.batch(statements);
+          };
+        },
+      }),
+    };
+    expect(
+      await setClientRealTrading(
+        admin(),
+        racing,
+        "c1",
+        { realTrading: "on", confirmed: "on" },
+        now,
+      ),
+    ).toEqual({
+      ok: false,
+      error: realTradingErrors.changedMeanwhile,
+    });
+    expect(audits(s.db, "client_settings.real_trading")).toHaveLength(0);
+  });
+
+  test("refuses a client without a settings row", async () => {
+    const s = setup();
+    s.user("bare");
+    expect(await set(s, "on", "bare")).toEqual({ ok: false, error: settingsErrors.missing });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test.each(["true", "1", "ON", "", "enabled", undefined, 1])(
+    "rejects %p as invalid input and changes nothing",
+    async (value) => {
+      const s = setup();
+      await expect(set(s, value)).rejects.toMatchObject({ status: 400 });
+      expect(flag(s, "c1")).toBe(0);
+      expect(n(s.db, "audit_log")).toBe(0);
+    },
+  );
+
+  test("refuses turning REAL on without the confirmation and writes nothing", async () => {
+    const s = setup();
+    for (const form of [{ realTrading: "on" }, { realTrading: "on", confirmed: "" }]) {
+      if ("confirmed" in form) {
+        await expect(setClientRealTrading(admin(), s.ctx, "c1", form, now)).rejects.toMatchObject({
+          status: 400,
+        });
+      } else {
+        expect(await setClientRealTrading(admin(), s.ctx, "c1", form, now)).toEqual({
+          ok: false,
+          error: realTradingErrors.unconfirmed,
+        });
+      }
+    }
+    expect(flag(s, "c1")).toBe(0);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("turns REAL off without a confirmation", async () => {
+    const s = setup();
+    await set(s, "on");
+    expect(await setClientRealTrading(admin(), s.ctx, "c1", { realTrading: "off" }, now)).toEqual({
+      ok: true,
+    });
+    expect(flag(s, "c1")).toBe(0);
+  });
+
+  test("rejects unknown fields", async () => {
+    const s = setup();
+    await expect(
+      setClientRealTrading(admin(), s.ctx, "c1", { realTrading: "on", clientId: "c2" }, now),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(flag(s, "c1")).toBe(0);
+  });
+
+  test("never lets an admin enable REAL for an admin account", async () => {
+    const s = setup();
+    await expect(set(s, "on", "admin-1")).rejects.toMatchObject({ status: 404 });
   });
 });

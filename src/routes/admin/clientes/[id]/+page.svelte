@@ -33,6 +33,7 @@
     revokeAllSessions: "Sesiones cerradas.",
     updateSettings: "Configuración guardada.",
     rename: "Nombre guardado.",
+    setRealTrading: "Modo REAL actualizado.",
   };
 
   const usd = new Intl.NumberFormat("en-US"); // docs/design-system.md#formats: US$20,000
@@ -352,6 +353,52 @@
   <dl>
     <DefinitionRow label="Posiciones abiertas" value={`máx. ${client.limits.openPositions}`} />
   </dl>
+</section>
+
+<section aria-labelledby="real">
+  <h2 id="real">Modo REAL</h2>
+  {#if client.realTradingEnabled === null}
+    <p class="hint">Este cliente no tiene configuración guardada.</p>
+  {:else}
+    <dl>
+      <DefinitionRow
+        label="Estado"
+        value={client.realTradingEnabled ? "Activado" : "Desactivado"}
+      />
+    </dl>
+    <p class="hint">
+      REAL también necesita el interruptor del despliegue, que solo abre el propietario: activarlo
+      aquí no permite por sí solo órdenes REAL mientras el despliegue esté cerrado.
+    </p>
+    {#if client.realTradingEnabled}
+      <p class="hint">
+        Desactivar bloquea las entradas REAL nuevas. Nunca bloquea las salidas ni las protecciones
+        de las posiciones REAL abiertas.
+      </p>
+      <form method="POST" action="?/setRealTrading" use:enhance={submit("setRealTrading")}>
+        <input type="hidden" name="realTrading" value="off" />
+        <Button type="submit" disabled={busy !== null}>
+          {busy === "setRealTrading" ? "Desactivando" : "Desactivar REAL"}
+        </Button>
+      </form>
+    {:else if client.settings !== null}
+      <p class="hint">
+        Al activarlo, el cliente enviará órdenes con dinero real usando el SIZE actual, US${usd.format(
+          client.settings.sizeUsd,
+        )} por entrada, y los mismos límites de stop, trailing y entradas por día que en SIM.
+      </p>
+      <form method="POST" action="?/setRealTrading" use:enhance={submit("setRealTrading")}>
+        <input type="hidden" name="realTrading" value="on" />
+        <label class="check">
+          <input type="checkbox" name="confirmed" required />
+          Confirmo que el cliente operará con dinero real
+        </label>
+        <Button type="submit" disabled={busy !== null}>
+          {busy === "setRealTrading" ? "Activando" : "Activar REAL"}
+        </Button>
+      </form>
+    {/if}
+  {/if}
 </section>
 
 <section aria-labelledby="operations">
