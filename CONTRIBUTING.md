@@ -22,7 +22,7 @@ Install [Bun](https://bun.com) at the version in `package.json` (`packageManager
 
 ## TradeStation: no real money
 
-Nothing in development, tests, scripts or CI may spend real money. REAL mode exists only behind the four locks of [D52](docs/decisions.md), and production keeps it closed until the owner opens it in a PR of their own. Agents and CI never contact the live API host, never set `REAL_TRADING` and never enable REAL for a client; tests use scripted `fetch` stubs, and e2e runs against the local simulation. The live host may appear only in the `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts`; the `pre-commit` hook rejects it elsewhere outside `docs/`. See `CLAUDE.md` for the full rule.
+Nothing in development, tests, scripts or CI may spend real money. REAL mode exists only behind the four locks of [D52](docs/decisions.md), and production keeps it closed until the owner opens it in a PR of their own. Agents and CI never contact the live API host, never set `REAL_TRADING` in `engine/wrangler.jsonc` or any deployed environment, and never enable REAL for a real client; tests use scripted `fetch` stubs. The e2e local simulation is the one place the switch is open: `tests/e2e/engine.env` sets it only together with `BROKER=local-sim` and `ENVIRONMENT=test`, and the e2e may turn REAL on for a test client in its local database. The live host may appear only in the `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts`; the `pre-commit` hook rejects it elsewhere outside `docs/`. See `CLAUDE.md` for the full rule.
 
 ## Workflow
 
