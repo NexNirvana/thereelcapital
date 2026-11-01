@@ -1,6 +1,7 @@
 // Fan-out over the clients' Durable Objects for the admin screens (docs/decisions.md T11: no read
 // model). One slow or failing object must not block the page or hide its client, so every call has
 // its own timeout and a failure becomes "unavailable" for that client alone.
+import type { TradingMode } from "./trading-mode.ts";
 import { ADMIN_FANOUT_TIMEOUT_MS } from "#lib/domain/config.ts";
 import type { ClientOverview } from "#lib/domain/overview.ts";
 
@@ -56,10 +57,11 @@ export interface ClientRef {
 export function startOverviews(
   clients: readonly ClientRef[],
   engineOf: (clientId: string) => OverviewEngine,
+  mode: TradingMode,
   timeoutMs?: number,
 ): ReadonlyArray<ClientRef & { readonly overview: Promise<Fetched<ClientOverview>> }> {
   return clients.map((client) => ({
     ...client,
-    overview: settled(() => engineOf(client.id).overview({ mode: "SIM" }), timeoutMs),
+    overview: settled(() => engineOf(client.id).overview({ mode }), timeoutMs),
   }));
 }

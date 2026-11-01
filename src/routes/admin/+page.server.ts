@@ -1,4 +1,5 @@
 import { fail } from "@sveltejs/kit";
+import { modeFor } from "#lib/server/trading-mode.ts";
 import { env } from "cloudflare:workers";
 import { createUserWith } from "#lib/server/activation.ts";
 import { listOtherAdmins } from "#lib/server/admin-client-access.ts";
@@ -23,6 +24,7 @@ export const load: PageServerLoad = async (event) => {
     startOverviews(
       clients.filter((client) => client.hasConnection === 1),
       (id) => engineForClient(env.ENGINE, event, id),
+      modeFor(event),
     ).map((row) => [row.id, row.overview.then(connectionKey)]),
   );
   return {

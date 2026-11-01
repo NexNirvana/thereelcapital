@@ -5,6 +5,7 @@ import {
   resolveExpiration,
   suggestionLabel,
 } from "#lib/ui/expiration-field.ts";
+import type { TradingMode } from "./trading-mode.ts";
 import type { ChainView } from "#lib/ui/chain-view.ts";
 import { UNDERLYING } from "./chain-query.ts";
 
@@ -19,6 +20,7 @@ const UNAVAILABLE = "No pudimos comunicarnos con TradeStation. Inténtalo de nue
  */
 export async function loadChainView(
   engine: ChainEngine,
+  mode: TradingMode,
   underlying: string,
   typedExpiration: string,
   now: Date,
@@ -39,7 +41,7 @@ export async function loadChainView(
     return { ...base, problem: "Escribe el ticker de un subyacente, por ejemplo MSFT." };
   }
 
-  const expirations = await engine.optionExpirations({ mode: "SIM", underlying }).catch(() => null);
+  const expirations = await engine.optionExpirations({ mode, underlying }).catch(() => null);
   if (expirations === null) return { ...base, problem: UNAVAILABLE };
   if (!expirations.ok) return { ...base, problem: expirations.message };
   const shown = { ...base, expirations: expirations.value.expirations };
@@ -66,7 +68,7 @@ export async function loadChainView(
     notice,
   };
 
-  const chain = await engine.optionChain({ mode: "SIM", underlying, expiration }).catch(() => null);
+  const chain = await engine.optionChain({ mode, underlying, expiration }).catch(() => null);
   if (chain === null) return { ...decided, problem: UNAVAILABLE };
   if (!chain.ok) return { ...decided, problem: chain.message };
   const { receivedAt, underlyingPrice, strikes } = chain.value;

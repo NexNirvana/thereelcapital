@@ -8,6 +8,7 @@ import { SIZE_CHOICE_MISMATCH } from "#lib/ui/live-entry.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { RequestHandler } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 // The live price of the entry on screen (D46). Display only: it carries the same fields the page
 // load shows (never the intent id) and nothing the browser sends is a price or a quantity. The
@@ -27,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 
   const prepared = await engineFor(env.ENGINE, event)
     .prepareEntry({
-      mode: "SIM",
+      mode: modeFor(event),
       accountId: query.cuenta,
       symbol,
       assetType: ASSET_TYPE[query.tipo ?? "acciones"],

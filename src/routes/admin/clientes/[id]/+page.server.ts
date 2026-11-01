@@ -19,6 +19,7 @@ import { settled } from "#lib/server/admin-operations.ts";
 import { engineForClient } from "#lib/server/engine.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
+import { modeFor } from "#lib/server/trading-mode.ts";
 
 // Every load and action calls requireAdmin (inside the access functions for actions), because
 // SvelteKit runs them in parallel with the layout load. The client id is the URL's, validated
@@ -30,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
   const client = await getClientDetail(env.DB, event.params.id);
   // Streamed: the client's details paint at once and the engine's answer fills its section.
   const operations = settled(() =>
-    engineForClient(env.ENGINE, event, client.id).overview({ mode: "SIM" }),
+    engineForClient(env.ENGINE, event, client.id).overview({ mode: modeFor(event) }),
   );
   return { client, operations };
 };
@@ -76,7 +77,7 @@ export const actions: Actions = {
       // failed or slow call is harmless: the copy expires by itself (LIVE_ENTRY_INPUTS_TTL_MS)
       // and orders always read D1, so the wait is bounded like every admin engine call.
       const engine = engineForClient(env.ENGINE, event, event.params.id);
-      await settled(() => engine.settingsChanged({ mode: "SIM" }));
+      await settled(() => engine.settingsChanged({ mode: modeFor(event) }));
     }
     return respond(event, "updateSettings", result);
   },
