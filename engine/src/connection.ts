@@ -15,6 +15,7 @@ import type { Mode } from "./mode.ts";
 import { listTradableAccounts, type BrokerAccount } from "./tradestation/accounts.ts";
 import { authorizeUrl, exchangeCode, revokeRefreshToken } from "./tradestation/auth.ts";
 import { SIM_GATE, type BrokerFailure } from "./tradestation/endpoints.ts";
+import { unbindRealAccounts } from "./real-accounts.ts";
 import { timedD1 } from "./timing.ts";
 
 /** Long enough to log in at TradeStation (passkey, 2FA), short enough to be a one-shot. */
@@ -397,6 +398,8 @@ export async function disconnect(
     if (removed.meta.changes === 0) return { revoked, sharedKey };
   }
   ctx.tokens.forget();
+  // Before the cache goes: a failure here leaves everything for the next disconnect (D49 bindings).
+  await unbindRealAccounts(ctx.db, ctx.userId);
   ctx.storage.transactionSync(() => {
     ctx.sql.exec("DELETE FROM broker_accounts");
     ctx.sql.exec("DELETE FROM oauth_attempts");
