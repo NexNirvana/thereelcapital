@@ -51,6 +51,7 @@ import { LiveSockets } from "./live-sockets.ts";
 import { QuoteHub } from "./quote-hub.ts";
 import { cancelIntent, exitPosition, type CancelResult, type ExitResult } from "./exits.ts";
 import { activateTrailing, type TrailingResult } from "./trailing.ts";
+import type { AllowedModes } from "#lib/domain/modes.ts";
 import { readOverview } from "./overview.ts";
 import { readPositionsView, readVerification } from "./positions-view.ts";
 import { readHistory, type HistoryPage } from "./history.ts";
@@ -82,6 +83,7 @@ import {
   activeModes,
   isRealTradingOpen,
   modeAllowedNow,
+  currentAllowedModes,
   readModeLocks,
   recordModeLocks,
   type Mode,
@@ -329,6 +331,15 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       this.entryInputs.invalidate();
       return success(null);
     });
+  }
+
+  /**
+   * Which modes this client may enter and exit right now (D52): what the web shows or hides.
+   * Re-reads the client flag first. Needs no connection and no mode, so it is never refused.
+   */
+  async modes(): Promise<EngineResult<AllowedModes>> {
+    await this.refreshModeLocks();
+    return success(currentAllowedModes(this.ctx.storage));
   }
 
   /** The counts behind «x/2 posiciones · y/N entradas hoy». Read-only. */
@@ -705,7 +716,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     return failure("MODE_NOT_ENABLED");
   }
 
-  /** Like enterWithConnection, with the broker this client trades through (SIM only). */
+  /** Like enterWithConnection, with the broker this client trades through in the call's mode. */
   private enterWithBroker<
     S extends Schema.Top & {
       readonly DecodingServices: never;

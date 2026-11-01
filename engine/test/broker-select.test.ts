@@ -34,3 +34,12 @@ describe("selectBroker", () => {
     });
   });
 });
+
+describe("selectBroker in a test deployment", () => {
+  it.each([undefined, "tradestation"])("refuses TradeStation when BROKER is %j", (BROKER) => {
+    expect(selectBroker({ BROKER, ENVIRONMENT: "test" })).toEqual({
+      ok: false,
+      reason: "TRADESTATION_IN_TEST",
+    });
+  });
+});
