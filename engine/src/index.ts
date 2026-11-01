@@ -84,6 +84,8 @@ import {
   recordModeLocks,
   type Mode,
 } from "./mode.ts";
+import { listRealAccounts } from "./real-accounts.ts";
+import { logOnce } from "./reconcile.ts";
 import { logColo } from "./timing.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
@@ -118,6 +120,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   #tokens: TokenRefresher | null = null;
   /** One adapter per mode, built on first use; REAL never exists while the switch is closed. */
   readonly #brokers = new Map<Mode, BrokerAdapterShape>();
+  /** The live accounts were listed for the current connection; reset by a connect, retried on failure. */
+  #realAccountsListed = false;
   readonly #alarms: AlarmScheduler;
   /** A pass already running is shared, so two never apply snapshots out of order. */
   #syncing = new Map<Mode, Promise<SyncResult>>();
@@ -464,6 +468,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       async (ctx, args) => {
         const result = await completeConnection(ctx, args);
         if (result.ok) {
+          // The new grant may list other live accounts.
+          this.#realAccountsListed = false;
           await this.scheduleRefresh(ctx.tokens.nextRefreshAt());
           // Orders may have moved while we were not connected: reconcile before anything else.
           // One tick from now, so the first read does not race the connection settling.
@@ -517,6 +523,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       case "sync": {
         let nextInMs: number | null = null;
         await this.refreshModeLocks();
+        if (activeModes(this.ctx.storage).includes("REAL")) await this.ensureRealAccounts();
         for (const mode of activeModes(this.ctx.storage)) {
           const ctx = this.connectionContext(mode);
           const broker = ctx === null ? null : this.brokerFor(ctx);
@@ -563,6 +570,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         clientEnabled: readModeLocks(this.ctx.storage).clientEnabled,
       });
     }
+  }
+
+  /** Lock 3 (D52): list the live accounts once per connection, before the first REAL pass. */
+  private async ensureRealAccounts(): Promise<void> {
+    if (this.#realAccountsListed) return;
+    const ctx = this.connectionContext("REAL");
+    const broker = ctx === null ? null : this.brokerFor(ctx);
+    if (ctx === null || broker === null) return;
+    const listed = await listRealAccounts(ctx, broker);
+    if (listed.ok) this.#realAccountsListed = true;
+    else logOnce(ctx, listed.reason, "warn", "real_accounts.failed", { reason: listed.reason });
   }
 
   private syncOnce(
