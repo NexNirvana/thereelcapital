@@ -2,6 +2,7 @@
 // Pure functions: the caller supplies `now`, the account, `available` and the open symbols.
 
 import { isRegularSession } from "./calendar";
+import type { AllowedModes, Mode } from "./modes";
 
 /**
  * docs/domain-rules.md §3: entries per client, mode and market session date. The admin sets the
@@ -13,7 +14,7 @@ export const DAILY_ENTRIES_BOUNDS = { min: 1, max: 1000 } as const;
 export const MAX_OPEN_POSITIONS = 2;
 
 export type RejectionReason =
-  | "MODE_NOT_SIM"
+  | "MODE_NOT_ENABLED"
   | "ACCOUNT_NOT_OWNED"
   | "ACCOUNT_NOT_ACTIVE"
   | "ACCOUNT_TYPE_NOT_ALLOWED"
@@ -34,7 +35,7 @@ export type InstrumentRequest =
   | { readonly kind: "future" | "spread"; readonly symbol: string };
 
 export interface OrderRequest {
-  readonly mode: "SIM" | "REAL";
+  readonly mode: Mode;
   readonly accountId: string;
   readonly instrument: InstrumentRequest;
   readonly orderType: string;
@@ -55,6 +56,8 @@ export interface OrderContext {
   /** Symbols with an open position for this client and mode. */
   readonly openSymbols: readonly string[];
   readonly now: Date;
+  /** What the deployment switch and the client's flag allow right now (`allowedModes`, D52 locks 1 and 2). */
+  readonly modes: AllowedModes;
 }
 
 const ALLOWED_ACCOUNT_TYPES: readonly string[] = ["Cash", "Margin"];
@@ -70,7 +73,10 @@ export function checkOrder(request: OrderRequest, context: OrderContext): GuardR
   const { instrument } = request;
   const { account } = context;
 
-  if (request.mode !== "SIM") return reject("MODE_NOT_SIM");
+  // Entries need the client's flag as well; exits and protections only an open REAL position.
+  const opens = request.tradeAction === "BUY" || request.tradeAction === "BUYTOOPEN";
+  const modes = opens ? context.modes.entries : context.modes.exits;
+  if (!modes.includes(request.mode)) return reject("MODE_NOT_ENABLED");
   if (account.id !== request.accountId || account.clientId !== context.clientId) {
     return reject("ACCOUNT_NOT_OWNED");
   }

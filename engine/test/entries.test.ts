@@ -758,10 +758,13 @@ describe("the RPC surface", () => {
   it("refuses REAL on both entry methods", async () => {
     const client = await newClient();
     const real = { ...target("AAPL"), mode: "REAL" };
-    expect(await client.stub.prepareEntry(real)).toMatchObject({ ok: false, code: "MODE_NOT_SIM" });
+    expect(await client.stub.prepareEntry(real)).toMatchObject({
+      ok: false,
+      code: "MODE_NOT_ENABLED",
+    });
     expect(
       await client.stub.sendEntry({ ...real, intentId: "A".repeat(22), confirmedQty: 1 }),
-    ).toMatchObject({ ok: false, code: "MODE_NOT_SIM" });
+    ).toMatchObject({ ok: false, code: "MODE_NOT_ENABLED" });
   });
 
   it("trades through the local simulation only when the environment allows it", async () => {

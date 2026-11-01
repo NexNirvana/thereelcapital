@@ -30,7 +30,7 @@ import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
 import { connectionViewOf, type ConnectionContext } from "./connection.ts";
 import { loadEntryInputs, type EntryInputsCache } from "./entry-inputs.ts";
-import type { Mode } from "./mode.ts";
+import { currentAllowedModes, type Mode } from "./mode.ts";
 import { logEvent } from "./events.ts";
 import { placeOnce } from "./placement.ts";
 import { newIntentId } from "./ids.ts";
@@ -164,6 +164,7 @@ function guardEntry(ctx: ConnectionContext, sized: Sized): RejectionReason | nul
       account: { id: sized.accountId, clientId: ctx.userId, type: sized.accountType, active: true },
       available: 0,
       openSymbols: openSymbols(ctx.sql, ctx.mode),
+      modes: currentAllowedModes(ctx.storage),
       now: new Date(ctx.now),
     },
   );

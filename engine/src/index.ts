@@ -76,10 +76,12 @@ import {
 } from "./rpc.ts";
 import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
+import type { ModeAction } from "#lib/domain/modes.ts";
 import { Effect, type Schema } from "effect";
 import {
   activeModes,
   isRealTradingOpen,
+  modeAllowedNow,
   readModeLocks,
   recordModeLocks,
   type Mode,
@@ -104,6 +106,9 @@ function errorTag(error: unknown): string {
  */
 const STREAM_MODE: Mode = "SIM";
 
+/** What a call does with its mode: place an entry or an exit, read, or (connect) serve SIM only. */
+type RpcAction = ModeAction | "sim";
+
 const ALARM_RETRY_DELAY_MS = {
   refresh: REFRESH_RETRY_DELAY_MS,
   sync: SYNC_RETRY_DELAY_MS,
@@ -113,7 +118,7 @@ type Row = Record<string, SqlStorageValue>;
 
 /**
  * One instance per client, addressed by user id; it only ever knows its own client. Every public
- * method takes `unknown`, decodes it, and rejects anything but SIM before touching storage
+ * method takes `unknown`, decodes it, and refuses a mode its action may not use before touching storage
  * (`ping` and the test-only `seedForTest` excepted: the latter is refused outside development/test).
  */
 export class ClientCoordinator extends DurableObject<EngineEnv> {
@@ -176,6 +181,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       prepare: (entry, streamed) =>
         this.enterWithBroker(
           "watchEntry",
+          "entry",
           PrepareEntryArgs,
           { mode: STREAM_MODE, ...entry },
           (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined, this.entryInputs),
@@ -278,12 +284,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** A sized, guarded preview of an entry. Creates no intent and reserves nothing. */
   prepareEntry(input: unknown): Promise<EngineResult<PrepareEntryResult>> {
-    return this.enterWithBroker("prepareEntry", PrepareEntryArgs, input, prepareEntry);
+    return this.enterWithBroker("prepareEntry", "entry", PrepareEntryArgs, input, prepareEntry);
   }
 
   /** Reserves, persists the intent, then places the MARKET order once. */
   sendEntry(input: unknown): Promise<EngineResult<SendEntryResult>> {
-    return this.enterWithBroker("sendEntry", SendEntryArgs, input, async (ctx, args) => {
+    return this.enterWithBroker("sendEntry", "entry", SendEntryArgs, input, async (ctx, args) => {
       const result = await sendEntry(ctx, args);
       // A placed entry is something to watch: start the loop if it is not running.
       if (result.ok && result.value.status === "PLACED") {
@@ -301,7 +307,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    * `SYNC_MIN_INTERVAL_MS` and nothing is pending. Safe to call at any time.
    */
   sync(input: unknown): Promise<EngineResult<{ reconciled: boolean }>> {
-    return this.enterWithBroker("sync", ModeOnlyArgs, input, async (ctx) => {
+    return this.enterWithBroker("sync", "exit", ModeOnlyArgs, input, async (ctx) => {
       const result = await this.syncOnce(ctx, { throttle: true });
       // Work this pass found or left keeps the loop going even if it had stopped.
       if (result.nextInMs !== null) {
@@ -319,7 +325,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
    * preview. Carries nothing to apply; the next tick reads D1. Orders always read D1 themselves.
    */
   settingsChanged(input: unknown): EngineResult<null> {
-    return this.enter("settingsChanged", ModeOnlyArgs, input, () => {
+    return this.enter("settingsChanged", "read", ModeOnlyArgs, input, () => {
       this.entryInputs.invalidate();
       return success(null);
     });
@@ -327,7 +333,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** The counts behind «x/2 posiciones · y/N entradas hoy». Read-only. */
   limits(input: unknown): Promise<EngineResult<EntryLimits>> {
-    return this.enterWithConnection("limits", ModeOnlyArgs, input, async (ctx) => {
+    return this.enterWithConnection("limits", "read", ModeOnlyArgs, input, async (ctx) => {
       // The client's own daily limit comes through the cached settings read (D48).
       const { maxDailyEntries } = await this.entryInputs.read(ctx);
       return success(entryLimits(ctx, maxDailyEntries));
@@ -340,6 +346,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   ): Promise<EngineResult<{ underlying: string; expirations: ReadonlyArray<string> }>> {
     return this.enterWithBroker(
       "optionExpirations",
+      "entry",
       OptionExpirationsArgs,
       input,
       optionExpirations,
@@ -348,14 +355,14 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** One snapshot of an expiration's chain (strikes, then quotes), read on demand. Read-only. */
   optionChain(input: unknown): Promise<EngineResult<OptionChain>> {
-    return this.enterWithBroker("optionChain", OptionChainArgs, input, (ctx, args) =>
+    return this.enterWithBroker("optionChain", "entry", OptionChainArgs, input, (ctx, args) =>
       optionChain({ ...ctx, stamp: () => engineNow(this.env), strikesCache: this.#strikes }, args),
     );
   }
 
   /** The underlying, expiration, strike and right behind an option symbol. Read-only. */
   optionContract(input: unknown): Promise<EngineResult<OptionContractView>> {
-    return this.enterWithBroker("optionContract", OptionContractArgs, input, (ctx, args) =>
+    return this.enterWithBroker("optionContract", "entry", OptionContractArgs, input, (ctx, args) =>
       optionContract(ctx, args),
     );
   }
@@ -364,7 +371,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** A scale-out step or ALL OUT: the quantity comes from the sell ledger, the order is placed once. */
   exit(input: unknown): Promise<EngineResult<ExitResult>> {
-    return this.enterWithBroker("exit", ExitArgs, input, async (ctx, args) => {
+    return this.enterWithBroker("exit", "exit", ExitArgs, input, async (ctx, args) => {
       const result = await exitPosition(ctx, args);
       if (result.ok && result.value.status === "PLACED" && result.value.state === "REJECTED") {
         // The broker refused the sell, perhaps because it holds nothing any more (sold elsewhere
@@ -385,7 +392,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** CANCEL_PENDING until the broker confirms; the sync loop applies its answer. */
   cancel(input: unknown): Promise<EngineResult<CancelResult>> {
-    return this.enterWithBroker("cancel", CancelArgs, input, async (ctx, args) => {
+    return this.enterWithBroker("cancel", "exit", CancelArgs, input, async (ctx, args) => {
       const result = await cancelIntent(ctx, args);
       if (result.ok && result.value.status === "REQUESTED") {
         await this.#alarms.scheduleNoLater(
@@ -399,11 +406,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** Manual trailing activation; the monitor in the sync loop then follows the bid. */
   activateTrailing(input: unknown): Promise<EngineResult<TrailingResult>> {
-    return this.enterWithBroker("activateTrailing", ActivateTrailingArgs, input, activateTrailing);
+    return this.enterWithBroker(
+      "activateTrailing",
+      "exit",
+      ActivateTrailingArgs,
+      input,
+      activateTrailing,
+    );
   }
 
   state(input: unknown): EngineResult<{ mode: Mode; positions: Row[]; activeIntents: Row[] }> {
-    return this.enter("state", ModeOnlyArgs, input, ({ mode }) => {
+    return this.enter("state", "read", ModeOnlyArgs, input, ({ mode }) => {
       const sql = this.ctx.storage.sql;
       return success({
         mode,
@@ -425,7 +438,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** Open positions with their steps and the exit orders still working, for /posiciones. Read-only. */
   positions(input: unknown): Promise<EngineResult<PositionsView>> {
-    return this.enterWithConnection("positions", ModeOnlyArgs, input, async (ctx) =>
+    return this.enterWithConnection("positions", "read", ModeOnlyArgs, input, async (ctx) =>
       success({
         ...readPositionsView(ctx.sql, engineNow(this.env), ctx.mode),
         verification: await readVerification(ctx),
@@ -435,29 +448,33 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** Orders (newest first, one page) and events of this client. Read-only; no P&L. */
   history(input: unknown): EngineResult<HistoryPage> {
-    return this.enter("history", HistoryArgs, input, (args) =>
+    return this.enter("history", "read", HistoryArgs, input, (args) =>
       success(readHistory(this.ctx.storage.sql, args)),
     );
   }
 
   /** Status of the client's TradeStation connection and the accounts it can trade. */
   connection(input: unknown): Promise<EngineResult<ConnectionView>> {
-    return this.enterWithConnection("connection", ModeOnlyArgs, input, async (ctx) =>
+    return this.enterWithConnection("connection", "read", ModeOnlyArgs, input, async (ctx) =>
       success(await readConnection(ctx)),
     );
   }
 
   /** Connection, open positions, unfinished orders and the day's counts, for the admin. Read-only. */
   overview(input: unknown): Promise<EngineResult<ClientOverview>> {
-    return this.enterWithConnection("overview", ModeOnlyArgs, input, async (ctx) =>
+    return this.enterWithConnection("overview", "read", ModeOnlyArgs, input, async (ctx) =>
       success(await readOverview(ctx)),
     );
   }
 
   /** Stores the client's key and secret (encrypted) and returns where to send the browser. */
   beginConnection(input: unknown): Promise<EngineResult<{ authorizeUrl: string }>> {
-    return this.enterWithConnection("beginConnection", BeginConnectionArgs, input, (ctx, args) =>
-      beginConnection(ctx, args),
+    return this.enterWithConnection(
+      "beginConnection",
+      "sim",
+      BeginConnectionArgs,
+      input,
+      (ctx, args) => beginConnection(ctx, args),
     );
   }
 
@@ -465,6 +482,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   completeConnection(input: unknown): Promise<EngineResult<ConnectionView>> {
     return this.enterWithConnection(
       "completeConnection",
+      "sim",
       CompleteConnectionArgs,
       input,
       async (ctx, args) => {
@@ -627,7 +645,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
 
   /** Revokes the grant at TradeStation and deletes the stored credentials. */
   disconnect(input: unknown): Promise<EngineResult<{ revoked: boolean; sharedKey: boolean }>> {
-    return this.enterWithConnection("disconnect", ModeOnlyArgs, input, async (ctx) => {
+    return this.enterWithConnection("disconnect", "sim", ModeOnlyArgs, input, async (ctx) => {
       const result = success(await disconnect(ctx));
       // forget() ran synchronously inside disconnect and a reconnect would have seeded a token, so
       // no token means no connection needs the alarm.
@@ -648,22 +666,43 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     T,
   >(
     method: string,
+    action: RpcAction,
     schema: S,
     input: unknown,
     run: (args: S["Type"]) => EngineResult<T>,
   ): EngineResult<T> {
+    const decoded = this.decode(method, schema, input);
+    if (!decoded.ok) return decoded;
+    // Synchronous methods use the stored locks: they only read, or change nothing that matters.
+    const refused = this.gate(method, action, decoded.value.mode);
+    return refused ?? run(decoded.value);
+  }
+
+  private decode<
+    S extends Schema.Top & {
+      readonly DecodingServices: never;
+      readonly Type: { readonly mode: Mode };
+    },
+  >(method: string, schema: S, input: unknown): EngineResult<S["Type"]> {
     const decoded = decodeArgs(schema, input);
     if (!decoded.ok) {
       // The input is never logged: it may carry anything the caller sent.
-      this.log(
-        "warn",
-        decoded.code === "MODE_NOT_SIM" ? "REAL" : STREAM_MODE,
-        `rpc.${decoded.code.toLowerCase()}`,
-        method,
-      );
+      this.log("warn", STREAM_MODE, `rpc.${decoded.code.toLowerCase()}`, method);
       return failure(decoded.code);
     }
-    return run(decoded.args);
+    return success(decoded.args);
+  }
+
+  /**
+   * Whether the mode is open for this kind of call: the locks of D52 decided by `allowedModes`
+   * (lock 3 and 4 are checked per order, by the guard and the transport). A refusal is returned
+   * before any storage or broker access.
+   */
+  private gate(method: string, action: RpcAction, mode: Mode): EngineResult<never> | null {
+    const open = action === "sim" ? mode === "SIM" : modeAllowedNow(this.ctx.storage, action, mode);
+    if (open) return null;
+    this.log("warn", mode, "rpc.mode_not_enabled", method);
+    return failure("MODE_NOT_ENABLED");
   }
 
   /** Like enterWithConnection, with the broker this client trades through (SIM only). */
@@ -675,11 +714,12 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     T,
   >(
     method: string,
+    action: RpcAction,
     schema: S,
     input: unknown,
     run: (ctx: EntryContext, args: S["Type"]) => Promise<EngineResult<T>>,
   ): Promise<EngineResult<T>> {
-    return this.enterWithConnection(method, schema, input, (ctx, args) => {
+    return this.enterWithConnection(method, action, schema, input, (ctx, args) => {
       const broker = this.brokerFor(ctx);
       if (broker === null) return Promise.resolve(failure("BROKER_UNAVAILABLE"));
       return run({ ...ctx, broker }, args);
@@ -727,13 +767,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     T,
   >(
     method: string,
+    action: RpcAction,
     schema: S,
     input: unknown,
     run: (ctx: ConnectionContext, args: S["Type"]) => Promise<EngineResult<T>>,
   ): Promise<EngineResult<T>> {
-    const decoded = this.enter(method, schema, input, (args) => success(args));
+    const decoded = this.decode(method, schema, input);
     if (!decoded.ok) return decoded;
+    // The client's flag is read from D1 first, so a flag just turned on or off applies to this call.
     await this.refreshModeLocks();
+    const refused = this.gate(method, action, decoded.value.mode);
+    if (refused !== null) return refused;
     // A flag turned on for an idle client: the sync loop is stopped, so wake it to list the live accounts.
     if (
       this.realListingPossible() &&

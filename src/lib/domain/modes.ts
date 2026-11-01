@@ -33,3 +33,18 @@ export function allowedModes({
     exits: deploymentOpen && (clientEnabled || hasOpenReal) ? ["SIM", "REAL"] : ["SIM"],
   };
 }
+
+/** What an RPC does with a mode: place an entry, place an exit or protection, or only read. */
+export type ModeAction = "entry" | "exit" | "read";
+
+/**
+ * Entries and exits follow `allowedModes`. Reading REAL data places nothing, so it needs only the
+ * deployment switch: an admin can still see a client whose flag was turned off.
+ */
+export function modeAllowed(action: ModeAction, mode: Mode, locks: ModeLocks): boolean {
+  if (mode === "SIM") return true;
+  if (action === "read") return locks.deploymentOpen;
+  return (action === "entry" ? allowedModes(locks).entries : allowedModes(locks).exits).includes(
+    mode,
+  );
+}

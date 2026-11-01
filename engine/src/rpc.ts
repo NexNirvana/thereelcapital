@@ -144,7 +144,7 @@ export type CompleteConnectionArgs = typeof CompleteConnectionArgs.Type;
 /** Stable codes; the web Worker maps them to Spanish copy. Details go to the events table only. */
 export type EngineErrorCode =
   | "INVALID_INPUT"
-  | "MODE_NOT_SIM"
+  | "MODE_NOT_ENABLED"
   | "NOT_FOUND"
   | "RECONNECT_REQUIRED"
   | "CREDENTIALS_UNAVAILABLE"
@@ -159,7 +159,7 @@ export type EngineResult<T> =
 
 const MESSAGES: Record<EngineErrorCode, string> = {
   INVALID_INPUT: "Los datos enviados no son válidos.",
-  MODE_NOT_SIM: "Solo el modo SIM está disponible.",
+  MODE_NOT_ENABLED: "El modo REAL no está habilitado para esta cuenta.",
   NOT_FOUND: "No encontramos eso en TradeStation.",
   RECONNECT_REQUIRED:
     "Tu conexión con TradeStation no incluye el permiso para opciones. Entra en Conexión y pulsa «Reconectar».",
@@ -180,24 +180,16 @@ export function success<T>(value: T): EngineResult<T> {
 }
 
 export type Decoded<A> =
-  | { readonly ok: true; readonly args: A }
-  | { readonly ok: false; readonly code: "INVALID_INPUT" | "MODE_NOT_SIM" };
+  { readonly ok: true; readonly args: A } | { readonly ok: false; readonly code: "INVALID_INPUT" };
 
-/** Unknown fields are rejected; REAL decodes but never passes (docs/architecture.md#responsibilities). */
+/** Unknown fields are rejected. Whether the mode is open is decided later, per action (index.ts). */
 export function decodeArgs<
   S extends Schema.Top & {
     readonly DecodingServices: never;
     readonly Type: { readonly mode: Mode };
   },
 >(schema: S, input: unknown): Decoded<S["Type"]> {
-  // REAL is rejected before the rest of the arguments are looked at, whatever else is wrong.
-  const requested = Schema.decodeUnknownResult(ModeOnlyArgs)(input);
-  if (requested._tag === "Success" && requested.success.mode !== "SIM") {
-    return { ok: false, code: "MODE_NOT_SIM" };
-  }
   const result = Schema.decodeUnknownResult(schema, { onExcessProperty: "error" })(input);
   if (result._tag === "Failure") return { ok: false, code: "INVALID_INPUT" };
-  const args = result.success;
-  if (args.mode !== "SIM") return { ok: false, code: "MODE_NOT_SIM" };
-  return { ok: true, args };
+  return { ok: true, args: result.success };
 }

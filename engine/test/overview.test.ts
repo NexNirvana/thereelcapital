@@ -81,7 +81,7 @@ describe("overview", () => {
     const stub = await client(false);
     expect(await stub.overview({ mode: "REAL" })).toMatchObject({
       ok: false,
-      code: "MODE_NOT_SIM",
+      code: "MODE_NOT_ENABLED",
     });
     expect(await stub.overview({ mode: "SIM", clientId: "x" })).toMatchObject({
       ok: false,

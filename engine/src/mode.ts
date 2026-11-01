@@ -1,7 +1,13 @@
 import { Schema } from "effect";
-import { allowedModes } from "#lib/domain/modes.ts";
+import {
+  allowedModes,
+  modeAllowed,
+  type AllowedModes,
+  type ModeAction,
+  type ModeLocks,
+} from "#lib/domain/modes.ts";
 
-/** REAL is decoded so it can be rejected by name; the RPC serves it only once its issue opens it (D52). */
+/** The trading mode a call serves; the Durable Object decides per action whether REAL is open (D52). */
 export const Mode = Schema.Literals(["SIM", "REAL"]);
 export type Mode = typeof Mode.Type;
 
@@ -52,16 +58,12 @@ export function readModeLocks(storage: DurableObjectStorage): StoredModeLocks {
   );
 }
 
-/**
- * The modes the background passes (sync, reconcile, protection, trailing) serve: SIM always; REAL
- * when the deployment is open and the client's flag is on, or while a REAL position or unfinished
- * REAL intent remains, so exits and protections are never stranded (`allowedModes`, D52).
- */
-export function activeModes(storage: DurableObjectStorage): readonly [Mode, ...Mode[]] {
-  const locks = readModeLocks(storage);
+/** The three locks the Durable Object can read synchronously: the stored switch and flag, and its own rows. */
+export function currentModeLocks(storage: DurableObjectStorage): ModeLocks {
+  const stored = readModeLocks(storage);
   // No need to look at the rows while the switch is closed.
-  if (!locks.deploymentOpen) return ["SIM"];
   const hasOpenReal =
+    stored.deploymentOpen &&
     storage.sql
       .exec<{ n: number }>(
         `SELECT (SELECT COUNT(*) FROM positions WHERE mode = 'REAL' AND status != 'CLOSED')
@@ -69,5 +71,28 @@ export function activeModes(storage: DurableObjectStorage): readonly [Mode, ...M
                   AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')) AS n`,
       )
       .one().n > 0;
-  return allowedModes({ ...locks, hasOpenReal }).exits.includes("REAL") ? ["SIM", "REAL"] : ["SIM"];
+  return { ...stored, hasOpenReal };
+}
+
+/** What each kind of order may use right now (D52 locks 1 and 2). */
+export function currentAllowedModes(storage: DurableObjectStorage): AllowedModes {
+  return allowedModes(currentModeLocks(storage));
+}
+
+/** Whether an RPC of this kind may serve the mode now (`modeAllowed`). */
+export function modeAllowedNow(
+  storage: DurableObjectStorage,
+  action: ModeAction,
+  mode: Mode,
+): boolean {
+  return mode === "SIM" || modeAllowed(action, mode, currentModeLocks(storage));
+}
+
+/**
+ * The modes the background passes (sync, reconcile, protection, trailing) serve: SIM always; REAL
+ * when the deployment is open and the client's flag is on, or while a REAL position or unfinished
+ * REAL intent remains, so exits and protections are never stranded (`allowedModes`, D52).
+ */
+export function activeModes(storage: DurableObjectStorage): readonly [Mode, ...Mode[]] {
+  return currentAllowedModes(storage).exits.includes("REAL") ? ["SIM", "REAL"] : ["SIM"];
 }

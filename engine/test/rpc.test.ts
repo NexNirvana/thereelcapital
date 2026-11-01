@@ -23,22 +23,23 @@ const calls = [
   ["cancel", { mode: "SIM", intentId: "i-1" }],
   ["activateTrailing", { mode: "SIM", positionId: "p-1", trailingPct: 10 }],
 ] as const;
+const redirectUri = "http://localhost:8787";
 const reads = [
-  "state",
-  "history",
-  "connection",
-  "sync",
-  "optionExpirations",
-  "optionChain",
-  "optionContract",
-  "beginConnection",
-  "completeConnection",
-  "disconnect",
+  ["state", {}],
+  ["history", {}],
+  ["connection", {}],
+  ["sync", {}],
+  ["optionExpirations", { underlying: "MSFT" }],
+  ["optionChain", { underlying: "MSFT", expiration: "2026-11-20" }],
+  ["optionContract", { symbol: "MSFT 261120C400" }],
+  ["beginConnection", { clientId: "id", clientSecret: "secret", redirectUri }],
+  ["completeConnection", { code: "c", state: "s", redirectUri }],
+  ["disconnect", {}],
 ] as const;
 const allMethods = [
   ...entryCalls.map(([method]) => method),
   ...calls.map(([method]) => method),
-  ...reads,
+  ...reads.map(([method]) => method),
 ] as const;
 
 function stubFor(name: string) {
@@ -66,27 +67,23 @@ describe("ClientCoordinator RPC surface", () => {
   it.each([
     ...entryCalls.map(([method, args]) => [method, args] as const),
     ...calls.map(([method, args]) => [method, args] as const),
-    ...reads.map((m) => [m, {}] as const),
-  ])("%s rejects REAL before doing anything", async (method, args) => {
+    ...reads.map(([method, args]) => [method, args] as const),
+  ])("%s refuses REAL while the switch is closed, before doing anything", async (method, args) => {
     const stub = stubFor(`real-${method}-${JSON.stringify(args)}`);
     const result = await stub[method]({ ...args, mode: "REAL" });
-    expect(result).toMatchObject({ ok: false, code: "MODE_NOT_SIM" });
-    expect(await eventTypes(stub)).toEqual([{ mode: "REAL", type: "rpc.mode_not_sim" }]);
+    expect(result).toMatchObject({ ok: false, code: "MODE_NOT_ENABLED" });
+    expect(await eventTypes(stub)).toEqual([{ mode: "REAL", type: "rpc.mode_not_enabled" }]);
   });
 
-  it.each(allMethods)(
-    "%s rejects REAL even when the rest of the input is invalid",
-    async (method) => {
-      const stub = stubFor(`real-bad-${method}`);
-      for (const input of [
-        { mode: "REAL" },
-        { mode: "REAL", intentId: "" },
-        { mode: "REAL", extra: 1 },
-      ]) {
-        expect(await stub[method](input)).toMatchObject({ ok: false, code: "MODE_NOT_SIM" });
-      }
-    },
-  );
+  it.each(allMethods)("%s rejects malformed REAL input with INVALID_INPUT", async (method) => {
+    const stub = stubFor(`real-bad-${method}`);
+    for (const input of [
+      { mode: "REAL", intentId: "" },
+      { mode: "REAL", extra: 1 },
+    ]) {
+      expect(await stub[method](input)).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    }
+  });
 
   it.each(allMethods)("%s rejects malformed input with INVALID_INPUT", async (method) => {
     const stub = stubFor(`bad-${method}`);
