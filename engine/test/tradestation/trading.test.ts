@@ -2,11 +2,12 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { BrokerAdapter, type OrderRequest } from "../../src/broker/adapter.ts";
 import {
-  SimOnlyRefused,
+  TransportRefused,
   makeTradeStationAdapter,
   tradeStationLayer,
   type TradeStationAdapterConfig,
 } from "../../src/tradestation/adapter.ts";
+import { LIVE_API_BASE_URL } from "../../src/tradestation/endpoints.ts";
 import type { FetchFn } from "../../src/tradestation/http.ts";
 import accountsFixture from "../fixtures/accounts.json";
 import cancelFixture from "../fixtures/cancel.json";
@@ -38,6 +39,7 @@ function adapterWith(
       : (script.fetch(url, init), Promise.resolve().then(respond));
   const made = makeTradeStationAdapter({
     mode: "SIM",
+    realTrading: false,
     accessToken: okToken,
     fetch: fetchFn,
     retryDelayMs: 0,
@@ -50,35 +52,48 @@ function adapterWith(
 const mutations = (calls: ReturnType<typeof adapterWith>["calls"]) =>
   calls.filter((call) => call.method !== "GET");
 
-describe("construction refuses anything but SIM", () => {
+describe("construction refuses what the mode's locks do not allow", () => {
   const base = { accessToken: okToken, now: () => 0 };
 
-  it("refuses REAL mode without building an adapter", () => {
-    expect(makeTradeStationAdapter({ ...base, mode: "REAL" })).toEqual({
+  it("refuses REAL mode with the switch closed, without building an adapter", () => {
+    expect(makeTradeStationAdapter({ ...base, mode: "REAL", realTrading: false })).toEqual({
       ok: false,
-      reason: "MODE_NOT_SIM",
+      reason: "REAL_TRADING_DISABLED",
     });
   });
 
-  it("refuses a base URL that is not the SIM host", () => {
+  it("refuses a base URL that is not the mode's host", () => {
     expect(
-      makeTradeStationAdapter({ ...base, mode: "SIM", baseUrl: "https://example.com/v3" }),
-    ).toEqual({ ok: false, reason: "BASE_URL_NOT_SIM" });
+      makeTradeStationAdapter({
+        ...base,
+        mode: "SIM",
+        realTrading: false,
+        baseUrl: "https://example.com/v3",
+      }),
+    ).toEqual({ ok: false, reason: "BASE_URL_NOT_MODE" });
+    expect(
+      makeTradeStationAdapter({ ...base, mode: "REAL", realTrading: true, baseUrl: SIM_BASE }),
+    ).toEqual({ ok: false, reason: "BASE_URL_NOT_MODE" });
   });
 
-  it("makes the layer fail with SimOnlyRefused", async () => {
-    const layer = tradeStationLayer({ ...base, mode: "REAL" });
+  it("makes the layer fail with TransportRefused", async () => {
+    const layer = tradeStationLayer({ ...base, mode: "REAL", realTrading: false });
     const program = Effect.gen(function* () {
       return yield* BrokerAdapter;
     }).pipe(Effect.provide(layer), Effect.flip);
     expect(await Effect.runPromise(program)).toEqual(
-      new SimOnlyRefused({ reason: "MODE_NOT_SIM" }),
+      new TransportRefused({ reason: "REAL_TRADING_DISABLED" }),
     );
   });
 
   it("provides the adapter through the layer for SIM", async () => {
     const script = scriptedFetch(() => json(accountsFixture));
-    const layer = tradeStationLayer({ ...base, mode: "SIM", fetch: script.fetch });
+    const layer = tradeStationLayer({
+      ...base,
+      mode: "SIM",
+      realTrading: false,
+      fetch: script.fetch,
+    });
     const accounts = await Effect.runPromise(
       Effect.gen(function* () {
         const adapter = yield* BrokerAdapter;
@@ -87,6 +102,58 @@ describe("construction refuses anything but SIM", () => {
       }).pipe(Effect.provide(layer)),
     );
     expect(accounts).toHaveLength(3);
+  });
+});
+
+describe("account guard per mode", () => {
+  const SIM_ONLY = "11111111";
+  const LIVE_ONLY = "22222222";
+  const listing = (accountId: string) => ({
+    Accounts: [{ AccountID: accountId, AccountType: "Margin", Status: "Active" }],
+  });
+
+  /** SIM lists only SIM_ONLY and the live host only LIVE_ONLY; everything else is an order. */
+  function adapterFor(mode: "SIM" | "REAL") {
+    const script = scriptedFetch(() => json({}));
+    const fetchFn: FetchFn = (url, init) => {
+      void script.fetch(url, init);
+      if (url.endsWith("/brokerage/accounts")) {
+        return Promise.resolve(
+          json(listing(url.startsWith(LIVE_API_BASE_URL) ? LIVE_ONLY : SIM_ONLY)),
+        );
+      }
+      return Promise.resolve(json(placeFixture));
+    };
+    const made = makeTradeStationAdapter({
+      mode,
+      realTrading: mode === "REAL",
+      accessToken: okToken,
+      fetch: fetchFn,
+      retryDelayMs: 0,
+      now: () => 0,
+    });
+    if (!made.ok) throw new Error(made.reason);
+    return { adapter: made.adapter, calls: script.calls };
+  }
+
+  it("refuses a SIM-listed account in REAL, and sends no order", async () => {
+    const { adapter, calls } = adapterFor("REAL");
+    expect(await failureOf(adapter.placeOrder({ ...request, accountId: SIM_ONLY }))).toMatchObject({
+      code: "ACCOUNT_NOT_IN_MODE",
+    });
+    expect(mutations(calls)).toHaveLength(0);
+    await run(adapter.placeOrder({ ...request, accountId: LIVE_ONLY }));
+    expect(calls.every((call) => call.url.startsWith(LIVE_API_BASE_URL))).toBe(true);
+  });
+
+  it("refuses a live-listed account in SIM, and never touches the live origin", async () => {
+    const { adapter, calls } = adapterFor("SIM");
+    expect(await failureOf(adapter.placeOrder({ ...request, accountId: LIVE_ONLY }))).toMatchObject(
+      { code: "ACCOUNT_NOT_IN_MODE" },
+    );
+    await run(adapter.placeOrder({ ...request, accountId: SIM_ONLY }));
+    expect(calls.some((call) => call.url.startsWith(LIVE_API_BASE_URL))).toBe(false);
+    expect(adapter.source).toBe("tradestation-sim");
   });
 });
 
@@ -255,7 +322,7 @@ describe("the SIM account guard", () => {
     expect(
       await failureOf(adapter.placeOrder({ ...request, accountId: "11111111" })),
     ).toMatchObject({
-      code: "ACCOUNT_NOT_SIM",
+      code: "ACCOUNT_NOT_IN_MODE",
     });
     expect(mutations(calls)).toHaveLength(0);
   });
@@ -266,7 +333,7 @@ describe("the SIM account guard", () => {
       await failureOf(adapter.placeOrder({ ...request, accountId: "11111111" })),
     ).toMatchObject({
       _tag: "Rejected",
-      code: "ACCOUNT_NOT_SIM",
+      code: "ACCOUNT_NOT_IN_MODE",
     });
     expect(mutations(calls)).toHaveLength(0);
     expect(calls.map((call) => call.url)).toEqual([`${SIM_BASE}/brokerage/accounts`]);
@@ -282,13 +349,13 @@ describe("the SIM account guard", () => {
     const { adapter, calls } = adapterWith(() => json(placeFixture), accountsBody);
     for (const accountId of ["F1", "C1"]) {
       expect(await failureOf(adapter.placeOrder({ ...request, accountId }))).toMatchObject({
-        code: "ACCOUNT_NOT_SIM",
+        code: "ACCOUNT_NOT_IN_MODE",
       });
       expect(await failureOf(adapter.confirmOrder({ ...request, accountId }))).toMatchObject({
-        code: "ACCOUNT_NOT_SIM",
+        code: "ACCOUNT_NOT_IN_MODE",
       });
       expect(await failureOf(adapter.cancelOrder(accountId, "123"))).toMatchObject({
-        code: "ACCOUNT_NOT_SIM",
+        code: "ACCOUNT_NOT_IN_MODE",
       });
     }
     expect(mutations(calls)).toHaveLength(0);
@@ -298,6 +365,7 @@ describe("the SIM account guard", () => {
     const script = scriptedFetch(() => json({}, 401));
     const made = makeTradeStationAdapter({
       mode: "SIM",
+      realTrading: false,
       accessToken: okToken,
       fetch: script.fetch,
       retryDelayMs: 0,

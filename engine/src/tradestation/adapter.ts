@@ -1,5 +1,6 @@
-// The TradeStation SIM implementation of BrokerAdapter (#19). Only SIM exists here: a LIVE mode or
-// any base URL but the SIM host is refused at construction, before a token is requested.
+// The TradeStation implementation of BrokerAdapter (#19). A REAL adapter is refused at construction
+// unless the REAL_TRADING switch is open, as is any base URL but its mode's host; both happen before
+// a token is requested (D52).
 
 import { Data, Effect, Layer } from "effect";
 import { BrokerAdapter, type BrokerAdapterShape, type BrokerSkip } from "../broker/adapter.ts";
@@ -20,7 +21,7 @@ export interface TradeStationAdapterConfig extends TransportConfig {
 }
 
 export interface TradeStationAdapter extends BrokerAdapterShape {
-  readonly source: "tradestation-sim";
+  readonly source: "tradestation-sim" | "tradestation-real";
   /** The latest `X-RateLimit-*` headers, for the event log and the sync loop's pacing. */
   readonly rateLimit: () => RateLimitInfo | null;
 }
@@ -33,12 +34,12 @@ export function makeTradeStationAdapter(
   const made = makeTransport(config);
   if (!made.ok) return made;
   const { transport } = made;
-  const guard = trading.makeSimAccountGuard(transport);
+  const guard = trading.makeAccountGuard(transport);
   let skipped: BrokerSkip[] = [];
   return {
     ok: true,
     adapter: {
-      source: "tradestation-sim",
+      source: config.mode === "REAL" ? "tradestation-real" : "tradestation-sim",
       rateLimit: transport.rateLimit,
       accounts: () => market.accounts(transport),
       symbolDetails: (symbol) => market.symbolDetails(transport, symbol),
@@ -70,21 +71,21 @@ export function makeTradeStationAdapter(
 }
 
 /** Why the layer could not be built. Nothing was sent. */
-export class SimOnlyRefused extends Data.TaggedError("SimOnlyRefused")<{
+export class TransportRefused extends Data.TaggedError("TransportRefused")<{
   readonly reason: TransportRefusal;
 }> {}
 
-/** The BrokerAdapter service backed by TradeStation SIM; fails to build when SIM cannot be proven. */
+/** The BrokerAdapter service backed by TradeStation; fails to build when the mode's locks are not satisfied. */
 export function tradeStationLayer(
   config: TradeStationAdapterConfig,
-): Layer.Layer<BrokerAdapter, SimOnlyRefused> {
+): Layer.Layer<BrokerAdapter, TransportRefused> {
   return Layer.effect(
     BrokerAdapter,
     Effect.suspend(() => {
       const made = makeTradeStationAdapter(config);
       return made.ok
         ? Effect.succeed(made.adapter)
-        : Effect.fail(new SimOnlyRefused({ reason: made.reason }));
+        : Effect.fail(new TransportRefused({ reason: made.reason }));
     }),
   );
 }

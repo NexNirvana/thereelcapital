@@ -11,6 +11,7 @@ afterEach(() => vi.restoreAllMocks());
 function transportOver(fetchFn: Parameters<typeof makeTransport>[0]["fetch"]) {
   const made = makeTransport({
     mode: "SIM",
+    realTrading: false,
     accessToken: okToken,
     fetch: fetchFn,
     retryDelayMs: 0,
@@ -31,12 +32,13 @@ describe("broker.request events", () => {
     await run(transport.send("placeOrder", "POST", "/orderexecution/orders", { Symbol: "AAPL" }));
     const out = lines(log);
     expect(out.map((l) => Object.keys(JSON.parse(l) as object))).toEqual([
-      ["event", "operation", "status", "ms"],
-      ["event", "operation", "status", "ms"],
+      ["event", "operation", "mode", "status", "ms"],
+      ["event", "operation", "mode", "status", "ms"],
     ]);
     expect(JSON.parse(out[0] ?? "")).toMatchObject({
       event: "broker.request",
       operation: "quotes",
+      mode: "SIM",
       status: 200,
     });
     const all = out.join("\n");

@@ -114,6 +114,7 @@ describe("applying order status and fills", () => {
       const script = scriptedFetch(() => json({ Orders: [wire] }));
       const made = makeTransport({
         mode: "SIM",
+        realTrading: false,
         accessToken: okToken,
         fetch: script.fetch,
         retryDelayMs: 0,

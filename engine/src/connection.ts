@@ -14,7 +14,7 @@ import { logEvent } from "./events.ts";
 import type { Mode } from "./mode.ts";
 import { listTradableAccounts, type BrokerAccount } from "./tradestation/accounts.ts";
 import { authorizeUrl, exchangeCode, revokeRefreshToken } from "./tradestation/auth.ts";
-import type { BrokerFailure } from "./tradestation/endpoints.ts";
+import { SIM_GATE, type BrokerFailure } from "./tradestation/endpoints.ts";
 import { timedD1 } from "./timing.ts";
 
 /** Long enough to log in at TradeStation (passkey, 2FA), short enough to be a one-shot. */
@@ -149,7 +149,7 @@ export async function completeConnection(
   }
   const tokens = exchanged.value;
 
-  const listed = await listTradableAccounts(tokens.accessToken);
+  const listed = await listTradableAccounts(SIM_GATE, tokens.accessToken);
   if (!listed.ok) {
     // Do not keep a grant the client cannot see; undo it at TradeStation, best effort. Not while
     // another connection uses the key: a revocation ends every grant of the key (D49).

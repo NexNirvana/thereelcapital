@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { LIVE_API_BASE_URL } from "../../src/tradestation/endpoints.ts";
 import {
   makeTransport,
   parseRateLimit,
@@ -10,6 +11,7 @@ import { SIM_BASE, TOKEN, failureOf, json, okToken, run, scriptedFetch } from ".
 function transportWith(fetchFn: FetchFn, overrides: Partial<TransportConfig> = {}) {
   const made = makeTransport({
     mode: "SIM",
+    realTrading: false,
     accessToken: okToken,
     fetch: fetchFn,
     retryDelayMs: 0,
@@ -20,28 +22,66 @@ function transportWith(fetchFn: FetchFn, overrides: Partial<TransportConfig> = {
 }
 
 describe("transport construction", () => {
-  it("refuses REAL mode", () => {
-    expect(makeTransport({ mode: "REAL", accessToken: okToken })).toEqual({
+  it("refuses REAL mode while the switch is closed, before reading a token", () => {
+    const accessToken = vi.fn(okToken);
+    expect(makeTransport({ mode: "REAL", realTrading: false, accessToken })).toEqual({
       ok: false,
-      reason: "MODE_NOT_SIM",
+      reason: "REAL_TRADING_DISABLED",
     });
+    expect(accessToken).not.toHaveBeenCalled();
+  });
+
+  it("builds a REAL transport only with the switch open, on the live base", async () => {
+    const { fetch, calls } = scriptedFetch(() => json({ ok: 1 }));
+    const made = makeTransport({
+      mode: "REAL",
+      realTrading: true,
+      accessToken: okToken,
+      fetch,
+    });
+    if (!made.ok) throw new Error(made.reason);
+    await run(made.transport.get("accounts", "/brokerage/accounts"));
+    expect(calls.map((call) => call.url)).toEqual([`${LIVE_API_BASE_URL}/brokerage/accounts`]);
+  });
+
+  it("never reaches the live origin from a SIM transport, even with the switch open", async () => {
+    const { fetch, calls } = scriptedFetch(() => json({ ok: 1 }));
+    await run(transportWith(fetch, { realTrading: true }).get("accounts", "/brokerage/accounts"));
+    expect(calls.map((call) => new URL(call.url).origin)).toEqual([new URL(SIM_BASE).origin]);
   });
 
   it.each([
-    "https://example.com/v3",
-    "http://sim-api.tradestation.com/v3",
-    "https://sim-api.tradestation.com.evil.test/v3",
-    "https://sim-api.tradestation.com/v3/",
-    "",
-  ])("refuses the base URL %j", (baseUrl) => {
-    expect(makeTransport({ mode: "SIM", baseUrl, accessToken: okToken })).toEqual({
+    ["SIM", "https://example.com/v3"],
+    ["SIM", "http://sim-api.tradestation.com/v3"],
+    ["SIM", "https://sim-api.tradestation.com.evil.test/v3"],
+    ["SIM", "https://sim-api.tradestation.com/v3/"],
+    ["SIM", LIVE_API_BASE_URL],
+    ["SIM", ""],
+    ["REAL", SIM_BASE],
+    ["REAL", "https://example.com/v3"],
+    ["REAL", `${LIVE_API_BASE_URL}/`],
+    ["REAL", ""],
+  ] as const)("refuses the %s base URL %j", (mode, baseUrl) => {
+    expect(makeTransport({ mode, realTrading: true, baseUrl, accessToken: okToken })).toEqual({
       ok: false,
-      reason: "BASE_URL_NOT_SIM",
+      reason: "BASE_URL_NOT_MODE",
     });
   });
 
-  it("accepts the SIM base", () => {
-    expect(makeTransport({ mode: "SIM", baseUrl: SIM_BASE, accessToken: okToken }).ok).toBe(true);
+  it("accepts each mode's own base", () => {
+    const sim = makeTransport({
+      mode: "SIM",
+      realTrading: false,
+      baseUrl: SIM_BASE,
+      accessToken: okToken,
+    });
+    const real = makeTransport({
+      mode: "REAL",
+      realTrading: true,
+      baseUrl: LIVE_API_BASE_URL,
+      accessToken: okToken,
+    });
+    expect([sim.ok, real.ok]).toEqual([true, true]);
   });
 });
 

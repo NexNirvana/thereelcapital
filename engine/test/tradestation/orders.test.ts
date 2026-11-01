@@ -11,6 +11,7 @@ function withBody(body: unknown) {
   const script = scriptedFetch(() => json(body));
   const made = makeTransport({
     mode: "SIM",
+    realTrading: false,
     accessToken: okToken,
     fetch: script.fetch satisfies FetchFn,
     retryDelayMs: 0,

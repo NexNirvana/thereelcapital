@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { send, SIM_API_BASE_URL, type BrokerResult } from "./endpoints.ts";
+import { apiBaseUrlFor, send, type ApiGate, type BrokerResult } from "./endpoints.ts";
 
 // (verify) Field names come from docs/tradestation-integration.md; the exact `Status` values are
 // not in the pages we could read, so "Active" is matched case-insensitively and checked in the spike.
@@ -18,13 +18,21 @@ export interface BrokerAccount {
   readonly accountType: "Cash" | "Margin";
 }
 
-/** Only active Cash and Margin accounts can trade equities and options (Futures and DVP cannot). */
+/**
+ * Only active Cash and Margin accounts can trade equities and options (Futures and DVP cannot).
+ * The mode's own host lists them: that listing is the proof an account belongs to the mode.
+ */
 export async function listTradableAccounts(
+  gate: ApiGate,
   accessToken: string,
 ): Promise<BrokerResult<readonly BrokerAccount[]>> {
-  const sent = await send("accounts", `${SIM_API_BASE_URL}/brokerage/accounts`, {
-    headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
-  });
+  const url = `${apiBaseUrlFor(gate.mode)}/brokerage/accounts`;
+  const sent = await send(
+    "accounts",
+    url,
+    { headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" } },
+    gate,
+  );
   if (!sent.ok) return sent;
   const decoded = Schema.decodeUnknownResult(AccountsResponse)(
     await sent.response.json().catch(() => null),

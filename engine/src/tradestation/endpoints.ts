@@ -1,9 +1,30 @@
 // The only TradeStation hosts the engine knows. docs/tradestation-integration.md#environments
 
+import type { Mode } from "../mode.ts";
 import { logBrokerRequest, startTimer } from "../timing.ts";
 
-/** SIM only, no real money. LIVE is not a configured environment and has no constant. */
 export const SIM_API_BASE_URL = "https://sim-api.tradestation.com/v3";
+
+/**
+ * The live brokerage host. REAL mode only: a transport for it exists only when the engine variable
+ * REAL_TRADING is open (D52, docs/tradestation-integration.md#environments). The host guard allows
+ * exactly this line, so every other file imports the constant and never spells the host.
+ */
+export const LIVE_API_BASE_URL = "https://api.tradestation.com/v3";
+
+/** The API base of a mode. Choosing it opens nothing: the lock checks are in `isAllowedOrigin` and `makeTransport`. */
+export function apiBaseUrlFor(mode: Mode): string {
+  return mode === "REAL" ? LIVE_API_BASE_URL : SIM_API_BASE_URL;
+}
+
+/** Which API host a request may reach: the mode's own, and the live one only with REAL_TRADING open. */
+export interface ApiGate {
+  readonly mode: Mode;
+  readonly realTrading: boolean;
+}
+
+/** What the auth calls and the connect flow use: the live origin stays closed. */
+export const SIM_GATE: ApiGate = { mode: "SIM", realTrading: false };
 
 /** Auth0 tenant shared by SIM and LIVE keys; it issues tokens and never moves money. */
 export const AUTH_BASE_URL = "https://signin.tradestation.com";
@@ -50,13 +71,15 @@ async function oauthErrorCode(response: Response): Promise<string> {
   return typeof code === "string" && OAUTH_ERROR_CODES.has(code) ? code : OTHER_CODE;
 }
 
-const ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
-  new URL(SIM_API_BASE_URL).origin,
-  new URL(AUTH_BASE_URL).origin,
-]);
+const AUTH_ORIGIN = new URL(AUTH_BASE_URL).origin;
 
-export function isAllowedOrigin(url: string): boolean {
-  return URL.canParse(url) && ALLOWED_ORIGINS.has(new URL(url).origin);
+/** The auth tenant, plus the mode's own API origin; the live one only for REAL with the switch open. */
+export function isAllowedOrigin(url: string, gate: ApiGate = SIM_GATE): boolean {
+  if (!URL.canParse(url)) return false;
+  const { origin } = new URL(url);
+  if (origin === AUTH_ORIGIN) return true;
+  if (gate.mode === "REAL" && !gate.realTrading) return false;
+  return origin === new URL(apiBaseUrlFor(gate.mode)).origin;
 }
 
 /**
@@ -67,14 +90,17 @@ export async function send(
   operation: "auth" | "accounts",
   url: string,
   init: RequestInit,
+  gate: ApiGate = SIM_GATE,
 ): Promise<{ ok: true; response: Response } | Extract<BrokerResult<never>, { ok: false }>> {
-  // Defense in depth for the SIM-only rule: the only origins this module may reach are the SIM API
-  // and the auth tenant, whatever a caller passes. Anything else is refused without a request.
-  if (!isAllowedOrigin(url)) return { ok: false, failure: "REJECTED" };
+  // Defense in depth for the REAL_TRADING lock: the only origins this module may reach are the
+  // gate's own API host and the auth tenant, whatever a caller passes. Anything else is refused
+  // without a request.
+  if (!isAllowedOrigin(url, gate)) return { ok: false, failure: "REJECTED" };
+  const loggedMode = operation === "auth" ? null : gate.mode;
   const startedAt = startTimer();
   try {
     const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    logBrokerRequest(operation, response.status, startedAt);
+    logBrokerRequest(operation, response.status, startedAt, loggedMode);
     if (response.ok) return { ok: true, response };
     // 4xx is the broker saying no (bad secret, bad code); 5xx and 429 are not the client's fault.
     const rejected = response.status >= 400 && response.status < 500 && response.status !== 429;
@@ -86,7 +112,7 @@ export async function send(
       code: await oauthErrorCode(response),
     };
   } catch {
-    logBrokerRequest(operation, null, startedAt);
+    logBrokerRequest(operation, null, startedAt, loggedMode);
     return { ok: false, failure: "UNAVAILABLE" };
   }
 }

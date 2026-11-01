@@ -1,7 +1,7 @@
-// Builds the BrokerAdapter a client's Durable Object trades through. Production is always the
-// TradeStation SIM adapter (its construction, request and order guards refuse anything else); the
-// local simulation needs the explicit opt-in that `selectBroker` checks. There is no other path to a
-// broker (CLAUDE.md, SIM only).
+// Builds the BrokerAdapter a client's Durable Object trades through: TradeStation in the requested
+// mode (REAL is refused by the transport unless the REAL_TRADING switch is open; the Durable Object
+// still asks only for SIM), or the local simulation, which needs the explicit opt-in that
+// `selectBroker` checks. There is no other path to a broker (CLAUDE.md, no real money).
 
 import type { BrokerAdapterShape } from "./adapter.ts";
 import { scenarioSymbols, withScenarios } from "./local-sim/scenarios.ts";
@@ -13,6 +13,7 @@ import {
 } from "./local-sim/sim.ts";
 import { selectBroker, type BrokerSettings } from "./select.ts";
 import { makeTradeStationAdapter } from "../tradestation/adapter.ts";
+import type { Mode } from "../mode.ts";
 import type { AccessTokenSource } from "../tradestation/http.ts";
 
 export type BrokerResolution =
@@ -93,6 +94,8 @@ export function localSimFor(
 }
 
 export function resolveBroker(args: {
+  readonly mode: Mode;
+  readonly realTrading: boolean;
   readonly settings: BrokerSettings;
   readonly userId: string;
   readonly accessToken: AccessTokenSource;
@@ -103,9 +106,10 @@ export function resolveBroker(args: {
   if (choice.broker === "local-sim") {
     return { ok: true, broker: withScenarios(localSimFor(args.userId)) };
   }
-  // The mode is fixed to SIM here and checked again by the transport, which also pins the base URL.
+  // The transport enforces the locks: REAL needs `realTrading`, and the base URL follows the mode.
   const made = makeTradeStationAdapter({
-    mode: "SIM",
+    mode: args.mode,
+    realTrading: args.realTrading,
     accessToken: args.accessToken,
     now: args.now,
   });
