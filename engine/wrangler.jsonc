@@ -20,6 +20,9 @@
   "vars": {
     "BROKER": "tradestation",
     "ENVIRONMENT": "production",
+    // The first lock of REAL mode (D52): only the exact value "enabled" opens it. Only the owner
+    // changes it, in a PR of their own; agents, scripts, tests and CI never do.
+    "REAL_TRADING": "disabled",
     "TEST_NOW": "",
     "TEST_SYNC_MS": "",
   },

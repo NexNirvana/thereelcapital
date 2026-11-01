@@ -12,3 +12,14 @@ export type Mode = typeof Mode.Type;
 export function activeModes(): readonly [Mode, ...Mode[]] {
   return ["SIM"];
 }
+
+/**
+ * The first lock of D52: the engine variable `REAL_TRADING` opens REAL only when it is exactly
+ * "enabled". Unset, empty, "true", "ENABLED" or anything else is closed. Production keeps it
+ * "disabled" until the owner changes it in a PR of their own.
+ */
+export function isRealTradingOpen(settings: {
+  readonly REAL_TRADING?: string | undefined;
+}): boolean {
+  return settings.REAL_TRADING === "enabled";
+}
