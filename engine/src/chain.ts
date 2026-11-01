@@ -116,7 +116,7 @@ export async function optionChain(
   const { underlying, expiration } = args;
   // The screen reads the chain again every few seconds (D46): the strikes of an expiration are
   // listed once per `CHAIN_STRIKES_CACHE_MS` and each later read costs only the quotes.
-  const cacheKey = `${underlying} ${expiration}`;
+  const cacheKey = `${ctx.mode} ${underlying} ${expiration}`;
   const cached = ctx.strikesCache?.get(cacheKey);
   const fresh = cached !== undefined && ctx.now - cached.at < CHAIN_STRIKES_CACHE_MS;
   const strikes = fresh

@@ -15,7 +15,7 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 - **SIZE**: increase accepted; equal or lower rejected.
 - **Scale-outs**: the table in [domain-rules.md §6](domain-rules.md#6-scale-out-steps) for 1, 7, 37, 50, 80, 137, 200; the five 10% steps pressed out of order; `done_zero` steps; pending quantities subtracted; never above `available`.
 - **Protection**: stop level from the average fill price and the stored %; trailing eligibility from `sold_qty` only (pending and `done_zero` don't count); trail level never decreases; effective level = max(stop, trail).
-- **Guards**: each rejection in §5 (REAL, foreign account, futures, spread, non-MARKET, SELLTOOPEN, BUYTOCLOSE, oversell, outside session, second position on the same symbol); trailing % outside the allowed set; stop/unlock % outside bounds.
+- **Guards**: each rejection in §5 (REAL not enabled, foreign account, futures, spread, non-MARKET, SELLTOOPEN, BUYTOCLOSE, oversell, outside session, second position on the same symbol); trailing % outside the allowed set; stop/unlock % outside bounds.
 - **Calendar**: weekends, NYSE holidays, early closes, DST changes, session date at 00:00–09:30 ET.
 
 ## Engine (DO)
@@ -27,7 +27,8 @@ Only `bun test` runs on Bun; the engine and e2e layers need Node because their t
 - **UNKNOWN**: a place timeout → UNKNOWN → reconcile → no resend.
 - **Reconciliation**: external orders and positions adopted; existing activity at first connect counted.
 - **Settings**: admin changes affect only new entries and positions.
-- **Mode**: SIM and REAL data never mix; REAL is rejected.
+- **Mode**: SIM and REAL data never mix (rows, counters, symbol-details and strikes caches); a REAL request is refused with `MODE_NOT_ENABLED` unless `allowedModes` lets that action through (`engine/test/mode-gate.test.ts`).
+- **REAL orders without money** (`engine/test/real-orders.test.ts`): the REAL broker is a local simulation with its own account and prices, or the real TradeStation adapter over a scripted `fetch` standing in for the live host (the engine test setup fails any unscripted request to it). Covered: entry refused with the switch closed, the flag off, an account only SIM lists and an account bound to another client; entry accepted with every lock, with the intent SENT before the broker call and the quantity sized from the REAL ask; exit allowed with the flag off while a REAL position is open; limits and counters per mode; a lost REAL placement is UNKNOWN and reconciled against the REAL broker; a SIM and a REAL entry at the same time.
 - **Degraded states**: each row of the [degraded-states table](order-lifecycle.md#degraded-states).
 
 ### Local-sim broker
