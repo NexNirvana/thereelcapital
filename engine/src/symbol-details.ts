@@ -1,11 +1,13 @@
 // Symbol details change at most when the exchange reslices a contract, so one fetch per symbol
 // serves a whole market day. In memory only (the Durable Object's storage is the key, so a client
 // never sees another client's map) and dropped when the New York session day changes; only a
-// successful read is kept, so a rejection or an outage is asked again next time.
+// successful read is kept, so a rejection or an outage is asked again next time. Each mode has its
+// own entries: REAL asks the live host, and SIM's answer must never size a REAL order.
 
 import { sessionDate } from "#lib/domain/calendar.ts";
 import type { BrokerAdapterShape, SymbolDetails } from "./broker/adapter.ts";
 import { attempt, type Attempt } from "./broker/attempt.ts";
+import type { Mode } from "./mode.ts";
 
 interface DetailsCache {
   readonly day: string;
@@ -18,6 +20,7 @@ export interface DetailsContext {
   readonly storage: DurableObjectStorage;
   readonly broker: BrokerAdapterShape;
   readonly now: number;
+  readonly mode: Mode;
 }
 
 export async function cachedSymbolDetails(
@@ -30,10 +33,11 @@ export async function cachedSymbolDetails(
     cache = { day, bySymbol: new Map() };
     caches.set(ctx.storage, cache);
   }
-  const known = cache.bySymbol.get(symbol);
+  const key = `${ctx.mode} ${symbol}`;
+  const known = cache.bySymbol.get(key);
   if (known !== undefined) return { ok: true, value: known };
 
   const found = await attempt(ctx.broker.symbolDetails(symbol));
-  if (found.ok) cache.bySymbol.set(symbol, found.value);
+  if (found.ok) cache.bySymbol.set(key, found.value);
   return found;
 }

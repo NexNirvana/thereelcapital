@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { BrokerAdapterShape } from "../src/broker/adapter.ts";
 import { prepareEntry, sendEntry } from "../src/entries.ts";
 import { exitPosition } from "../src/exits.ts";
+import { cachedSymbolDetails } from "../src/symbol-details.ts";
 import { runSync } from "../src/sync.ts";
 import { IN_SESSION, inClient, newClient, newSim, type Clock } from "./sync-helpers.ts";
 
@@ -61,6 +62,21 @@ describe("symbol details cache", () => {
       expect(exit.ok && exit.value.status).toBe("PLACED");
     });
     expect(counted.calls.symbolDetails).toBe(1);
+  });
+
+  it("keeps SIM and REAL apart: a SIM entry never answers for REAL", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const simSide = probe(newSim(clock).adapter);
+    const realSide = probe(newSim(clock).adapter);
+    const client = await newClient();
+    await inClient(client, clock, simSide.broker, async (ctx) => {
+      await cachedSymbolDetails(ctx, "AAPL");
+      await cachedSymbolDetails(ctx, "AAPL");
+      await cachedSymbolDetails({ ...ctx, mode: "REAL", broker: realSide.broker }, "AAPL");
+      await cachedSymbolDetails({ ...ctx, mode: "REAL", broker: realSide.broker }, "AAPL");
+    });
+    expect(simSide.calls.symbolDetails).toBe(1);
+    expect(realSide.calls.symbolDetails).toBe(1);
   });
 
   it("reads the details and the quote together, not one after the other", async () => {
