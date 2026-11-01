@@ -77,7 +77,7 @@ import {
 import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
 import { Effect, type Schema } from "effect";
-import type { Mode } from "./mode.ts";
+import { activeModes, type Mode } from "./mode.ts";
 import { logColo } from "./timing.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
@@ -89,6 +89,12 @@ function errorTag(error: unknown): string {
     ? error._tag
     : "unknown";
 }
+
+/**
+ * The mode of work no RPC names (live sockets, the quote stream, alarm failures): the first active
+ * mode. The REAL issues replace it with the mode of the socket or stream (D52).
+ */
+const [LIVE_MODE] = activeModes();
 
 const ALARM_RETRY_DELAY_MS = {
   refresh: REFRESH_RETRY_DELAY_MS,
@@ -107,7 +113,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   #broker: BrokerAdapterShape | null = null;
   readonly #alarms: AlarmScheduler;
   /** A pass already running is shared, so two never apply snapshots out of order. */
-  #syncing: Promise<SyncResult> | null = null;
+  #syncing = new Map<Mode, Promise<SyncResult>>();
   /** Strikes of the chains the screens poll, so a refresh reads only quotes (D46). */
   readonly #strikes: StrikesCache = new Map();
   /** The upstream quote streams of this client and the browser sockets they feed (D47). */
@@ -146,14 +152,14 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         backoffMaxMs: LIVE_STREAM_BACKOFF_MAX_MS,
       }),
       streamAvailable: () => {
-        const connection = this.connectionContext();
+        const connection = this.connectionContext(LIVE_MODE);
         return connection !== null && this.brokerFor(connection)?.quoteStream !== undefined;
       },
       prepare: (entry, streamed) =>
         this.enterWithBroker(
           "watchEntry",
           PrepareEntryArgs,
-          { mode: "SIM", ...entry },
+          { mode: LIVE_MODE, ...entry },
           (entryCtx, args) => prepareEntry(entryCtx, args, streamed ?? undefined, this.entryInputs),
         ).catch(() => null),
       now: () => engineNow(this.env),
@@ -188,7 +194,8 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket", { status: 426 });
     }
-    if (this.connectionContext() === null) return new Response("Not available", { status: 409 });
+    if (this.connectionContext(LIVE_MODE) === null)
+      return new Response("Not available", { status: 409 });
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     server.accept();
@@ -206,7 +213,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     signal: AbortSignal,
     streamId: number,
   ): Promise<"ended" | "failed"> {
-    const connection = this.connectionContext();
+    const connection = this.connectionContext(LIVE_MODE);
     const broker = connection === null ? null : this.brokerFor(connection);
     if (broker?.quoteStream === undefined) return "failed";
     const result = await Effect.runPromise(
@@ -237,7 +244,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     const alreadyLogged = [...this.#streamFailures.values()].includes(kind);
     this.#streamFailures.set(streamId, kind);
     if (!alreadyLogged) {
-      this.log("warn", "SIM", "quote_stream.failed", "quoteStream", kind);
+      this.log("warn", LIVE_MODE, "quote_stream.failed", "quoteStream", kind);
     }
     return "failed";
   }
@@ -402,7 +409,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   positions(input: unknown): Promise<EngineResult<PositionsView>> {
     return this.enterWithConnection("positions", ModeOnlyArgs, input, async (ctx) =>
       success({
-        ...readPositionsView(ctx.sql, engineNow(this.env)),
+        ...readPositionsView(ctx.sql, engineNow(this.env), ctx.mode),
         verification: await readVerification(ctx),
       }),
     );
@@ -469,7 +476,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         await this.runTask(task);
       } catch (error) {
         // Retry later instead of rethrowing: a throw would re-run the other jobs as well.
-        this.log("error", "SIM", "alarm.task_failed", task, errorTag(error));
+        this.log("error", LIVE_MODE, "alarm.task_failed", task, errorTag(error));
         await this.#alarms.schedule(task, this.#now() + ALARM_RETRY_DELAY_MS[task]);
         continue;
       }
@@ -496,13 +503,17 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
         return;
       }
       case "sync": {
-        const ctx = this.connectionContext();
-        const broker = ctx === null ? null : this.brokerFor(ctx);
-        if (ctx === null || broker === null) return;
-        const result = await this.syncOnce({ ...ctx, broker });
+        let nextInMs: number | null = null;
+        for (const mode of activeModes()) {
+          const ctx = this.connectionContext(mode);
+          const broker = ctx === null ? null : this.brokerFor(ctx);
+          if (ctx === null || broker === null) return;
+          const result = await this.syncOnce({ ...ctx, broker });
+          if (result.nextInMs !== null) nextInMs = Math.min(nextInMs ?? Infinity, result.nextInMs);
+        }
         await this.#alarms.schedule(
           "sync",
-          result.nextInMs === null ? null : this.#now() + syncDelayMs(this.env, result.nextInMs),
+          nextInMs === null ? null : this.#now() + syncDelayMs(this.env, nextInMs),
         );
         return;
       }
@@ -513,10 +524,13 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
     ctx: SyncContext,
     options?: { readonly throttle?: boolean },
   ): Promise<SyncResult> {
-    this.#syncing ??= runSync({ ...ctx, wallNow: () => this.#now() }, options).finally(() => {
-      this.#syncing = null;
-    });
-    return this.#syncing;
+    const running =
+      this.#syncing.get(ctx.mode) ??
+      runSync({ ...ctx, wallNow: () => this.#now() }, options).finally(() => {
+        this.#syncing.delete(ctx.mode);
+      });
+    this.#syncing.set(ctx.mode, running);
+    return running;
   }
 
   /** Revokes the grant at TradeStation and deletes the stored credentials. */
@@ -551,7 +565,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       // The input is never logged: it may carry anything the caller sent.
       this.log(
         "warn",
-        decoded.code === "MODE_NOT_SIM" ? "REAL" : "SIM",
+        decoded.code === "MODE_NOT_SIM" ? "REAL" : LIVE_MODE,
         `rpc.${decoded.code.toLowerCase()}`,
         method,
       );
@@ -593,7 +607,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       },
     });
     if (!resolved.ok) {
-      this.log("error", "SIM", "broker.unavailable", resolved.reason);
+      this.log("error", ctx.mode, "broker.unavailable", resolved.reason);
       return null;
     }
     this.#broker = resolved.broker;
@@ -614,19 +628,19 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   ): Promise<EngineResult<T>> {
     const decoded = this.enter(method, schema, input, (args) => success(args));
     if (!decoded.ok) return decoded;
-    const context = this.connectionContext();
+    const context = this.connectionContext(decoded.value.mode);
     if (context === null) return failure("INVALID_INPUT");
     try {
       return await run(context, decoded.value);
     } catch (error) {
       if (!(error instanceof CredentialsKeyError)) throw error;
-      this.log("error", "SIM", "rpc.credentials_unavailable", method);
+      this.log("error", decoded.value.mode, "rpc.credentials_unavailable", method);
       return failure("CREDENTIALS_UNAVAILABLE");
     }
   }
 
   /** The Durable Object is named after the session user (engineFor); that name is the client id. */
-  private connectionContext(): ConnectionContext | null {
+  private connectionContext(mode: Mode): ConnectionContext | null {
     const userId = this.ctx.id.name;
     const tokens = this.tokensFor();
     if (userId === undefined || tokens === null) return null;
@@ -636,6 +650,7 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
       db: this.env.DB,
       userId,
       now: engineNow(this.env),
+      mode,
       cipher: () => createCipher(this.env.CREDENTIALS_KEY, this.env.CREDENTIALS_KEY_PREVIOUS),
       tokens,
     };

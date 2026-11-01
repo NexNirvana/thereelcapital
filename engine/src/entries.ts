@@ -30,6 +30,7 @@ import { cachedSymbolDetails } from "./symbol-details.ts";
 import { attempt } from "./broker/attempt.ts";
 import { connectionViewOf, type ConnectionContext } from "./connection.ts";
 import { loadEntryInputs, type EntryInputsCache } from "./entry-inputs.ts";
+import type { Mode } from "./mode.ts";
 import { logEvent } from "./events.ts";
 import { placeOnce } from "./placement.ts";
 import { newIntentId } from "./ids.ts";
@@ -132,12 +133,14 @@ function askOf(quote: Quote | undefined): EntryAsk | null {
   return { status: "fresh", price: quote.ask };
 }
 
-function openSymbols(sql: SqlStorage): string[] {
+function openSymbols(sql: SqlStorage, mode: Mode): string[] {
   return sql
     .exec<{ symbol: string }>(
-      `SELECT symbol FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'
+      `SELECT symbol FROM positions WHERE mode = ? AND status != 'CLOSED'
        UNION SELECT symbol FROM intents
-         WHERE mode = 'SIM' AND kind = 'entry' AND state IN ${PENDING_ENTRY_STATES}`,
+         WHERE mode = ? AND kind = 'entry' AND state IN ${PENDING_ENTRY_STATES}`,
+      mode,
+      mode,
     )
     .toArray()
     .map((row) => row.symbol);
@@ -146,7 +149,7 @@ function openSymbols(sql: SqlStorage): string[] {
 function guardEntry(ctx: ConnectionContext, sized: Sized): RejectionReason | null {
   const result = checkOrder(
     {
-      mode: "SIM",
+      mode: ctx.mode,
       accountId: sized.accountId,
       instrument:
         sized.assetType === "equity"
@@ -160,7 +163,7 @@ function guardEntry(ctx: ConnectionContext, sized: Sized): RejectionReason | nul
       clientId: ctx.userId,
       account: { id: sized.accountId, clientId: ctx.userId, type: sized.accountType, active: true },
       available: 0,
-      openSymbols: openSymbols(ctx.sql),
+      openSymbols: openSymbols(ctx.sql, ctx.mode),
       now: new Date(ctx.now),
     },
   );
@@ -175,17 +178,19 @@ interface LimitCounts {
 }
 
 /** What the limits count today, read synchronously (callers rely on that inside the reservation transaction). */
-export function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitCounts {
+export function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now" | "mode">): LimitCounts {
   const date = sessionDate(new Date(ctx.now));
   const counters = ctx.sql
     .exec<{ consumed: number; reserved: number }>(
-      "SELECT consumed, reserved FROM entry_counters WHERE mode = 'SIM' AND session_date = ?",
+      "SELECT consumed, reserved FROM entry_counters WHERE mode = ? AND session_date = ?",
+      ctx.mode,
       date,
     )
     .toArray()[0] ?? { consumed: 0, reserved: 0 };
   const open = ctx.sql
     .exec<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'",
+      "SELECT COUNT(*) AS n FROM positions WHERE mode = ? AND status != 'CLOSED'",
+      ctx.mode,
     )
     .one().n;
   // A settled external entry that never became a position is another client's purchase held back
@@ -193,9 +198,10 @@ export function limitCounts(ctx: Pick<ConnectionContext, "sql" | "now">): LimitC
   const reservedOpens = ctx.sql
     .exec<{ n: number }>(
       `SELECT COUNT(*) AS n FROM intents
-         WHERE mode = 'SIM' AND kind = 'entry' AND position_id IS NULL
+         WHERE mode = ? AND kind = 'entry' AND position_id IS NULL
            AND (state IN ${SLOT_HOLDING_STATES} OR filled_qty > 0)
            AND NOT (source = 'external' AND state IN ('FILLED', 'CANCELED', 'REJECTED'))`,
+      ctx.mode,
     )
     .one().n;
   return { ...counters, open, reservedOpens };
@@ -221,7 +227,7 @@ export interface EntryLimits {
 
 /** The numbers behind «x/2 posiciones · y/N entradas hoy», N being the client's own limit: the same counts that block an entry. */
 export function entryLimits(
-  ctx: Pick<ConnectionContext, "sql" | "now">,
+  ctx: Pick<ConnectionContext, "sql" | "now" | "mode">,
   maxDailyEntries: number,
 ): EntryLimits {
   const counts = limitCounts(ctx);
@@ -363,8 +369,9 @@ interface ExistingIntent extends Record<string, SqlStorageValue> {
 function existingIntent(ctx: ConnectionContext, intentId: string): ExistingIntent | undefined {
   return ctx.sql
     .exec<ExistingIntent>(
-      "SELECT account_id, symbol, qty, state FROM intents WHERE id = ? AND mode = 'SIM' AND kind = 'entry'",
+      "SELECT account_id, symbol, qty, state FROM intents WHERE id = ? AND mode = ? AND kind = 'entry'",
       intentId,
+      ctx.mode,
     )
     .toArray()[0];
 }
@@ -418,8 +425,9 @@ function reserve(
     if (limits.length > 0) return { kind: "blocked", reasons: limits };
 
     ctx.sql.exec(
-      `INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES ('SIM', ?, 0, 1)
+      `INSERT INTO entry_counters (mode, session_date, consumed, reserved) VALUES (?, ?, 0, 1)
        ON CONFLICT (mode, session_date) DO UPDATE SET reserved = reserved + 1`,
+      ctx.mode,
       sessionDate(new Date(ctx.now)),
     );
     const { quote } = sized;
@@ -427,8 +435,9 @@ function reserve(
       `INSERT INTO intents
          (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, size_applied,
           size_choice, quote_json, point_value, state, order_confirm_id, created_at, updated_at)
-       VALUES (?, 'SIM', 'entry', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
+       VALUES (?, ?, 'entry', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
       intentId,
+      ctx.mode,
       sized.accountId,
       sized.symbol,
       sized.assetType,
@@ -455,7 +464,8 @@ function reserve(
 /** Frees the daily reservation of an entry that never reached the market. The slot frees by itself: it is derived from the state. */
 function releaseReservation(ctx: ConnectionContext): void {
   ctx.sql.exec(
-    "UPDATE entry_counters SET reserved = reserved - 1 WHERE mode = 'SIM' AND session_date = ? AND reserved > 0",
+    "UPDATE entry_counters SET reserved = reserved - 1 WHERE mode = ? AND session_date = ? AND reserved > 0",
+    ctx.mode,
     sessionDate(new Date(ctx.now)),
   );
 }

@@ -8,6 +8,7 @@ import type {
   PositionsView,
 } from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
+import type { Mode } from "./mode.ts";
 import { MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
 import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
 import { LAST_OK_KEY, readConnection, type ConnectionContext } from "./connection.ts";
@@ -42,14 +43,16 @@ type PendingRow = {
 export function readPositionsView(
   sql: SqlStorage,
   now: number,
+  mode: Mode,
 ): Omit<PositionsView, "verification"> {
   const steps = new Map<string, ScaleOutStepState[]>();
   for (const row of sql
     .exec<StepRow>(
       `SELECT s.position_id, s.state
          FROM scaleout_steps s JOIN positions p ON p.id = s.position_id
-        WHERE p.mode = 'SIM' AND p.status != 'CLOSED'
+        WHERE p.mode = ? AND p.status != 'CLOSED'
         ORDER BY s.position_id, s.idx`,
+      mode,
     )
     .toArray()) {
     steps.set(row.position_id, [...(steps.get(row.position_id) ?? []), row.state]);
@@ -58,7 +61,8 @@ export function readPositionsView(
     .exec<PositionRow>(
       `SELECT id, account_id, symbol, underlying, expiry, strike, right, original_qty, sold_qty,
               protection_state, stop_pct, trailing_unlock_pct, trailing_pct
-         FROM positions WHERE mode = 'SIM' AND status != 'CLOSED' ORDER BY opened_on, symbol`,
+         FROM positions WHERE mode = ? AND status != 'CLOSED' ORDER BY opened_on, symbol`,
+      mode,
     )
     .toArray()
     .map((row) => ({
@@ -94,9 +98,10 @@ export function readPositionsView(
       `SELECT id, position_id, kind, state, qty, filled_qty,
               (broker_order_id IS NOT NULL AND source = 'app') AS has_broker_order
          FROM intents
-        WHERE mode = 'SIM' AND position_id IS NOT NULL AND kind != 'entry'
+        WHERE mode = ? AND position_id IS NOT NULL AND kind != 'entry'
           AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')
         ORDER BY created_at, id`,
+      mode,
     )
     .toArray()
     .map((row) => ({

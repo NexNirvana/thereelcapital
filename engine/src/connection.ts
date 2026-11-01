@@ -27,6 +27,8 @@ export interface ConnectionContext {
   /** The session user the Durable Object is named after; never a request value. */
   readonly userId: string;
   readonly now: number;
+  /** The trading mode this call serves: every query is scoped by it (a bound parameter). */
+  readonly mode: Mode;
   /** Built on demand: reading the status needs no key. Throws CredentialsKeyError when it is unusable. */
   readonly cipher: () => Promise<CredentialCipher>;
   /** The client's one refresher, owned by the Durable Object. */
@@ -250,7 +252,7 @@ export async function completeConnection(
   ctx.tokens.seed(tokens.accessToken, tokens.expiresInSeconds);
   logEvent(ctx, "info", "broker.connected", { accounts: listed.value.length });
   return success({
-    mode: "SIM",
+    mode: ctx.mode,
     status: "CONNECTED",
     health: { status: "ok" },
     entriesBlocked: entriesBlocked({ status: "ok" }, ctx),
@@ -298,10 +300,10 @@ export async function readConnection(ctx: ConnectionContext): Promise<Connection
 
 /** Synchronous: the accounts and the reconciliation hold live in the Durable Object's own storage. */
 export function connectionViewOf(
-  ctx: Pick<ConnectionContext, "sql" | "now" | "storage">,
+  ctx: Pick<ConnectionContext, "sql" | "now" | "storage" | "mode">,
   row: ConnectionRow | null,
 ): ConnectionView {
-  if (row === null) return { mode: "SIM", status: "NOT_CONNECTED" };
+  if (row === null) return { mode: ctx.mode, status: "NOT_CONNECTED" };
   const accounts = ctx.sql
     .exec<{ account_id: string; account_type: "Cash" | "Margin" }>(
       "SELECT account_id, account_type FROM broker_accounts WHERE mode = 'SIM' ORDER BY account_id",
@@ -314,7 +316,7 @@ export function connectionViewOf(
     now: ctx.now,
   });
   return {
-    mode: "SIM",
+    mode: ctx.mode,
     status: "CONNECTED",
     health,
     entriesBlocked: entriesBlocked(health, ctx),

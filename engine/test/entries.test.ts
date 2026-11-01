@@ -103,6 +103,7 @@ async function inClient<T>(
     });
     const ctx: EntryContext = {
       sql: state.storage.sql,
+      mode: "SIM",
       storage: state.storage,
       db: env.DB,
       userId: client.userId,

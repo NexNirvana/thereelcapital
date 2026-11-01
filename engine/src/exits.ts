@@ -89,8 +89,9 @@ function readPosition(ctx: ConnectionContext, positionId: string): PositionRow |
   return ctx.sql
     .exec<PositionRow>(
       `SELECT id, account_id, symbol, original_qty, sold_qty, status FROM positions
-        WHERE id = ? AND mode = 'SIM' AND status != 'CLOSED'`,
+        WHERE id = ? AND mode = ? AND status != 'CLOSED'`,
       positionId,
+      ctx.mode,
     )
     .toArray()[0];
 }
@@ -170,7 +171,7 @@ function reserve(
     const tradeAction = instrument.assetType === "equity" ? "SELL" : "SELLTOCLOSE";
     const guard = checkOrder(
       {
-        mode: "SIM",
+        mode: ctx.mode,
         accountId: position.account_id,
         instrument:
           instrument.assetType === "equity"
@@ -199,8 +200,9 @@ function reserve(
       `INSERT INTO intents
          (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, state,
           order_confirm_id, created_at, updated_at)
-       VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ARMED', ?, ?, ?)`,
       intentId,
+      ctx.mode,
       kind,
       position.account_id,
       position.id,
@@ -316,8 +318,9 @@ function readTarget(ctx: ConnectionContext, intentId: string): CancelTarget | un
   return ctx.sql
     .exec<CancelTarget>(
       `SELECT account_id, position_id, asset_type, state, broker_order_id FROM intents
-        WHERE id = ? AND mode = 'SIM' AND source = 'app' AND kind IN ('entry', 'exit')`,
+        WHERE id = ? AND mode = ? AND source = 'app' AND kind IN ('entry', 'exit')`,
       intentId,
+      ctx.mode,
     )
     .toArray()[0];
 }

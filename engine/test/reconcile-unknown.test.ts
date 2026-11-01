@@ -31,7 +31,7 @@ async function enter(ctx: EntryContext, symbol: string): Promise<string> {
 
 async function pass(ctx: EntryContext, broker: EntryContext["broker"]) {
   return reconcile(
-    { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+    { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: "SIM" },
     await readSnapshot(broker),
     PROTECTION,
   );

@@ -3,6 +3,7 @@
 // client, so there is no client id to filter by.
 
 import { nextCalendarDay, startOfSessionDay } from "#lib/domain/calendar.ts";
+import type { Mode } from "./mode.ts";
 import type { HistoryArgs } from "./rpc.ts";
 
 export const HISTORY_PAGE_SIZE = 25;
@@ -44,7 +45,7 @@ type EventRow = {
 const DIAGNOSTIC_EVENTS = "('sync.broker_error', 'sync.items_skipped')";
 
 export interface HistoryPage {
-  readonly mode: "SIM";
+  readonly mode: Mode;
   readonly intents: readonly IntentRow[];
   /** Newest events of the client; sent with the first page only, narrowed by date alone. */
   readonly events: readonly EventRow[];
@@ -133,7 +134,7 @@ export function readHistory(sql: SqlStorage, args: HistoryArgs): HistoryPage {
     .map((row) => row.account_id);
 
   return {
-    mode: "SIM",
+    mode: args.mode,
     intents,
     events,
     accounts,

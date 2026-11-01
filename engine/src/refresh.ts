@@ -10,7 +10,8 @@ import {
 } from "#lib/domain/config.ts";
 import type { StoredConnectionState } from "#lib/domain/connection.ts";
 import { UnknownKeyIdError, type CredentialCipher } from "./crypto.ts";
-import { logEvent } from "./events.ts";
+import { logConnectionEvent } from "./events.ts";
+import { activeModes } from "./mode.ts";
 import { refreshAccessToken } from "./tradestation/auth.ts";
 import { timedD1 } from "./timing.ts";
 
@@ -302,12 +303,12 @@ export class TokenRefresher {
       this.deps.changed?.();
       if (generation === this.#generation) this.deps.storage.kv.delete(UNSAVED_REFRESH_KEY);
       if (row.refresh_expires_at === null) {
-        logEvent({ sql, now }, "info", "broker.rotation_detected", { refreshExpiresAt });
+        logConnectionEvent({ sql, now }, "info", "broker.rotation_detected", { refreshExpiresAt });
       }
       this.#recovered(row, now);
     } catch {
       // The token stays in DO storage and the next refresh writes it, whatever the response says.
-      logEvent({ sql, now }, "error", "broker.rotation_not_saved");
+      logConnectionEvent({ sql, now }, "error", "broker.rotation_not_saved");
     }
   }
 
@@ -325,7 +326,7 @@ export class TokenRefresher {
 
   #recovered(row: ConnectionRow, now: number): void {
     if (row.status !== "ERROR") return;
-    logEvent({ sql: this.deps.sql, now }, "info", "broker.refresh_recovered");
+    logConnectionEvent({ sql: this.deps.sql, now }, "info", "broker.refresh_recovered");
   }
 
   /**
@@ -359,7 +360,7 @@ export class TokenRefresher {
     } catch {
       // The block above already holds; the status is written again by the next failed refresh.
     }
-    logEvent({ sql, now: clock() }, "warn", "broker.refresh_failed", {
+    logConnectionEvent({ sql, now: clock() }, "warn", "broker.refresh_failed", {
       state,
       reason,
       status: httpStatus ?? null,
@@ -377,9 +378,12 @@ export class TokenRefresher {
  */
 export function holdForReconciliation(storage: DurableObjectStorage): void {
   storage.transactionSync(() => {
-    storage.sql.exec(
-      "UPDATE positions SET protection_state = 'unverified' WHERE mode = 'SIM' AND status != 'CLOSED'",
-    );
+    for (const mode of activeModes()) {
+      storage.sql.exec(
+        "UPDATE positions SET protection_state = 'unverified' WHERE mode = ? AND status != 'CLOSED'",
+        mode,
+      );
+    }
     // A counter, not a flag, so markReconciled can tell a hold that happened while it waited.
     storage.kv.put(
       RECONCILIATION_PENDING_KEY,

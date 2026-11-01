@@ -34,7 +34,8 @@ export async function readOverview(ctx: ConnectionContext): Promise<ClientOvervi
   const positions: OverviewPosition[] = ctx.sql
     .exec<PositionRow>(
       `SELECT id, account_id, symbol, original_qty, sold_qty, protection_state, status
-         FROM positions WHERE mode = 'SIM' AND status != 'CLOSED' ORDER BY opened_on, symbol`,
+         FROM positions WHERE mode = ? AND status != 'CLOSED' ORDER BY opened_on, symbol`,
+      ctx.mode,
     )
     .toArray()
     .map((row) => ({
@@ -49,8 +50,9 @@ export async function readOverview(ctx: ConnectionContext): Promise<ClientOvervi
   const orders: OverviewOrder[] = ctx.sql
     .exec<OrderRow>(
       `SELECT id, kind, account_id, symbol, state, qty, filled_qty, created_at FROM intents
-         WHERE mode = 'SIM' AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')
+         WHERE mode = ? AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')
          ORDER BY created_at DESC, id`,
+      ctx.mode,
     )
     .toArray()
     .map((row) => ({

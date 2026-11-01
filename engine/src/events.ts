@@ -1,7 +1,7 @@
 // Operational log and errors of one client (docs/architecture.md#data-model). No P&L, no secrets.
 
 import { EVENT_RETENTION_MS } from "#lib/domain/config.ts";
-import type { Mode } from "./mode.ts";
+import { activeModes, type Mode } from "./mode.ts";
 
 export type EventLevel = "info" | "warn" | "error";
 
@@ -36,16 +36,26 @@ export function writeEvent(sql: SqlStorage, now: number, event: EngineEvent): vo
 }
 
 /**
- * The one-line event every engine module writes: SIM only, `message` is the type. `data` is limited to
- * counts, ids and statuses by the callers; the writer also scrubs secret-like keys.
+ * The one-line event every engine module writes, under the mode it concerns; `message` is the type.
+ * `data` is limited to counts, ids and statuses by the callers; the writer also scrubs secret-like keys.
  */
 export function logEvent(
+  ctx: { readonly sql: SqlStorage; readonly now: number; readonly mode: Mode },
+  level: EventLevel,
+  type: string,
+  data?: Readonly<Record<string, unknown>>,
+): void {
+  writeEvent(ctx.sql, ctx.now, { mode: ctx.mode, level, type, message: type, data });
+}
+
+/** An event about the broker connection, which serves every active mode: logged under each. */
+export function logConnectionEvent(
   ctx: { readonly sql: SqlStorage; readonly now: number },
   level: EventLevel,
   type: string,
   data?: Readonly<Record<string, unknown>>,
 ): void {
-  writeEvent(ctx.sql, ctx.now, { mode: "SIM", level, type, message: type, data });
+  for (const mode of activeModes()) logEvent({ ...ctx, mode }, level, type, data);
 }
 
 /** Drops a mode's events past the retention window (D22); scoped by mode to use `events_by_mode_at`. */
