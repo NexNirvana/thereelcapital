@@ -34,7 +34,7 @@ async function enter(ctx: EntryContext, symbol: string): Promise<string> {
 
 async function pass(ctx: EntryContext, broker: EntryContext["broker"]) {
   return reconcile(
-    { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+    { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: "SIM" },
     await readSnapshot(broker),
     PROTECTION,
   );
@@ -123,7 +123,11 @@ describe("applying order status and fills", () => {
       const decoded = await run(tsOrders.orders(made.transport, ["SIM-1"], skipped));
       expect(skipped).toEqual([]);
       const snapshot = { ...(await readSnapshot(sim.adapter)), orders: decoded };
-      await reconcile({ sql: ctx.sql, storage: ctx.storage, now: ctx.now }, snapshot, PROTECTION);
+      await reconcile(
+        { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: "SIM" },
+        snapshot,
+        PROTECTION,
+      );
 
       expect(intent(ctx, id)).toMatchObject({ state: "FILLED", avg_fill_price: 200_573_333 });
     });

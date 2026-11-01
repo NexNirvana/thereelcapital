@@ -20,7 +20,7 @@ describe("positions view expiration day", () => {
       );
       const closeAt = (now: number) =>
         Object.fromEntries(
-          readPositionsView(sql, now).positions.map((p) => [p.id, p.expiryCloseAt]),
+          readPositionsView(sql, now, "SIM").positions.map((p) => [p.id, p.expiryCloseAt]),
         );
       // 23:59 ET the day before, then 00:00 ET and 15:50 ET on the day.
       expect(closeAt(Date.UTC(2026, 10, 20, 4, 59, 59))).toEqual({ p1: null, p2: null });

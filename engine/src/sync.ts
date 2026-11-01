@@ -32,6 +32,7 @@ import {
   reconciliationPending,
   reconciliationTicket,
 } from "./refresh.ts";
+import { activeModes } from "./mode.ts";
 import { monitorProtection } from "./protection.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
 import { logEvent, pruneEvents, type EventLevel } from "./events.ts";
@@ -65,19 +66,24 @@ const DEGRADED_KEY = "sync_degraded";
  */
 export function syncWanted(storage: DurableObjectStorage): boolean {
   const { sql } = storage;
-  const connected =
-    sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM broker_accounts WHERE mode = 'SIM'").one()
-      .n > 0;
-  if (!connected) return false;
-  if (reconciliationPending(storage)) return true;
-  const open = sql
-    .exec<{ n: number }>(
-      `SELECT (SELECT COUNT(*) FROM positions WHERE mode = 'SIM' AND status != 'CLOSED')
-            + (SELECT COUNT(*) FROM intents WHERE mode = 'SIM'
-                AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')) AS n`,
-    )
-    .one().n;
-  return open > 0;
+  return activeModes().some((mode) => {
+    const connected =
+      sql
+        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM broker_accounts WHERE mode = ?", mode)
+        .one().n > 0;
+    if (!connected) return false;
+    if (reconciliationPending(storage)) return true;
+    const open = sql
+      .exec<{ n: number }>(
+        `SELECT (SELECT COUNT(*) FROM positions WHERE mode = ? AND status != 'CLOSED')
+              + (SELECT COUNT(*) FROM intents WHERE mode = ?
+                  AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')) AS n`,
+        mode,
+        mode,
+      )
+      .one().n;
+    return open > 0;
+  });
 }
 
 /** A pass completed within the minimum interval and nothing has asked for a new one since. */
@@ -104,7 +110,7 @@ export async function runSync(
   options: { readonly throttle?: boolean } = {},
 ): Promise<SyncResult> {
   const accounts = ctx.sql
-    .exec<{ account_id: string }>("SELECT account_id FROM broker_accounts WHERE mode = 'SIM'")
+    .exec<{ account_id: string }>("SELECT account_id FROM broker_accounts WHERE mode = ?", ctx.mode)
     .toArray()
     .map((row) => row.account_id);
   if (accounts.length === 0) return { reconciled: false, nextInMs: null };
@@ -119,7 +125,7 @@ export async function runSync(
 
   const settings = await protectionSettings(ctx);
   const summary = reconcile(
-    { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+    { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: ctx.mode },
     snapshot.value,
     settings,
   );
@@ -135,12 +141,12 @@ export async function runSync(
     ctx.storage.kv.delete(DEGRADED_KEY);
     logEvent(ctx, "info", "sync.recovered");
   }
-  pruneEvents(ctx.sql, ctx.now, "SIM");
+  pruneEvents(ctx.sql, ctx.now, ctx.mode);
   ctx.storage.kv.put(LAST_OK_KEY, wallNow(ctx));
   if (summary.unknownLeft > 0) {
     // A stuck intent waits for a human: log when the count changes, not on every tick.
     logOnce(
-      { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+      { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: ctx.mode },
       String(summary.unknownLeft),
       "warn",
       "sync.unknown_pending",
@@ -185,7 +191,7 @@ async function readSnapshot(
   reportSkipped(ctx, skipped);
 
   const details = new Map<string, SymbolDetails>();
-  for (const symbol of symbolsNeedingDetails(ctx.sql, positions.value)) {
+  for (const symbol of symbolsNeedingDetails(ctx.sql, positions.value, ctx.mode)) {
     const found = await cachedSymbolDetails(ctx, symbol);
     if (!found.ok) return found;
     details.set(symbol, found.value);
@@ -219,9 +225,11 @@ function skippedThatCouldBeOurs(
       const params = item.symbol === null ? [] : [item.symbol];
       if (
         any(
-          `SELECT 1 FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'${bySymbol}
-           UNION ALL SELECT 1 FROM intents WHERE mode = 'SIM' AND ${live}${bySymbol}`,
+          `SELECT 1 FROM positions WHERE mode = ? AND status != 'CLOSED'${bySymbol}
+           UNION ALL SELECT 1 FROM intents WHERE mode = ? AND ${live}${bySymbol}`,
+          ctx.mode,
           ...params,
+          ctx.mode,
           ...params,
         )
       ) {
@@ -230,12 +238,15 @@ function skippedThatCouldBeOurs(
     } else if (
       item.orderId === null
         ? any(
-            `SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+            `SELECT 1 FROM intents WHERE mode = ? AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+            ctx.mode,
           )
         : any(
-            `SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id = ? AND ${live}
-             UNION ALL SELECT 1 FROM intents WHERE mode = 'SIM' AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+            `SELECT 1 FROM intents WHERE mode = ? AND broker_order_id = ? AND ${live}
+             UNION ALL SELECT 1 FROM intents WHERE mode = ? AND broker_order_id IS NULL AND state IN ('SENT', 'UNKNOWN')`,
+            ctx.mode,
             item.orderId,
+            ctx.mode,
           )
     ) {
       return item;
@@ -250,7 +261,7 @@ function reportSkipped(ctx: SyncContext, skipped: readonly BrokerSkip[]): void {
   const kinds = [...new Set(skipped.map((item) => `${item.operation}:${item.field}`))].sort();
   const [operation = "", ...field] = (kinds[0] ?? "").split(":");
   logOnce(
-    { sql: ctx.sql, storage: ctx.storage, now: ctx.now },
+    { sql: ctx.sql, storage: ctx.storage, now: ctx.now, mode: ctx.mode },
     kinds.join(","),
     "warn",
     "sync.items_skipped",
@@ -285,7 +296,8 @@ async function readHistory(
   const missing = ctx.sql
     .exec<{ created_at: number; broker_order_id: string | null }>(
       `SELECT created_at, broker_order_id FROM intents
-        WHERE mode = 'SIM' AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')`,
+        WHERE mode = ? AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED')`,
+      ctx.mode,
     )
     .toArray()
     .filter((row) => row.broker_order_id === null || !listed.has(row.broker_order_id));

@@ -9,6 +9,7 @@ import type { BrokerError } from "./broker/errors.ts";
 import { CHAIN_STRIKES_CACHE_MS } from "#lib/domain/config.ts";
 import { logEvent } from "./events.ts";
 import { cachedSymbolDetails } from "./symbol-details.ts";
+import type { Mode } from "./mode.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { MISSING_SCOPE_CODE } from "./tradestation/http.ts";
 
@@ -23,6 +24,7 @@ interface ChainContext {
   readonly storage: DurableObjectStorage;
   readonly broker: BrokerAdapterShape;
   readonly now: number;
+  readonly mode: Mode;
 }
 
 /** One side of a strike. A side with no two-sided market is `null`: shown as missing, never as 0. */

@@ -114,7 +114,8 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
     .exec<WatchedPosition>(
       `SELECT id, symbol, original_qty, sold_qty, expiry, avg_entry_price, stop_pct, trailing_pct, trailing_peak, trailing_level, protection_state,
               EXISTS (SELECT 1 FROM intents WHERE position_id = positions.id AND state = 'UNKNOWN') AS has_unknown
-         FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'`,
+         FROM positions WHERE mode = ? AND status != 'CLOSED'`,
+      ctx.mode,
     )
     .toArray();
   if (watched.length === 0) return;
@@ -163,7 +164,7 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
         ? "trailing"
         : "stop";
     const reason = stopHit ? kind : "expiry";
-    const result = await stopExit(ctx, row.id, "SIM", kind);
+    const result = await stopExit(ctx, row.id, ctx.mode, kind);
     const outcome = !result.ok
       ? result.code
       : result.value.status === "BLOCKED"

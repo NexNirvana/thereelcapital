@@ -48,11 +48,18 @@ async function inside<T>(
     storage: DurableObjectStorage;
     broker: BrokerAdapterShape;
     now: number;
+    mode: "SIM";
   }) => Promise<T>,
 ) {
   const stub = env.COORDINATOR.getByName("chain-direct");
   return runInDurableObject(stub, (_i, state) =>
-    body({ sql: state.storage.sql, storage: state.storage, broker, now: NOW - 20_000 }),
+    body({
+      sql: state.storage.sql,
+      storage: state.storage,
+      broker,
+      now: NOW - 20_000,
+      mode: "SIM",
+    }),
   );
 }
 

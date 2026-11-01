@@ -10,6 +10,7 @@ import { ORDER_MATCH_SKEW_MS, SEND_GRACE_MS } from "#lib/domain/config.ts";
 import type { BrokerOrder, BrokerPosition, SymbolDetails } from "./broker/adapter.ts";
 import { logEvent, type EventLevel } from "./events.ts";
 import { settleStep } from "./ledger.ts";
+import type { Mode } from "./mode.ts";
 
 /** What was read from the broker for the client's accounts, before the transaction starts. */
 export interface BrokerSnapshot {
@@ -32,6 +33,7 @@ export interface ReconcileContext {
   readonly sql: SqlStorage;
   readonly storage: DurableObjectStorage;
   readonly now: number;
+  readonly mode: Mode;
 }
 
 export interface ReconcileSummary {
@@ -106,7 +108,8 @@ export function reconcile(
     const orders = indexOrders(snapshot);
     const pending = ctx.sql
       .exec<IntentRow>(
-        "SELECT * FROM intents WHERE mode = 'SIM' AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED') ORDER BY created_at",
+        "SELECT * FROM intents WHERE mode = ? AND state NOT IN ('FILLED', 'CANCELED', 'REJECTED') ORDER BY created_at",
+        ctx.mode,
       )
       .toArray();
 
@@ -128,7 +131,8 @@ export function reconcile(
 
     const unknownLeft = ctx.sql
       .exec<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM intents WHERE mode = 'SIM' AND state = 'UNKNOWN'",
+        "SELECT COUNT(*) AS n FROM intents WHERE mode = ? AND state = 'UNKNOWN'",
+        ctx.mode,
       )
       .one().n;
     return { unknownLeft };
@@ -224,8 +228,9 @@ function settleReservation(
   ctx.sql.exec(
     `UPDATE entry_counters
         SET consumed = consumed + ?, reserved = MAX(reserved - 1, 0)
-      WHERE mode = 'SIM' AND session_date = ?`,
+      WHERE mode = ? AND session_date = ?`,
     outcome.consumed ? 1 : 0,
+    ctx.mode,
     sessionDate(new Date(intent.created_at)),
   );
 }
@@ -244,8 +249,9 @@ function createPositions(
   const entries = ctx.sql
     .exec<IntentRow>(
       `SELECT * FROM intents
-        WHERE mode = 'SIM' AND kind = 'entry' AND position_id IS NULL AND filled_qty > 0
+        WHERE mode = ? AND kind = 'entry' AND position_id IS NULL AND filled_qty > 0
           AND state IN ('FILLED', 'CANCELED', 'REJECTED')`,
+      ctx.mode,
     )
     .toArray();
   for (const entry of entries) {
@@ -266,7 +272,8 @@ function createPositions(
     }
     const open = ctx.sql
       .exec<{ id: string }>(
-        "SELECT id FROM positions WHERE mode = 'SIM' AND symbol = ? AND status != 'CLOSED'",
+        "SELECT id FROM positions WHERE mode = ? AND symbol = ? AND status != 'CLOSED'",
+        ctx.mode,
         entry.symbol,
       )
       .toArray()[0];
@@ -322,8 +329,9 @@ function insertPosition(
        (id, mode, account_id, symbol, underlying, expiry, strike, right, point_value, original_qty,
         sold_qty, avg_entry_price, stop_pct, trailing_unlock_pct, protection_state, status, opened_on,
         source)
-     VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'none', 'OPEN', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'none', 'OPEN', ?, ?)`,
     position.id,
+    ctx.mode,
     position.accountId,
     position.symbol,
     option?.underlying ?? null,
@@ -340,8 +348,9 @@ function insertPosition(
   );
   for (const [idx] of SCALE_OUT_STEPS.entries()) {
     ctx.sql.exec(
-      "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, 'SIM', ?, 'available')",
+      "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, ?, ?, 'available')",
       position.id,
+      ctx.mode,
       idx,
     );
   }
@@ -364,7 +373,8 @@ function syncPositions(
 ): void {
   const open = ctx.sql
     .exec<PositionRow>(
-      "SELECT id, account_id, symbol, original_qty, sold_qty FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'",
+      "SELECT id, account_id, symbol, original_qty, sold_qty FROM positions WHERE mode = ? AND status != 'CLOSED'",
+      ctx.mode,
     )
     .toArray();
   for (const position of open) {
@@ -646,7 +656,8 @@ function adoptOrders(
       ? null
       : ctx.sql
           .exec<{ id: string }>(
-            "SELECT id FROM positions WHERE mode = 'SIM' AND account_id = ? AND symbol = ? AND status != 'CLOSED'",
+            "SELECT id FROM positions WHERE mode = ? AND account_id = ? AND symbol = ? AND status != 'CLOSED'",
+            ctx.mode,
             order.accountId,
             order.symbol,
           )
@@ -658,8 +669,9 @@ function adoptOrders(
       `INSERT INTO intents
          (id, mode, kind, account_id, position_id, symbol, asset_type, trade_action, qty, state,
           order_confirm_id, broker_order_id, filled_qty, avg_fill_price, created_at, updated_at, source)
-       VALUES (?, 'SIM', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external')`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external')`,
       id,
+      ctx.mode,
       entry ? "entry" : "exit",
       order.accountId,
       position?.id ?? null,
@@ -703,12 +715,14 @@ function adoptPositions(
     if (ctx.storage.kv.get(sharedHoldKey(held.accountId, held.symbol)) !== undefined) continue;
     const known = ctx.sql
       .exec<{ n: number }>(
-        `SELECT (SELECT COUNT(*) FROM positions WHERE mode = 'SIM' AND symbol = ? AND status != 'CLOSED')
-              + (SELECT COUNT(*) FROM intents WHERE mode = 'SIM' AND kind = 'entry' AND symbol = ?
+        `SELECT (SELECT COUNT(*) FROM positions WHERE mode = ? AND symbol = ? AND status != 'CLOSED')
+              + (SELECT COUNT(*) FROM intents WHERE mode = ? AND kind = 'entry' AND symbol = ?
                   AND position_id IS NULL
                   AND (state IN ('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')
                        OR filled_qty > 0)) AS n`,
+        ctx.mode,
         held.symbol,
+        ctx.mode,
         held.symbol,
       )
       .one().n;
@@ -740,20 +754,23 @@ function adoptPositions(
 export function symbolsNeedingDetails(
   sql: SqlStorage,
   positions: readonly BrokerPosition[],
+  mode: Mode,
 ): string[] {
   const fromEntries = sql
     .exec<{ symbol: string }>(
       `SELECT DISTINCT symbol FROM intents
-        WHERE mode = 'SIM' AND kind = 'entry' AND asset_type = 'option' AND position_id IS NULL
+        WHERE mode = ? AND kind = 'entry' AND asset_type = 'option' AND position_id IS NULL
           AND (state IN ('ARMED', 'SENT', 'ACKNOWLEDGED', 'PARTIAL', 'CANCEL_PENDING', 'UNKNOWN')
                OR filled_qty > 0)`,
+      mode,
     )
     .toArray()
     .map((row) => row.symbol);
   const open = new Set(
     sql
       .exec<{ symbol: string }>(
-        "SELECT symbol FROM positions WHERE mode = 'SIM' AND status != 'CLOSED'",
+        "SELECT symbol FROM positions WHERE mode = ? AND status != 'CLOSED'",
+        mode,
       )
       .toArray()
       .map((row) => row.symbol),

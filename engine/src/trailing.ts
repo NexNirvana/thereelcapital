@@ -44,8 +44,9 @@ function readPosition(ctx: ExitContext, positionId: string): PositionRow | undef
   return ctx.sql
     .exec<PositionRow>(
       `SELECT symbol, original_qty, sold_qty, trailing_unlock_pct, trailing_pct FROM positions
-        WHERE id = ? AND mode = 'SIM' AND status != 'CLOSED'`,
+        WHERE id = ? AND mode = ? AND status != 'CLOSED'`,
       positionId,
+      ctx.mode,
     )
     .toArray()[0];
 }
