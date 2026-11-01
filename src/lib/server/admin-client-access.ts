@@ -124,6 +124,24 @@ export const settingsErrors = {
   },
 } as const;
 
+export const realTradingErrors = {
+  unchanged: {
+    status: 409,
+    code: "REAL_TRADING_UNCHANGED",
+    message: "El modo REAL ya estaba en ese estado.",
+  },
+  changedMeanwhile: {
+    status: 409,
+    code: "REAL_TRADING_CHANGED",
+    message: "El modo REAL cambió mientras lo editabas. Recarga la página.",
+  },
+  unconfirmed: {
+    status: 400,
+    code: "UNCONFIRMED",
+    message: "Confirma que el cliente operará con dinero real.",
+  },
+} as const;
+
 export const nameErrors = {
   nameInvalid: {
     status: 422,
@@ -141,6 +159,7 @@ type Failure =
   | (typeof nameErrors)[keyof typeof nameErrors]
   | (typeof accessErrors)[keyof typeof accessErrors]
   | (typeof settingsErrors)[keyof typeof settingsErrors]
+  | (typeof realTradingErrors)[keyof typeof realTradingErrors]
   | typeof guardErrors.reauthRequired;
 export type Outcome<T = Record<never, never>> = ({ ok: true } & T) | { ok: false; error: Failure };
 
@@ -179,6 +198,7 @@ const SettingsRow = Schema.Struct({
   trailingUnlockPct: Schema.Number,
   maxDailyEntries: Schema.Number,
 });
+const RealTradingRow = Schema.Struct({ enabled: Schema.Literals([0, 1]) });
 export type ClientSettings = typeof SettingsRow.Type;
 
 export type LinkState = "none" | "open" | "used" | "expired" | "revoked";
@@ -195,6 +215,8 @@ export interface ClientDetail {
   settings: ClientSettings | null;
   /** Lowest SIZE (whole USD) the form accepts: SIZE never goes below the stored one. */
   minSizeUsd: number | null;
+  /** Lock 2 of REAL mode (D52): null only when the client has no settings row. */
+  realTradingEnabled: boolean | null;
   /** The fixed open positions limit, shown read-only (docs/product-spec.md#parameters). */
   limits: { openPositions: number };
   /** Allowed ranges for the form's hints; the server re-checks them with the domain validators. */
@@ -249,6 +271,14 @@ async function loadSettings<S extends AccessStatement>(db: AccessDb<S>, userId: 
   return row === null ? null : Schema.decodeUnknownSync(SettingsRow)(row);
 }
 
+async function loadRealTrading<S extends AccessStatement>(db: AccessDb<S>, userId: string) {
+  const row = await db
+    .prepare(`SELECT real_trading_enabled AS enabled FROM client_settings WHERE user_id = ?`)
+    .bind(userId)
+    .first();
+  return row === null ? null : Schema.decodeUnknownSync(RealTradingRow)(row).enabled === 1;
+}
+
 /** The detail page's data. Hashes, tokens and credential material are never selected. */
 export async function getClientDetail<S extends AccessStatement>(
   db: AccessDb<S>,
@@ -256,7 +286,7 @@ export async function getClientDetail<S extends AccessStatement>(
   now = Date.now(),
 ): Promise<ClientDetail> {
   const profile = await loadTarget(db, rawId);
-  const [sessions, links, settings] = await Promise.all([
+  const [sessions, links, settings, realTradingEnabled] = await Promise.all([
     db
       .prepare(
         `SELECT "id" AS id, "createdAt" AS createdAt, "expiresAt" AS expiresAt, "userAgent" AS userAgent,
@@ -273,6 +303,7 @@ export async function getClientDetail<S extends AccessStatement>(
       .bind(profile.id)
       .all(),
     loadSettings(db, profile.id),
+    loadRealTrading(db, profile.id),
   ]);
   const [latest] = Schema.decodeUnknownSync(Schema.Array(LinkRow))(links.results);
   const linkState: LinkState = !latest
@@ -295,6 +326,7 @@ export async function getClientDetail<S extends AccessStatement>(
     link: { state: linkState, expiresAt: latest?.expiresAt ?? null },
     settings,
     minSizeUsd: settings?.sizeUsd ?? null,
+    realTradingEnabled,
     limits: { openPositions: MAX_OPEN_POSITIONS },
     bounds: {
       stopPct: STOP_PCT_BOUNDS,
@@ -772,5 +804,56 @@ export function updateClientSettings<L extends GuardLocals, S extends AccessStat
         ),
     ]);
     return updated?.meta.changes === 1 ? { ok: true } : refuse(settingsErrors.changedMeanwhile);
+  });
+}
+
+// Only these literals; anything else is INVALID_INPUT. Turning REAL on also needs `confirmed`,
+// checked here and not only by the form's required checkbox, like the recovery confirmation.
+const RealTradingForm = Schema.Struct({
+  realTrading: Schema.Literals(["on", "off"]),
+  confirmed: Schema.optional(Schema.Literal("on")),
+});
+
+/**
+ * Turns REAL mode on or off for one client (lock 2 of D52): admin only, passkey within 10
+ * minutes, the target a non-admin client from the route. It only sets the flag; the engine does
+ * not read it yet and the deployment switch (lock 1) stays the owner's. The UPDATE matches the
+ * value the check ran against and the audit row (before and after) lands in the same batch.
+ * Turning it on needs the `confirmed` field. Repeating the current value is refused with no write and no audit row, like unchanged settings.
+ */
+export function setClientRealTrading<L extends GuardLocals, S extends AccessStatement>(
+  event: GuardEvent<L>,
+  { db }: Context<S>,
+  targetId: string,
+  form: unknown,
+  now = Date.now(),
+): Promise<Outcome> {
+  return guarded(event, db, targetId, now, async (actor, target) => {
+    const input = decode(RealTradingForm, form);
+    const enabled = input.realTrading === "on";
+    if (enabled && input.confirmed === undefined) return refuse(realTradingErrors.unconfirmed);
+    const before = await loadRealTrading(db, target.id);
+    if (before === null) return refuse(settingsErrors.missing);
+    if (before === enabled) return refuse(realTradingErrors.unchanged);
+    const [updated] = await db.batch([
+      db
+        .prepare(
+          `UPDATE client_settings SET real_trading_enabled = ?, updated_at = ?
+           WHERE user_id = ? AND real_trading_enabled = ?`,
+        )
+        .bind(enabled ? 1 : 0, now, target.id, before ? 1 : 0),
+      db
+        .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`)
+        .bind(
+          crypto.randomUUID(),
+          now,
+          actor.user.id,
+          "client_settings.real_trading",
+          target.id,
+          JSON.stringify({ realTradingEnabled: before }),
+          JSON.stringify({ realTradingEnabled: enabled }),
+        ),
+    ]);
+    return updated?.meta.changes === 1 ? { ok: true } : refuse(realTradingErrors.changedMeanwhile);
   });
 }

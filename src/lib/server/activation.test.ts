@@ -279,6 +279,8 @@ describe("createClient", () => {
         trailing_unlock_pct: DEFAULT_TRAILING_UNLOCK_PCT,
         // The column default of the migration, which must match DEFAULT_DAILY_ENTRIES.
         max_daily_entries: DEFAULT_DAILY_ENTRIES,
+        // New clients start with REAL off (D52 lock 2).
+        real_trading_enabled: 0,
         updated_at: now,
       },
     ]);

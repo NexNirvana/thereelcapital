@@ -26,6 +26,7 @@ const actions = [
   "updateSettings",
   "rename",
   "recover",
+  "setRealTrading",
 ];
 
 // A client with a session, as the page lists it; `passkey` makes them an active client.
@@ -368,4 +369,51 @@ test("an admin recovers another admin from the list on /admin, never their own a
   expect((await page.request.get(`/admin/administradores/${actor}`)).status()).toBe(404);
   const client = await seedPendingClient();
   expect((await page.request.get(`/admin/administradores/${client.userId}`)).status()).toBe(404);
+});
+
+test("turns REAL mode on and off for one client with an audit row each time", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { role: "admin" });
+  const client = await seedPendingClient();
+  const other = await seedPendingClient();
+  const realOf = (userId: string) =>
+    d1(`SELECT real_trading_enabled AS enabled FROM client_settings WHERE user_id = '${userId}'`);
+  await page.goto(`/admin/clientes/${client.userId}`, { waitUntil: "networkidle" });
+
+  const section = page.getByRole("region", { name: "Modo REAL" });
+  await expect(section.getByText("Desactivado", { exact: true })).toBeVisible();
+  await expect(section.getByText("US$20,000 por entrada")).toBeVisible();
+  expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
+
+  // The confirmation is a required checkbox: without it nothing is sent.
+  await section.getByRole("button", { name: "Activar REAL" }).click();
+  expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
+  await section.getByLabel("Confirmo que el cliente operará con dinero real").check();
+  await section.getByRole("button", { name: "Activar REAL" }).click();
+  await expect(section.getByText("Activado", { exact: true })).toBeVisible();
+  expect(realOf(client.userId)).toEqual([{ enabled: 1 }]);
+  expect(realOf(other.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.real_trading", client.userId)).toBe(1);
+
+  await section.getByRole("button", { name: "Desactivar REAL" }).click();
+  await expect(section.getByText("Desactivado", { exact: true })).toBeVisible();
+  expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.real_trading", client.userId)).toBe(2);
+
+  const unconfirmed = await page.request.post(`/admin/clientes/${client.userId}?/setRealTrading`, {
+    form: { realTrading: "on" },
+    headers: { origin, accept: "application/json" },
+  });
+  expect(await unconfirmed.text()).toContain("UNCONFIRMED");
+  expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
+
+  const invalid = await page.request.post(`/admin/clientes/${client.userId}?/setRealTrading`, {
+    form: { realTrading: "enabled" },
+    headers: { origin, accept: "application/json" },
+  });
+  expect(await invalid.text()).toContain("INVALID_INPUT");
+  expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.real_trading", client.userId)).toBe(2);
 });

@@ -1,4 +1,4 @@
-// Which trading modes a client may use right now (docs/domain-rules.md#trading-modes, D52).
+// Which trading modes a client may use right now (docs/domain-rules.md#11-trading-modes-d52, D52).
 // SIM is always open. REAL needs the deployment switch (lock 1) and, for entries, the client's
 // switch (lock 2). The account lock (3) and the transport lock (4) are checked per order, not here.
 
