@@ -114,6 +114,10 @@ Order: `bunx wrangler d1 migrations apply DB --remote`, then the engine Worker, 
 - Retention: 6 years for orders, fills, events and audit, and no deletion code exists (D22 in [decisions.md](decisions.md)). Do not delete rows by hand.
 - D1 backup: Time Travel restore is **not verified** in this project; check the Cloudflare D1 documentation before relying on it.
 
+## Closing `REAL_TRADING`
+
+Never set `REAL_TRADING` back to `disabled` while a client has an open REAL position or an unfinished REAL intent: with the switch closed the engine serves SIM only, so the stop, trailing and expiry protections of those positions stop and nothing watches them. Close every REAL position first (the client sells them or their protections close them; turning the client's REAL flag off only blocks new REAL entries and does not close anything), confirm there are none left, then change the variable in a PR.
+
 ## Connecting a client's TradeStation key
 
 By default (decision D35) the client connects by pasting the address of the localhost page that does not load; nothing has to be registered on their key (`CONNECT_REDIRECT_MODE`, `src/lib/domain/config.ts`). Tell them: save the key and secret on `/conexion`, log in at TradeStation in the tab that opens, allow, then copy the whole address of the next page (it will not load, which is expected) and paste it into the field «Dirección copiada». If it fails with «No reconocemos esa dirección», the address must start with `http://localhost:3000`; with «El enlace de autorización no es válido o venció», the 10 minute window passed or it was already used, so start again. A key that rejects `http://localhost:3000` (callbacks edited by TradeStation) needs registered mode. Never ask a client to send you the pasted address: it holds a one-time code.

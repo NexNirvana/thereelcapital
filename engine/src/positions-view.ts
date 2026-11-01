@@ -8,7 +8,7 @@ import type {
   PositionsView,
 } from "#lib/domain/positions-view.ts";
 import type { ScaleOutStepState } from "#lib/domain/scaleout.ts";
-import type { Mode } from "./mode.ts";
+import { modeKey, type Mode } from "./mode.ts";
 import { MAX_OPEN_POSITIONS } from "#lib/domain/guards.ts";
 import { expiryCloseAt, isExpirationDay } from "#lib/domain/expiry.ts";
 import { LAST_OK_KEY, readConnection, type ConnectionContext } from "./connection.ts";
@@ -130,7 +130,10 @@ export function readPositionsView(
 export async function readVerification(ctx: ConnectionContext): Promise<PositionsVerification> {
   const connection = await readConnection(ctx).catch(() => null);
   if (connection === null) {
-    return { status: "unverified", lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null };
+    return {
+      status: "unverified",
+      lastSyncAt: ctx.storage.kv.get<number>(modeKey(LAST_OK_KEY, ctx.mode)) ?? null,
+    };
   }
   if (connection.status === "CONNECTED" && !connection.entriesBlocked) {
     return { status: "verified" };

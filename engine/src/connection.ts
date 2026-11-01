@@ -11,7 +11,7 @@ import {
 import { holdForReconciliation, reconciliationPending, type TokenRefresher } from "./refresh.ts";
 import { failure, success, type EngineResult } from "./rpc.ts";
 import { logEvent } from "./events.ts";
-import type { Mode } from "./mode.ts";
+import { modeKey, type Mode } from "./mode.ts";
 import { listTradableAccounts, type BrokerAccount } from "./tradestation/accounts.ts";
 import { authorizeUrl, exchangeCode, revokeRefreshToken } from "./tradestation/auth.ts";
 import { SIM_GATE, type BrokerFailure } from "./tradestation/endpoints.ts";
@@ -260,7 +260,7 @@ export async function completeConnection(
     accounts: listed.value,
     refreshExpiresAt,
     lastOkAt: ctx.now,
-    lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null,
+    lastSyncAt: ctx.storage.kv.get<number>(modeKey(LAST_OK_KEY, ctx.mode)) ?? null,
   });
 }
 
@@ -307,7 +307,8 @@ export function connectionViewOf(
   if (row === null) return { mode: ctx.mode, status: "NOT_CONNECTED" };
   const accounts = ctx.sql
     .exec<{ account_id: string; account_type: "Cash" | "Margin" }>(
-      "SELECT account_id, account_type FROM broker_accounts WHERE mode = 'SIM' ORDER BY account_id",
+      "SELECT account_id, account_type FROM broker_accounts WHERE mode = ? ORDER BY account_id",
+      ctx.mode,
     )
     .toArray()
     .map(({ account_id, account_type }) => ({ accountId: account_id, accountType: account_type }));
@@ -324,7 +325,7 @@ export function connectionViewOf(
     accounts,
     refreshExpiresAt: row.refresh_expires_at,
     lastOkAt: row.last_ok_at,
-    lastSyncAt: ctx.storage.kv.get<number>(LAST_OK_KEY) ?? null,
+    lastSyncAt: ctx.storage.kv.get<number>(modeKey(LAST_OK_KEY, ctx.mode)) ?? null,
   };
 }
 
@@ -398,8 +399,6 @@ export async function disconnect(
     if (removed.meta.changes === 0) return { revoked, sharedKey };
   }
   ctx.tokens.forget();
-  // Before the cache goes: a failure here leaves everything for the next disconnect (D49 bindings).
-  await unbindRealAccounts(ctx.db, ctx.userId);
   ctx.storage.transactionSync(() => {
     ctx.sql.exec("DELETE FROM broker_accounts");
     ctx.sql.exec("DELETE FROM oauth_attempts");
@@ -411,5 +410,8 @@ export async function disconnect(
     revoked,
     sharedKey,
   });
+  // Last, after the local state is clear: if D1 fails here the RPC fails, and a second disconnect
+  // (no connection row left) runs this again, so the live accounts are never bound for good (D49).
+  await unbindRealAccounts(ctx.db, ctx.userId);
   return { revoked, sharedKey };
 }

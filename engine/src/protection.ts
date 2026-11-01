@@ -11,6 +11,7 @@ import { nextTrailing, shouldExit, stopLevel, type TrailingState } from "#lib/do
 import { attempt } from "./broker/attempt.ts";
 import type { Quote } from "./broker/adapter.ts";
 import { logEvent } from "./events.ts";
+import { modeKey } from "./mode.ts";
 import { stopExit, type ExitContext } from "./exits.ts";
 import { committedQty } from "./ledger.ts";
 import { reconciliationPending } from "./refresh.ts";
@@ -127,13 +128,13 @@ export async function monitorProtection(ctx: ExitContext): Promise<void> {
       setState(ctx, row.id, "unverified");
       noteExpiryClosePending(ctx, row, "quotes_unavailable");
     }
-    if (ctx.storage.kv.get(QUOTES_DEGRADED_KEY) !== quotes.error._tag) {
-      ctx.storage.kv.put(QUOTES_DEGRADED_KEY, quotes.error._tag);
+    if (ctx.storage.kv.get(modeKey(QUOTES_DEGRADED_KEY, ctx.mode)) !== quotes.error._tag) {
+      ctx.storage.kv.put(modeKey(QUOTES_DEGRADED_KEY, ctx.mode), quotes.error._tag);
       logEvent(ctx, "warn", "protection.quotes_unavailable", { failure: quotes.error._tag });
     }
     return;
   }
-  ctx.storage.kv.delete(QUOTES_DEGRADED_KEY);
+  ctx.storage.kv.delete(modeKey(QUOTES_DEGRADED_KEY, ctx.mode));
   const bySymbol = new Map(quotes.value.map((quote) => [quote.symbol, quote]));
 
   for (const row of watched) {
