@@ -77,7 +77,7 @@ import {
 import type { ClientOverview } from "#lib/domain/overview.ts";
 import type { PositionsView } from "#lib/domain/positions-view.ts";
 import { Effect, type Schema } from "effect";
-import { activeModes, type Mode } from "./mode.ts";
+import { activeModes, isRealTradingOpen, type Mode } from "./mode.ts";
 import { logColo } from "./timing.ts";
 
 /** The `_tag` of a typed error, or "unknown": enough to tell failures apart without their detail. */
@@ -598,6 +598,9 @@ export class ClientCoordinator extends DurableObject<EngineEnv> {
   private brokerFor(ctx: ConnectionContext): BrokerAdapterShape | null {
     if (this.#broker !== null) return this.#broker;
     const resolved = resolveBroker({
+      // The Durable Object serves SIM only until the engine issue of D52 adds REAL.
+      mode: "SIM",
+      realTrading: isRealTradingOpen(this.env),
       settings: this.env,
       userId: ctx.userId,
       now: () => this.#now(),

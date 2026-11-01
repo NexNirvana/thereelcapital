@@ -4,6 +4,7 @@
 // query, symbol, account id, token or body.
 
 import type { BrokerOperation } from "./broker/errors.ts";
+import type { Mode } from "./mode.ts";
 
 /** Wall-clock milliseconds; sub-millisecond precision is unavailable in workerd and not needed. */
 const nowMs = (): number => Date.now();
@@ -12,13 +13,18 @@ function emit(event: string, fields: Readonly<Record<string, string | number | n
   console.log(JSON.stringify({ event, ...fields }));
 }
 
-/** `status` is null when no response arrived (timeout, network); `ms` is then the time to the failure. */
+/**
+ * `status` is null when no response arrived (timeout, network); `ms` is then the time to the failure.
+ * `mode` is null for the auth tenant, which serves both modes; the rest shows in production logs
+ * that no REAL request was sent.
+ */
 export function logBrokerRequest(
   operation: BrokerOperation | "auth",
   status: number | null,
   startedAt: number,
+  mode: Mode | null,
 ): void {
-  emit("broker.request", { operation, status, ms: nowMs() - startedAt });
+  emit("broker.request", { operation, mode, status, ms: nowMs() - startedAt });
 }
 
 export const startTimer = nowMs;

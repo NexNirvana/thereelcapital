@@ -7,7 +7,7 @@ import { Context, type Effect } from "effect";
 import type { BrokerError } from "./errors.ts";
 
 /** Who answers: shown next to anything that comes from the simulation. */
-export type BrokerSource = "tradestation-sim" | "local-sim";
+export type BrokerSource = "tradestation-sim" | "tradestation-real" | "local-sim";
 
 export const LOCAL_SIM_LABEL = "simulación local";
 

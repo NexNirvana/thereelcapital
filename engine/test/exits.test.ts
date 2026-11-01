@@ -427,6 +427,7 @@ describe("the SIM guard", () => {
     const script = scriptedFetch(() => json(accountsFixture));
     const made = makeTradeStationAdapter({
       mode: "SIM",
+      realTrading: false,
       accessToken: okToken,
       fetch: script.fetch,
       now: () => IN_SESSION,

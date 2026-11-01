@@ -1,6 +1,7 @@
 // The only code that talks HTTP to TradeStation's brokerage and market-data API
 // (docs/tradestation-integration.md#environments). Every request goes through `sendRequest`, which
-// refuses any URL that is not under the SIM base, so a wrong base can never reach the network.
+// refuses any URL that is not under the base of the transport's own mode, and a REAL transport
+// cannot be built unless the REAL_TRADING switch is open, so a wrong base can never reach the network.
 // Outcomes are mapped to the typed BrokerError set; nothing here decodes a body into domain shapes.
 
 import { Effect, Schema } from "effect";
@@ -16,7 +17,7 @@ import {
 } from "../broker/errors.ts";
 import type { Mode } from "../mode.ts";
 import { logBrokerRequest, startTimer } from "../timing.ts";
-import { SIM_API_BASE_URL } from "./endpoints.ts";
+import { apiBaseUrlFor } from "./endpoints.ts";
 
 /** A broker call that hangs must not hold the Durable Object. */
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -30,7 +31,7 @@ export const MISSING_SCOPE_CODE = "MISSING_SCOPE";
 const MAX_REASON_LENGTH = 200;
 
 /** Why a transport was refused at construction. Nothing was sent. */
-export type TransportRefusal = "MODE_NOT_SIM" | "BASE_URL_NOT_SIM";
+export type TransportRefusal = "REAL_TRADING_DISABLED" | "BASE_URL_NOT_MODE";
 
 /** What the transport needs from `fetch`; a plain function so tests can script it. */
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
@@ -41,9 +42,10 @@ export type AccessTokenSource = () => Promise<
 >;
 
 export interface TransportConfig {
-  /** Anything but SIM is refused (CLAUDE.md, SIM only). */
   readonly mode: Mode;
-  /** Defaults to the SIM base; any other value is refused. Exists so tests can prove the refusal. */
+  /** `isRealTradingOpen(env)`. REAL is refused at construction unless it is true (D52). */
+  readonly realTrading: boolean;
+  /** Defaults to the mode's base; any other value is refused. Exists so tests can prove the refusal. */
   readonly baseUrl?: string;
   readonly accessToken: AccessTokenSource;
   /** Injected so tests never touch the network. Defaults to the global `fetch`. */
@@ -161,17 +163,21 @@ async function errorFromResponse(
 }
 
 /**
- * Builds the transport, or says why not. Refusing here (not at the first call) means a LIVE mode
- * or a non-SIM base URL never gets as far as holding an access token.
+ * Builds the transport, or says why not. Refusing here (not at the first call) means a REAL
+ * transport with the switch closed, or a base URL that is not the mode's, never gets as far as
+ * holding an access token.
  */
 export function makeTransport(
   config: TransportConfig,
 ):
   | { readonly ok: true; readonly transport: Transport }
   | { readonly ok: false; readonly reason: TransportRefusal } {
-  if (config.mode !== "SIM") return { ok: false, reason: "MODE_NOT_SIM" };
-  const baseUrl = config.baseUrl ?? SIM_API_BASE_URL;
-  if (baseUrl !== SIM_API_BASE_URL) return { ok: false, reason: "BASE_URL_NOT_SIM" };
+  if (config.mode === "REAL" && !config.realTrading) {
+    return { ok: false, reason: "REAL_TRADING_DISABLED" };
+  }
+  const modeBaseUrl = apiBaseUrlFor(config.mode);
+  const baseUrl = config.baseUrl ?? modeBaseUrl;
+  if (baseUrl !== modeBaseUrl) return { ok: false, reason: "BASE_URL_NOT_MODE" };
 
   const doFetch: FetchFn = config.fetch ?? ((url, init) => globalThis.fetch(url, init));
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -184,16 +190,16 @@ export function makeTransport(
     return `${baseUrl}${path}${search === "" ? "" : `?${search}`}`;
   };
 
-  /** Every request passes here: the SIM check is the last line before the network. */
+  /** Every request passes here: the prefix check of the transport's own mode is the last line before the network. */
   const sendRequest = (
     operation: BrokerOperation,
     url: string,
     init: { method: string; body?: string; signal: AbortSignal },
   ): Effect.Effect<Response, BrokerError> =>
     Effect.gen(function* () {
-      if (!url.startsWith(`${SIM_API_BASE_URL}/`)) {
+      if (!url.startsWith(`${modeBaseUrl}/`)) {
         return yield* Effect.fail(
-          new Rejected({ operation, code: "BASE_URL_NOT_SIM", reason: "request refused" }),
+          new Rejected({ operation, code: "BASE_URL_NOT_MODE", reason: "request refused" }),
         );
       }
       const access = yield* Effect.tryPromise({
@@ -215,13 +221,13 @@ export function makeTransport(
             signal: init.signal,
           }),
         catch: (error): BrokerError => {
-          logBrokerRequest(operation, null, startedAt);
+          logBrokerRequest(operation, null, startedAt, config.mode);
           return isTimeoutError(error)
             ? new Timeout({ operation })
             : new Unknown({ operation, detail: NETWORK_DETAIL });
         },
       });
-      logBrokerRequest(operation, response.status, startedAt);
+      logBrokerRequest(operation, response.status, startedAt, config.mode);
       lastRateLimit = parseRateLimit(response.headers) ?? lastRateLimit;
       if (response.ok) return response;
       return yield* Effect.fail(

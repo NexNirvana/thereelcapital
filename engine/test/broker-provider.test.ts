@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { resolveBroker } from "../src/broker/provider.ts";
 import { okToken } from "./tradestation/helpers.ts";
 
-const base = { userId: "provider-user", accessToken: okToken, now: () => 0 };
+const base = {
+  mode: "SIM" as const,
+  realTrading: false,
+  userId: "provider-user",
+  accessToken: okToken,
+  now: () => 0,
+};
 
 describe("resolveBroker", () => {
   it("is TradeStation SIM by default and in production", () => {
@@ -10,6 +16,13 @@ describe("resolveBroker", () => {
       const resolved = resolveBroker({ ...base, settings });
       expect(resolved.ok && resolved.broker.source).toBe("tradestation-sim");
     }
+  });
+
+  it("refuses REAL with the switch closed and builds it only when open", () => {
+    const closed = resolveBroker({ ...base, mode: "REAL", settings: {} });
+    expect(closed).toEqual({ ok: false, reason: "REAL_TRADING_DISABLED" });
+    const open = resolveBroker({ ...base, mode: "REAL", realTrading: true, settings: {} });
+    expect(open.ok && open.broker.source).toBe("tradestation-real");
   });
 
   it("uses the local simulation only in development or test", () => {

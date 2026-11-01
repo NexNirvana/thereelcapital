@@ -6,7 +6,12 @@ import { quoteStream } from "../../src/tradestation/quote-stream.ts";
 import { SIM_BASE, TOKEN, failureOf, json, okToken, run, scriptedFetch } from "./helpers.ts";
 
 function transportWith(fetchFn: FetchFn) {
-  const made = makeTransport({ mode: "SIM", accessToken: okToken, fetch: fetchFn });
+  const made = makeTransport({
+    mode: "SIM",
+    realTrading: false,
+    accessToken: okToken,
+    fetch: fetchFn,
+  });
   if (!made.ok) throw new Error(`refused: ${made.reason}`);
   return made.transport;
 }

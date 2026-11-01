@@ -13,6 +13,7 @@ import type { FetchFn } from "../../src/tradestation/http.ts";
 function transportFor(fetchFn: FetchFn) {
   const made = makeTransport({
     mode: "SIM",
+    realTrading: false,
     accessToken: okToken,
     fetch: fetchFn,
     retryDelayMs: 0,

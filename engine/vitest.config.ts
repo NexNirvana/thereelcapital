@@ -32,6 +32,6 @@ export default defineConfig({
     // unless both are pre-bundled.
     deps: { optimizer: { ssr: { enabled: true, include: ["market-calendar", "luxon"] } } },
     include: ["engine/test/**/*.test.ts"],
-    setupFiles: ["./engine/test/apply-migrations.ts"],
+    setupFiles: ["./engine/test/live-origin-guard.ts", "./engine/test/apply-migrations.ts"],
   },
 });

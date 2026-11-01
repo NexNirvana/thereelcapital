@@ -3,10 +3,11 @@
 // means the order may exist (docs/order-lifecycle.md, rule 2). The product sends one kind of order,
 // MARKET + DAY + Intelligent route + OrderConfirmID, and the request type has no field for more.
 //
-// SIM guard (CLAUDE.md, never real money): before any request that confirms, places or cancels
-// an order, the account must be one the SIM API itself listed (TradeStation documents no
-// SIM-account marker, so listing through the SIM host is the proof) and be an active Cash or
-// Margin account. The base URL and mode were already proven when the transport was built.
+// Account guard (CLAUDE.md, never real money): before any request that confirms, places or cancels
+// an order, the account must be one the transport's own mode host listed (TradeStation documents no
+// SIM-account marker, so listing through the mode's host is the proof; a SIM-listed account is
+// refused in REAL and the reverse) and be an active Cash or Margin account. The base URL and mode
+// were already proven when the transport was built.
 
 import { Effect, Schema } from "effect";
 import type {
@@ -32,15 +33,15 @@ const OPTION_ACTIONS: ReadonlySet<TradeAction> = new Set(["BUYTOOPEN", "SELLTOCL
 const refuse = (operation: BrokerOperation, code: string, reason: string) =>
   Effect.fail(new Rejected({ operation, code, reason }));
 
-/** Accounts the SIM API listed, refreshed once when an unknown id shows up. */
-export interface SimAccountGuard {
+/** Accounts the mode's API listed, refreshed once when an unknown id shows up. */
+export interface AccountGuard {
   readonly require: (
     operation: BrokerOperation,
     accountId: string,
   ) => Effect.Effect<void, BrokerError>;
 }
 
-export function makeSimAccountGuard(transport: Transport): SimAccountGuard {
+export function makeAccountGuard(transport: Transport): AccountGuard {
   let known: ReadonlySet<string> = new Set();
   const tradable = (account: BrokerAccount) =>
     account.active && (account.kind === "Cash" || account.kind === "Margin");
@@ -59,8 +60,8 @@ export function makeSimAccountGuard(transport: Transport): SimAccountGuard {
         if (!known.has(accountId)) {
           return yield* refuse(
             operation,
-            "ACCOUNT_NOT_SIM",
-            "account is not an active SIM Cash or Margin account",
+            "ACCOUNT_NOT_IN_MODE",
+            "account is not an active Cash or Margin account of this mode",
           );
         }
       }),
@@ -107,7 +108,7 @@ const ConfirmResponse = Schema.Struct({
 
 export const confirmOrder = (
   transport: Transport,
-  guard: SimAccountGuard,
+  guard: AccountGuard,
   request: OrderRequest,
 ): Effect.Effect<OrderPreview, BrokerError> =>
   Effect.gen(function* () {
@@ -144,7 +145,7 @@ const PlaceResponse = Schema.Struct({
 
 export const placeOrder = (
   transport: Transport,
-  guard: SimAccountGuard,
+  guard: AccountGuard,
   request: OrderRequest,
 ): Effect.Effect<PlacedOrder, BrokerError> =>
   Effect.gen(function* () {
@@ -177,7 +178,7 @@ export const placeOrder = (
 
 export const cancelOrder = (
   transport: Transport,
-  guard: SimAccountGuard,
+  guard: AccountGuard,
   accountId: string,
   orderId: string,
 ): Effect.Effect<PlacedOrder, BrokerError> =>
