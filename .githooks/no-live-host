@@ -12,8 +12,13 @@ set -eu
 # check, so anything else on the line (a path such as /v3, a fetch of the bare host) is still
 # flagged. Each literal is the whole declaration, never just the quoted URL. Lowercase.
 #  - The OAuth `audience` value is a required identifier of the token request, not a request target.
+#  - The live base URL is declared once, as LIVE_API_BASE_URL, so the engine can name the REAL
+#    mode's base (D52). Only that whole declaration in that file is allowed; any other use of the
+#    host, a different path or version, or a second constant is still flagged, and tests import
+#    the constant instead of spelling the host.
 #  - Documentation links point at the docs site, never at an API route.
 ALLOW='engine/src/tradestation/endpoints.ts|const AUDIENCE = "https://api.tradestation.com";
+engine/src/tradestation/endpoints.ts|export const live_api_base_url = "https://api.tradestation.com/v3";
 engine/test/*|audience: "https://api.tradestation.com",
 tests/e2e/*|audience: "https://api.tradestation.com",
 .claude/skills/tradestation-integration/SKILL.md|`audience=https://api.tradestation.com`

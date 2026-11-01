@@ -2,7 +2,7 @@
   "skipReview": "AUTOMATIC",
   "triggerOnDrafts": false,
   "ignorePatterns": "bun.lock\n**/worker-configuration.d.ts\nstatic/fonts/**\ndesigns/**\nreferences/**",
-  "instructions": "Review against the project's rules in CLAUDE.md and CONTRIBUTING.md and the spec in docs/. Treat any reference to the live TradeStation API host, leaked secrets, request-derived identity, retried or unpersisted broker orders, or browser-supplied quantities as blocking. Prefer the least code that is obviously correct; flag hand-kept data that changes over time and hand-rolled code where a well-chosen library fits. Don't comment on formatting (Prettier and ESLint enforce it).",
+  "instructions": "Review against the project's rules in CLAUDE.md and CONTRIBUTING.md and the spec in docs/. Treat as critical a reference to the live TradeStation API host outside the single LIVE_API_BASE_URL declaration in engine/src/tradestation/endpoints.ts, a REAL path that skips one of the four locks (D52), or an order not provably sent to its mode's host. Treat leaked secrets, request-derived identity, retried or unpersisted broker orders, or browser-supplied quantities as blocking. Prefer the least code that is obviously correct; flag hand-kept data that changes over time and hand-rolled code where a well-chosen library fits. Don't comment on formatting (Prettier and ESLint enforce it).",
   "customContext": {
     "files": [
       {
