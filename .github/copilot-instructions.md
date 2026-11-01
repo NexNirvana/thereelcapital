@@ -1,10 +1,10 @@
 # Review instructions for REEL CAPITAL
 
-Invitation-only web terminal where a few clients trade US equities and long single-leg options in their own TradeStation accounts. MARKET orders only, regular session only, TradeStation **SIM** only. SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers (two Workers: `web` and `engine`), D1, one SQLite Durable Object (`ClientCoordinator`, one per client). Bun runs installs, scripts and unit tests; Worker code runs in workerd. The spec is in `docs/`; `ONBOARDING.md` wins on conflicts.
+Invitation-only web terminal where a few clients trade US equities and long single-leg options in their own TradeStation accounts. MARKET orders only, regular session only, TradeStation **SIM**, or REAL behind its locks (D52). SvelteKit 3 + TypeScript + Effect + Better Auth on Cloudflare Workers (two Workers: `web` and `engine`), D1, one SQLite Durable Object (`ClientCoordinator`, one per client). Bun runs installs, scripts and unit tests; Worker code runs in workerd. The spec is in `docs/`; `ONBOARDING.md` wins on conflicts.
 
 ## Block the PR (flag as critical)
 
-- Any reference to the live TradeStation API host, a LIVE/REAL code path, or an order request not provably sent to `https://sim-api.tradestation.com/v3`. Real money must never be at risk.
+- Any reference to the live TradeStation API host outside the single `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts`, a REAL code path that skips one of the four locks of D52, or an order request not provably sent to its mode's host. Real money must never be at risk.
 - Secrets, tokens, OTPs or recovery codes in code, logs, errors, responses, URLs or client-reachable modules. Server-only code belongs in `src/lib/server/`, `*.server.ts` or the engine.
 - Client or account identity taken from the request instead of the verified session; a query or DO call not scoped by the session user.
 - Order placement or cancellation that is retried, or sent before its intent is persisted with `OrderConfirmID`.

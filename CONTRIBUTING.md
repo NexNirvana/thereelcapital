@@ -3,7 +3,7 @@
 ## Contents
 
 - [Setup](#setup)
-- [TradeStation: SIM only](#tradestation-sim-only)
+- [TradeStation: no real money](#tradestation-no-real-money)
 - [Workflow](#workflow): branches, pull requests, verification and screenshots, review gate, organizing commits
 - [CI and repository settings](#ci-and-repository-settings): CI runners, branch rulesets, self-hosted runner
 - [Commit messages](#commit-messages)
@@ -20,9 +20,9 @@ git config user.email "46875497+OnishellT@users.noreply.github.com"
 
 Install [Bun](https://bun.com) at the version in `package.json` (`packageManager`), plus a Node LTS for the Node-based tools. Once the project is scaffolded, `bun install` also sets the hooks path.
 
-## TradeStation: SIM only
+## TradeStation: no real money
 
-Only the TradeStation v3 SIM environment (`https://sim-api.tradestation.com/v3`) is ever used. Nothing in this repo may call the live API or spend real money. The `pre-commit` hook rejects the live API host outside `docs/`. REAL mode stays out of the code until the owner explicitly decides otherwise.
+Nothing in development, tests, scripts or CI may spend real money. REAL mode exists only behind the four locks of [D52](docs/decisions.md), and production keeps it closed until the owner opens it in a PR of their own. Agents and CI never contact the live API host, never set `REAL_TRADING` and never enable REAL for a client; tests use scripted `fetch` stubs, and e2e runs against the local simulation. The live host may appear only in the `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts`; the `pre-commit` hook rejects it elsewhere outside `docs/`. See `CLAUDE.md` for the full rule.
 
 ## Workflow
 
