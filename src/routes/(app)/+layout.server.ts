@@ -31,18 +31,24 @@ export const load: LayoutServerLoad = async (event) => {
   // A screen that stays open (Posiciones) asks for it again now and then, so the alert follows a
   // connection that drops or recovers without a navigation.
   event.depends("app:connection");
-  const [result, unusedCodes] = await Promise.all([
-    engineFor(env.ENGINE, event)
-      .connection({ mode: modeFor(event) })
-      .catch(() => null),
+  const engine = engineFor(env.ENGINE, event);
+  const [result, unusedCodes, modes] = await Promise.all([
+    engine.connection({ mode: modeFor(event) }).catch(() => null),
     unusedRecoveryCodes(user.id),
+    // Which modes the client may use now: the selector shows only when REAL is among them.
+    engine.modes().catch(() => null),
   ]);
+  const allowed = modes?.ok ? modes.value : null;
   const shell = { isAdmin: user.role === "admin", unusedCodes };
   // The pages read this through `await parent()` instead of asking the engine again.
   const connection = shellConnection(result);
   const view = connection?.ok ? connection.view : null;
   return {
     ...shell,
+    mode: modeFor(event),
+    // REAL is selectable when entries or exits allow it; `realEntries` false means exits only.
+    realAvailable: allowed !== null && allowed.exits.includes("REAL"),
+    realEntries: allowed !== null && allowed.entries.includes("REAL"),
     connection,
     // Unreadable: no indicator (undefined). Connected: the health and the account to show.
     health: connection?.ok ? (view?.status === "CONNECTED" ? view.health : null) : undefined,

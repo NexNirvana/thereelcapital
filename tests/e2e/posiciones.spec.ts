@@ -401,11 +401,17 @@ test("ignores quantity and price the browser adds and rejects a bad step", async
       form,
       headers: { origin: baseURL ?? "", accept: "application/json" },
     });
-  const bad = await send({ positionId: "pos-a", step: "9" });
+  const bad = await send({ modo: "SIM", positionId: "pos-a", step: "9" });
   expect(await bad.text()).toContain("Los datos enviados no son válidos.");
   // The engine would sell its own quantity, whatever the request says; here AAA is unknown to the
   // simulation, so the order is refused, never sent with 999.
-  const tampered = await send({ positionId: "pos-a", step: "0", qty: "999", price: "1" });
+  const tampered = await send({
+    modo: "SIM",
+    positionId: "pos-a",
+    step: "0",
+    qty: "999",
+    price: "1",
+  });
   expect(await tampered.text()).not.toContain("999");
 });
 
@@ -422,13 +428,19 @@ test("rejects a trailing percentage outside the allowed set and ignores extra fi
       form,
       headers: { origin: baseURL ?? "", accept: "application/json" },
     });
-  const bad = await send({ positionId: "pos-a", trailingPct: "12" });
+  const bad = await send({ modo: "SIM", positionId: "pos-a", trailingPct: "12" });
   expect(await bad.text()).toContain("Los datos enviados no son válidos.");
-  const missing = await send({ trailingPct: "10" });
+  const missing = await send({ modo: "SIM", trailingPct: "10" });
   expect(await missing.text()).toContain("Los datos enviados no son válidos.");
   // Extra fields change nothing: AAA is unknown to the simulation, so the engine has no bid and
   // refuses; no level is ever taken from the request.
-  const tampered = await send({ positionId: "pos-a", trailingPct: "10", peak: "1", level: "1" });
+  const tampered = await send({
+    modo: "SIM",
+    positionId: "pos-a",
+    trailingPct: "10",
+    peak: "1",
+    level: "1",
+  });
   expect(await tampered.text()).not.toContain("Trailing activado");
 });
 

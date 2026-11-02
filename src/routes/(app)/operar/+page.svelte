@@ -23,6 +23,7 @@
     type LiveEntry,
   } from "#lib/ui/live-entry.ts";
   import { startLiveFeed } from "#lib/ui/live-feed.ts";
+  import { startLivePoll } from "#lib/ui/live-poll.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
   import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
@@ -60,6 +61,20 @@
   $effect(() => {
     const href = quoteHref;
     if (href === null) return;
+    const poll = {
+      intervalMs: LIVE_QUOTE_POLL_MS,
+      maxPolls: LIVE_QUOTE_MAX_POLLS,
+      maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
+      run: async (signal: AbortSignal) => {
+        const answer = await readLiveEntry(href, fetch, signal);
+        // An answer for an entry that is no longer on screen is dropped.
+        if (answer !== null && !signal.aborted) live = matchingChoice(answer, data.sizeChoice);
+        return answer !== null;
+      },
+    };
+    // The quote socket is SIM-only for now (engine STREAM_MODE): a REAL entry is priced by the
+    // mode-aware poll alone, because a SIM-sized watch would answer ACCOUNT_NOT_OWNED.
+    if (data.mode === "REAL") return startLivePoll(poll);
     // The socket pushes every tick (D47); the poll of D46 runs only while it is not delivering.
     return startLiveFeed({
       watch: {
@@ -76,17 +91,7 @@
         const next = entryFromMessage(message, live);
         if (next !== null) live = matchingChoice(next, data.sizeChoice);
       },
-      poll: {
-        intervalMs: LIVE_QUOTE_POLL_MS,
-        maxPolls: LIVE_QUOTE_MAX_POLLS,
-        maxBackoffMs: LIVE_QUOTE_MAX_BACKOFF_MS,
-        run: async (signal) => {
-          const answer = await readLiveEntry(href, fetch, signal);
-          // An answer for an entry that is no longer on screen is dropped.
-          if (answer !== null && !signal.aborted) live = matchingChoice(answer, data.sizeChoice);
-          return answer !== null;
-        },
-      },
+      poll,
     });
   });
   // The engine found the quantity had changed since the client saw it: nothing was sent, and the
@@ -324,7 +329,10 @@
       {#if data.accountId}
         <DefinitionRow label="Cuenta" value={`TradeStation · ${data.accountId}`} />
       {/if}
-      <DefinitionRow label="Modo" value="SIM · sin dinero real" />
+      <DefinitionRow
+        label="Modo"
+        value={data.mode === "REAL" ? "REAL · dinero real" : "SIM · sin dinero real"}
+      />
       <DefinitionRow label="Acción" value="Comprar para abrir" />
       <DefinitionRow label="SIZE aplicado" value={preview ? formatSize(preview.sizeMicros) : "—"} />
       <DefinitionRow
@@ -336,7 +344,13 @@
         value={data.stopPct === null ? "—" : `${data.stopPct}%`}
       />
     </dl>
-    <p class="note">Orden de mercado en simulación.</p>
+    {#if data.mode === "REAL"}
+      <p class="note real-note">
+        Orden de mercado en REAL: se ejecuta en tu cuenta real de TradeStation con dinero real.
+      </p>
+    {:else}
+      <p class="note">Orden de mercado en simulación.</p>
+    {/if}
 
     {#if changed !== undefined && preview}
       <Notice title="La cantidad cambió" role="alert">
@@ -372,6 +386,7 @@
       }}
     >
       {#if canSend && preview}
+        <input type="hidden" name="modo" value={data.mode} />
         <input type="hidden" name="tipo" value={data.tipo} />
         <input type="hidden" name="cuenta" value={data.accountId} />
         <input type="hidden" name="simbolo" value={data.symbol} />
@@ -391,7 +406,9 @@
     </form>
   </section>
 
-  <p class="mode">SIM · Simulación, sin dinero real</p>
+  <p class="mode">
+    {data.mode === "REAL" ? "REAL · Dinero real" : "SIM · Simulación, sin dinero real"}
+  </p>
 </div>
 
 <style>
@@ -578,6 +595,10 @@
     border-top: 1px solid var(--rule);
   }
   .caption,
+  .real-note {
+    color: var(--text);
+    font-weight: 500;
+  }
   .note {
     margin: 1rem 0 0;
     color: var(--text-dim);

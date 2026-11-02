@@ -6,7 +6,6 @@ import { connectRedirectUri } from "#lib/domain/connect-redirect.ts";
 import { engineFor } from "#lib/server/engine.ts";
 import { isConnectionErrorCode, type ConnectionErrorCode } from "#lib/server/connection-errors.ts";
 import type { RequestHandler } from "./$types";
-import { modeFor } from "#lib/server/trading-mode.ts";
 
 const Callback = Schema.Struct({
   code: Schema.String.check(Schema.isMinLength(1)),
@@ -41,7 +40,7 @@ export const GET: RequestHandler = async (event) => {
   // The state is already consumed; a rejection (D1, undecryptable secret) must not become a 500.
   const result = await engineFor(env.ENGINE, event)
     .completeConnection({
-      mode: modeFor(event),
+      mode: "SIM", // completing the connection is a SIM action in the engine
       code: params.success.code,
       state: params.success.state,
       redirectUri: connectRedirectUri(env.APP_ORIGIN),

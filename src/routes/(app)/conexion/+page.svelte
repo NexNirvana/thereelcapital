@@ -112,25 +112,40 @@
     {/if}
     <p class="mode">
       <span>Modo</span>
-      <Badge label="SIM" />
-      <span class="dim">REAL no está disponible.</span>
+      <Badge label={data.mode} />
+      <span class="dim">
+        {data.realAvailable
+          ? "Cambia de modo con el selector de la barra superior."
+          : "REAL no está disponible."}
+      </span>
     </p>
   </section>
 
   <section aria-labelledby="cuentas">
     <h2 id="cuentas">Cuentas SIM</h2>
-    {#if data.connection.accounts.length === 0}
+    {#if data.connection.simAccounts.length === 0}
       <Notice title="Sin cuentas">
         No encontramos cuentas SIM activas (Cash o Margin) en tu API key.
       </Notice>
     {:else}
       <dl>
-        {#each data.connection.accounts as account (account.accountId)}
+        {#each data.connection.simAccounts as account (account.accountId)}
           <DefinitionRow label={account.accountId} value={account.accountType} />
         {/each}
       </dl>
     {/if}
   </section>
+
+  {#if data.connection.realAccounts.length > 0}
+    <section aria-labelledby="cuentas-real">
+      <h2 id="cuentas-real">Cuentas REAL</h2>
+      <dl>
+        {#each data.connection.realAccounts as account (account.accountId)}
+          <DefinitionRow label={account.accountId} value={account.accountType} />
+        {/each}
+      </dl>
+    </section>
+  {/if}
 
   <div class="actions">
     <Button variant="outline" type="button" onclick={() => (reconnect = !reconnect)}>

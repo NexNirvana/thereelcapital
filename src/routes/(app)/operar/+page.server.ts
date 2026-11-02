@@ -18,7 +18,7 @@ import { engineFor } from "#lib/server/engine.ts";
 import { exactStrike, parseStrikeCount } from "#lib/ui/chain-window.ts";
 import { requireUser } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad } from "./$types";
-import { modeFor } from "#lib/server/trading-mode.ts";
+import { formModeMatches, MODE_MISMATCH_MESSAGE, modeFor } from "#lib/server/trading-mode.ts";
 
 export const load: PageServerLoad = async (event) => {
   const { parent } = event;
@@ -58,7 +58,7 @@ export const load: PageServerLoad = async (event) => {
       ? chainOf(typedUnderlying, (query.vencimiento ?? "").trim())
       : null,
   ]);
-  const { connection: shell } = await parent();
+  const { connection: shell, realEntries } = await parent();
   const [limits, settings, contract, typedChain] = await others;
   // A link from before the chain lived in this tab names only the contract: show its chain.
   const chosen = contract?.ok ? contract.value : null;
@@ -86,6 +86,15 @@ export const load: PageServerLoad = async (event) => {
     accountId: null as string | null,
     quotedAt: null as number | null,
   };
+  // REAL with only exits allowed: the screen stays open to read, but no entry is prepared.
+  if (modeFor(event) === "REAL" && !realEntries) {
+    return {
+      ...base,
+      preview: null,
+      blocked:
+        "Solo salidas en REAL: las entradas nuevas están desactivadas. Puedes cerrar y proteger tus posiciones REAL desde Posiciones.",
+    };
+  }
   if (!shell?.ok) {
     return {
       ...base,
@@ -168,6 +177,10 @@ export const actions: Actions = {
   enviar: async (event) => {
     requireUser(event);
     const form = await event.request.formData();
+    // The form was prepared in another mode than the one selected now (another tab switched).
+    if (!formModeMatches(form, modeFor(event))) {
+      return fail(409, { message: MODE_MISMATCH_MESSAGE });
+    }
     const parsed = Schema.decodeUnknownResult(Send)(
       // A field the form left out is absent, not null: the choice is optional (the full SIZE).
       Object.fromEntries(

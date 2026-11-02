@@ -46,6 +46,14 @@
   {tabs}
   connection={{ ...indicator, href: resolve("/(app)/conexion") }}
   account={data.account}
+  mode={data.mode}
+  modeSwitch={data.realAvailable
+    ? {
+        action: resolve("/(app)/modo"),
+        back: page.url.pathname.split("/")[1] ?? "operar",
+        entriesAllowed: data.realEntries,
+      }
+    : undefined}
   extras={data.isAdmin ? [{ href: resolve("/admin"), label: "Admin" }] : []}
 >
   {#snippet notice()}

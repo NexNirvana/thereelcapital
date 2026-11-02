@@ -102,6 +102,7 @@ test("a post names only the choice: another choice is refused and a stale quanti
   const post = (extra: Record<string, string>) =>
     page.request.post("/operar?tipo=acciones&cuenta=SIM-1&simbolo=MSFT&/enviar", {
       form: {
+        modo: "SIM",
         tipo: "acciones",
         cuenta: "SIM-1",
         simbolo: "MSFT",

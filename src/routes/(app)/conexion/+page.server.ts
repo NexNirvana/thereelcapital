@@ -13,7 +13,6 @@ import {
 import { engineFor } from "#lib/server/engine.ts";
 import { guardErrors, requireFreshSession, requireUser } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
-import { modeFor } from "#lib/server/trading-mode.ts";
 
 /** Shown only when the client must register our callback on their key (decision D35). */
 const callbackUrl = () =>
@@ -31,8 +30,8 @@ export const load: PageServerLoad = async (event) => {
   // Accounts of one client: never cached by a shared proxy.
   setHeaders({ "cache-control": "no-store" });
 
-  // Read once by the layout; this page only formats it.
-  const { connection: result } = await parent();
+  // The layout read the connection in this request's mode; this page adds the other mode's accounts.
+  const { connection: result, mode, realAvailable } = await parent();
   if (result === null) {
     const error = connectionErrorFor("BROKER_UNAVAILABLE")?.message ?? null;
     return { connection: null, callbackUrl: callbackUrl(), error };
@@ -40,6 +39,24 @@ export const load: PageServerLoad = async (event) => {
   if (!result.ok) return { connection: null, callbackUrl: callbackUrl(), error: result.message };
 
   const view = result.view;
+  // The layout read the connection in the request's mode; the other mode's accounts come from a
+  // second read, and REAL accounts are listed only when the client's modes include REAL.
+  const own = view.status === "CONNECTED" ? view.accounts : [];
+  const otherMode = mode === "SIM" ? "REAL" : "SIM";
+  const other =
+    view.status === "CONNECTED" && (otherMode === "SIM" || realAvailable)
+      ? await engineFor(env.ENGINE, event)
+          .connection({ mode: otherMode })
+          .then((read) =>
+            read.ok && read.value.status === "CONNECTED"
+              ? read.value.accounts.map(({ accountId, accountType }) => ({
+                  accountId,
+                  accountType,
+                }))
+              : [],
+          )
+          .catch(() => [])
+      : [];
   return {
     connection:
       view.status === "CONNECTED"
@@ -47,7 +64,8 @@ export const load: PageServerLoad = async (event) => {
             status: view.status,
             health: view.health,
             entriesBlocked: view.entriesBlocked,
-            accounts: view.accounts,
+            simAccounts: mode === "SIM" ? own : other,
+            realAccounts: mode === "REAL" ? own : other,
             // Null until a rotation is seen: a non-rotating key has no expiry (D44).
             expiresAt: view.refreshExpiresAt === null ? null : expiry.format(view.refreshExpiresAt),
           }
@@ -102,7 +120,7 @@ export const actions: Actions = {
 
     const result = await engineFor(env.ENGINE, event)
       .beginConnection({
-        mode: modeFor(event),
+        mode: "SIM", // the key and its tokens are managed in SIM only (engine action "sim")
         clientId: input.success.clientId.trim(),
         clientSecret: input.success.clientSecret.trim(),
         redirectUri: connectRedirectUri(env.APP_ORIGIN),
@@ -145,7 +163,7 @@ export const actions: Actions = {
     // The state is consumed in the engine before anything else; a rejection must not become a 500.
     const result = await engineFor(env.ENGINE, event)
       .completeConnection({
-        mode: modeFor(event),
+        mode: "SIM", // the key and its tokens are managed in SIM only (engine action "sim")
         code: parsed.code,
         state: parsed.state,
         redirectUri: connectRedirectUri(env.APP_ORIGIN),
@@ -168,7 +186,7 @@ export const actions: Actions = {
     const stale = staleSession(event);
     if (stale) return stale;
     const result = await engineFor(env.ENGINE, event)
-      .disconnect({ mode: modeFor(event) })
+      .disconnect({ mode: "SIM" })
       .catch(() => null);
     if (result === null) return unavailable();
     if (!result.ok) return fail(502, { code: result.code, message: result.message });
