@@ -20,6 +20,7 @@
 
   const base = resolve("/admin/historial");
   const nextHref = $derived(data.nextQuery ? `${base}?${data.nextQuery}` : null);
+  const clearHref = $derived(`${base}?modo=${data.mode}`);
   const showOrders = $derived(data.filters.tipo === "" || data.filters.tipo === "ordenes");
   const showEvents = $derived(data.filters.tipo !== "ordenes" && data.first);
 </script>
@@ -28,7 +29,7 @@
 
 <PageHeader crumb={[{ label: "Admin" }, { label: "Historial" }]} title="Historial">
   {#snippet lead()}
-    Órdenes, ejecuciones, eventos y errores de todos los clientes, en simulación.
+    Órdenes, ejecuciones, eventos y errores de todos los clientes, en modo {data.mode}.
   {/snippet}
 </PageHeader>
 
@@ -47,8 +48,8 @@
   <label>
     <span>Modo</span>
     <select name="modo">
-      <option value="SIM" selected>SIM</option>
-      <option value="REAL" disabled>REAL (no disponible)</option>
+      <option value="SIM" selected={data.mode === "SIM"}>SIM</option>
+      <option value="REAL" selected={data.mode === "REAL"}>REAL</option>
     </select>
   </label>
   <label>
@@ -100,7 +101,10 @@
   </label>
   <div class="buttons">
     <Button type="submit" variant="outline">Filtrar</Button>
-    {#if data.filtered}<a class="clear" href={base}>Quitar filtros</a>{/if}
+    {#if data.filtered}
+      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- built with resolve() above -->
+      <a class="clear" href={clearHref}>Quitar filtros</a>
+    {/if}
   </div>
 </form>
 
@@ -111,6 +115,9 @@
         <li>{failure.clientEmail}: {failure.message}</li>
       {/each}
     </ul>
+    {#if data.mode === "REAL"}
+      <p>REAL solo responde con el interruptor del despliegue abierto.</p>
+    {/if}
   </Notice>
 {/if}
 
@@ -214,7 +221,9 @@
   </section>
 {/if}
 
-<p class="note">SIM · Simulación, sin dinero real</p>
+<p class="note">
+  {data.mode === "REAL" ? "REAL · Dinero real" : "SIM · Simulación, sin dinero real"}
+</p>
 
 <style>
   h2 {

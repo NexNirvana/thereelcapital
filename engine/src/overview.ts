@@ -1,10 +1,17 @@
 // The admin's read-only view of this client (docs/screens-and-flows.md, /admin/operativa). It
 // reads and returns plain data: no order is placed, cancelled or changed, and nothing it returns
 // is a secret, token or broker order id.
-import type { ClientOverview, OverviewOrder, OverviewPosition } from "#lib/domain/overview.ts";
+import { Option, Schema } from "effect";
+import type {
+  ClientOverview,
+  OverviewOrder,
+  OverviewPosition,
+  RealListing,
+} from "#lib/domain/overview.ts";
 import { readConnection, type ConnectionContext } from "./connection.ts";
 import { entryLimits } from "./entries.ts";
 import { loadEntryInputs } from "./entry-inputs.ts";
+import { REAL_ACCOUNTS_LISTED } from "./real-accounts.ts";
 
 type PositionRow = {
   id: string;
@@ -25,6 +32,23 @@ type OrderRow = {
   filled_qty: number;
   created_at: number;
 };
+
+const ListingData = Schema.fromJsonString(
+  Schema.Struct({ stored: Schema.Number, skipped: Schema.Number }),
+);
+
+/** The newest REAL listing event through `events_by_mode_at`; null before the first one. */
+export function readRealListing(sql: SqlStorage): RealListing | null {
+  const row = sql
+    .exec<{ at: number; data_json: string | null }>(
+      "SELECT at, data_json FROM events WHERE mode = 'REAL' AND type = ? ORDER BY at DESC, id DESC LIMIT 1",
+      REAL_ACCOUNTS_LISTED,
+    )
+    .toArray()[0];
+  if (row === undefined || row.data_json === null) return null;
+  const data = Schema.decodeUnknownOption(ListingData)(row.data_json);
+  return Option.isSome(data) ? { at: row.at, ...data.value } : null;
+}
 
 export async function readOverview(ctx: ConnectionContext): Promise<ClientOverview> {
   const connection = await readConnection(ctx);
@@ -83,5 +107,6 @@ export async function readOverview(ctx: ConnectionContext): Promise<ClientOvervi
     maxEntries: limits.maxEntries,
     positions,
     orders,
+    realListing: ctx.mode === "REAL" ? readRealListing(ctx.sql) : null,
   };
 }

@@ -150,7 +150,7 @@ test("paginates the merged orders", async ({ context, page }) => {
 
 test("rejects unknown or malformed history parameters", async ({ context, page }) => {
   await seedSignedInUser(context, { role: "admin" });
-  expect((await page.request.get("/admin/historial?modo=REAL")).status()).toBe(400);
+  expect((await page.request.get("/admin/historial?modo=LIVE")).status()).toBe(400);
   expect((await page.request.get("/admin/historial?extra=1")).status()).toBe(400);
   expect((await page.request.get("/admin/auditoria?despues=x;y")).status()).toBe(400);
 });

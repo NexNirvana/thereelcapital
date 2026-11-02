@@ -3,7 +3,9 @@
 // its own timeout and a failure becomes "unavailable" for that client alone.
 import type { TradingMode } from "./trading-mode.ts";
 import { ADMIN_FANOUT_TIMEOUT_MS } from "#lib/domain/config.ts";
+import type { AllowedModes } from "#lib/domain/modes.ts";
 import type { ClientOverview } from "#lib/domain/overview.ts";
+import { realStateOf, type RealState } from "#lib/domain/real-state.ts";
 
 export type Fetched<T> =
   { readonly status: "ok"; readonly value: T } | { readonly status: "unavailable" };
@@ -64,4 +66,21 @@ export function startOverviews(
     ...client,
     overview: settled(() => engineOf(client.id).overview({ mode }), timeoutMs),
   }));
+}
+
+export interface ModesEngine {
+  modes(): Promise<EngineAnswer<AllowedModes>>;
+}
+
+/**
+ * The client's effective REAL state: the switch from D1 with what the engine allows right now.
+ * Whether the deployment is closed is read from the engine's answer, never from its variable.
+ */
+export async function readRealState(
+  enabled: boolean,
+  engine: ModesEngine,
+  timeoutMs?: number,
+): Promise<Fetched<RealState>> {
+  const modes = await settled(() => engine.modes(), timeoutMs);
+  return modes.status === "ok" ? { status: "ok", value: realStateOf(enabled, modes.value) } : modes;
 }

@@ -4,7 +4,7 @@ How to run the pilot. It links to the docs that own each rule instead of repeati
 
 ## SIM only, always
 
-No TradeStation call may spend real money ([CLAUDE.md](../CLAUDE.md)). Only `https://sim-api.tradestation.com/v3` is used. To check:
+No development, test, script or CI activity may spend real money ([CLAUDE.md](../CLAUDE.md)). In development, scripts, tests and CI only `https://sim-api.tradestation.com/v3` is used; REAL in production is opened only by the owner (see [Opening REAL](#opening-real)). To check:
 
 - `git grep -n "api.tradestation.com" -- ':!docs'` lists every mention of the live host outside `docs/`. Only the OAuth audience constant, the single `LIVE_API_BASE_URL` declaration in `engine/src/tradestation/endpoints.ts` (D52) and test fixtures may appear (the allow list is in `.githooks/no-live-host`).
 - The `pre-commit` hook blocks a new line naming the live host, and the `guards` job in `.github/workflows/policy.yml` re-runs the check over every commit of a pull request ([CONTRIBUTING.md](../CONTRIBUTING.md#hooks)).
@@ -114,9 +114,19 @@ Order: `bunx wrangler d1 migrations apply DB --remote`, then the engine Worker, 
 - Retention: 6 years for orders, fills, events and audit, and no deletion code exists (D22 in [decisions.md](decisions.md)). Do not delete rows by hand.
 - D1 backup: Time Travel restore is **not verified** in this project; check the Cloudflare D1 documentation before relying on it.
 
+## Opening REAL
+
+Only the owner opens REAL, in a pull request of their own that sets `REAL_TRADING` to `"enabled"` in `engine/wrangler.jsonc`; CI deploys it like any change. Agents and CI never do this ([CLAUDE.md](../CLAUDE.md)). Opening the switch lets no client trade REAL by itself: each client also needs the admin's flag in `/admin/clientes/[id]`, a live account listed for their connection and the transport checks ([D52](decisions.md)).
+
+Check the effective state per client in `/admin/clientes/[id]`, section «Modo REAL» («Estado efectivo»): «REAL cerrado en este despliegue» means the flag is on but the switch is closed (nothing REAL can leave); «Solo salidas» means the flag is off with REAL positions open. `/admin/operativa?modo=REAL` and `/admin/historial?modo=REAL` show the REAL data of every client, labeled, once the switch is open; while it is closed the engine refuses REAL reads.
+
+Closing it again: see the next section.
+
 ## Closing `REAL_TRADING`
 
 Never set `REAL_TRADING` back to `disabled` while a client has an open REAL position or an unfinished REAL intent: with the switch closed the engine serves SIM only, so the stop, trailing and expiry protections of those positions stop and nothing watches them. Close every REAL position first (the client sells them or their protections close them; turning the client's REAL flag off only blocks new REAL entries and does not close anything), confirm there are none left, then change the variable in a PR.
+
+**Checking that no REAL request left while it was closed.** The engine prints one `broker.request` JSON line per TradeStation call with its `mode` ([tradestation-integration.md](tradestation-integration.md#reading-the-latency-events)). Run `bunx wrangler tail reel-engine --format json` over the period and keep the lines whose `event` is `broker.request`: none may carry `"mode":"REAL"`. Lines with `"mode":null` are the auth tenant, which serves both modes, and prove nothing about order traffic. The check needs the tail open during the period; it does not look back. Structurally, a REAL transport is not built with the switch closed and every request is checked against its mode's base URL ([tradestation-integration.md](tradestation-integration.md#environments))
 
 ## Connecting a client's TradeStation key
 

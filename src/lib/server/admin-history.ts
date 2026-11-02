@@ -18,10 +18,10 @@ const Day = Schema.Union([
 /** `tipo` picks what is listed: orders (with their fills), all events, or only error events. */
 export const HISTORY_TYPES = ["ordenes", "eventos", "errores"] as const;
 
-// Everything the browser may say: unknown parameters are a 400. The mode is SIM only.
+// Everything the browser may say: unknown parameters are a 400. The admin reads either mode.
 export const AdminHistoryQuery = Schema.Struct({
   cliente: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
-  modo: Schema.optionalKey(Schema.Literal("SIM")),
+  modo: Schema.optionalKey(Schema.Literals(["SIM", "REAL"])),
   cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
   estado: Schema.optionalKey(Schema.Union([Schema.Literals(ORDER_STATES), Schema.Literal("")])),

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ConnectionHealth } from "#lib/domain/connection.ts";
 import { connectionKey, type ClientOverview } from "#lib/domain/overview.ts";
-import { connectionLabel, openQty, protectionLabel } from "./admin-operations.ts";
+import { connectionLabel, openQty, protectionLabel, realListingText } from "./admin-operations.ts";
 
 const base = {
   positionsOpen: 0,
@@ -10,6 +10,7 @@ const base = {
   maxEntries: 3,
   positions: [],
   orders: [],
+  realListing: null,
 } as const;
 const connected = (health: ConnectionHealth): ClientOverview => ({
   ...base,
@@ -63,5 +64,28 @@ describe("labels", () => {
     expect(protectionLabel("verified")).toBe("Activo");
     expect(protectionLabel("legacy")).toBe("No verificado");
     expect(openQty({ originalQty: 100, soldQty: 30 })).toBe(70);
+  });
+});
+
+describe("realListingText", () => {
+  const when = (at: number) => `t${at}`;
+
+  test("says so before the first listing", () => {
+    expect(realListingText(null, when)).toBe("Aún sin listar");
+  });
+
+  test("says nothing was skipped", () => {
+    expect(realListingText({ at: 5, stored: 2, skipped: 0 }, when)).toBe(
+      "Sin cuentas omitidas · t5",
+    );
+  });
+
+  test("counts skipped accounts without naming them", () => {
+    expect(realListingText({ at: 5, stored: 1, skipped: 1 }, when)).toBe(
+      "1 cuenta de esta conexión ya pertenece a otro cliente y no se usa aquí · t5",
+    );
+    expect(realListingText({ at: 5, stored: 0, skipped: 3 }, when)).toContain(
+      "3 cuentas de esta conexión ya pertenecen a otro cliente",
+    );
   });
 });
