@@ -9,6 +9,8 @@ import { mayUseSessionCache } from "#lib/server/session-cache.ts";
 import { sharedAuth } from "#lib/server/shared-auth.ts";
 import { enrollmentGate } from "#lib/server/enrollment.ts";
 import { withSecurityHeaders } from "#lib/server/security-headers.ts";
+import { engineFor } from "#lib/server/engine.ts";
+import { MODE_COOKIE, revalidatedMode } from "#lib/server/trading-mode.ts";
 
 const handleRequest: Handle = async ({ event, resolve }) => {
   // sveltekitCookies goes last so cookies set by Better Auth reach SvelteKit responses; it looks the
@@ -29,6 +31,7 @@ const handleRequest: Handle = async ({ event, resolve }) => {
   event.locals.session = session?.session ?? null;
   event.locals.user = session?.user ?? null;
   event.locals.enrollment = null;
+  event.locals.mode = "SIM";
 
   // An enrollment-only session is not a signed-in user: guards and loads see nobody, and only the
   // paths in enrollment.ts run at all (docs/auth-and-security.md#flows).
@@ -62,6 +65,19 @@ const handleRequest: Handle = async ({ event, resolve }) => {
         userId: session.user.id,
         invitationId: session.session.invitationId ?? null,
       };
+  }
+
+  // The client's chosen mode is only a hint: it counts when the engine still lists it for them.
+  // SIM needs no engine call. The admin screens choose their own mode and never read the cookie.
+  const requestedMode = event.cookies.get(MODE_COOKIE);
+  if (
+    requestedMode === "REAL" &&
+    event.locals.user &&
+    !event.locals.user.banned &&
+    !event.url.pathname.startsWith("/admin")
+  ) {
+    const engine = engineFor(env.ENGINE, event);
+    event.locals.mode = await revalidatedMode(requestedMode, () => engine.modes());
   }
 
   return svelteKitHandler({ auth, event, resolve, building });
