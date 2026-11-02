@@ -18,6 +18,8 @@ declare global {
       user: AuthSession["user"] | null;
       // Set instead of session/user while the request carries a live enrollment-only session.
       // `invitationId` is the activation link it came from; null for recovery.
+      // The mode of this request: the client's cookie revalidated against the engine (trading-mode.ts).
+      mode: "SIM" | "REAL";
       enrollment: { userId: string; invitationId: string | null } | null;
     }
   }
