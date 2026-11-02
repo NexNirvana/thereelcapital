@@ -135,9 +135,12 @@ test("shows no P&L, balance or account value", async ({ context, page }) => {
   expect(text).not.toMatch(/P\s?&\s?L|ganancia|pérdida|saldo|balance|equity|poder de compra/i);
 });
 
-test("rejects unknown parameters, REAL and a malformed cursor", async ({ context, page }) => {
+test("rejects unknown parameters, an unknown mode and a malformed cursor", async ({
+  context,
+  page,
+}) => {
   await seedTradingClient(context);
-  for (const query of ["clientId=x", "modo=REAL", "desde=ayer", "despues=%27%3B--"]) {
+  for (const query of ["clientId=x", "modo=OTRO", "desde=ayer", "despues=%27%3B--"]) {
     const response = await page.goto(`/historial?${query}`);
     expect(response?.status(), query).toBe(400);
   }

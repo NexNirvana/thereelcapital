@@ -10,13 +10,13 @@ import type { PageServerLoad } from "./$types";
 import { modeFor } from "#lib/server/trading-mode.ts";
 
 // Everything the browser may say about the history: which rows to narrow to and where the next page
-// starts. The client id is the session's and the mode is SIM; unknown parameters are a 400.
+// starts. The client id is the session's and the mode is the revalidated one (`modo` is accepted for old links and ignored); unknown parameters are a 400.
 const Day = Schema.String.check(
   Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/),
   Schema.makeFilter(isCalendarDay),
 );
 const Query = Schema.Struct({
-  modo: Schema.optionalKey(Schema.Literal("SIM")),
+  modo: Schema.optionalKey(Schema.Literals(["SIM", "REAL"])),
   cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
   desde: Schema.optionalKey(Schema.Union([Day, Schema.Literal("")])),

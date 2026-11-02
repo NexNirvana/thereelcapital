@@ -27,17 +27,15 @@
   <header>
     <p class="crumb">Historial</p>
     <h1>Historial</h1>
-    <p class="lead">Tus órdenes y eventos en simulación.</p>
+    <p class="lead">
+      {data.mode === "REAL"
+        ? "Tus órdenes y eventos en REAL."
+        : "Tus órdenes y eventos en simulación."}
+    </p>
   </header>
 
   <form class="filters" method="GET" action={base} aria-label="Filtros">
-    <label>
-      <span>Modo</span>
-      <select name="modo">
-        <option value="SIM" selected>SIM</option>
-        <option value="REAL" disabled>REAL (no disponible)</option>
-      </select>
-    </label>
+    <p class="mode-filter"><span>Modo</span><strong>{data.mode}</strong></p>
     <label>
       <span>Cuenta</span>
       <select name="cuenta">
@@ -165,7 +163,9 @@
     {/if}
   {/if}
 
-  <p class="note">SIM · Simulación, sin dinero real</p>
+  <p class="note">
+    {data.mode === "REAL" ? "REAL · Dinero real" : "SIM · Simulación, sin dinero real"}
+  </p>
 </div>
 
 <style>
@@ -207,6 +207,10 @@
     align-items: end;
     margin: 2rem 0;
   }
+  .mode-filter {
+    margin: 0;
+  }
+  .mode-filter span,
   label span {
     display: block;
     margin-bottom: 0.375rem;

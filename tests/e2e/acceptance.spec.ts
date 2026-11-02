@@ -30,7 +30,14 @@ async function postEntry(
   intentId: string,
 ): Promise<APIResponse> {
   return page.request.post(`/operar?tipo=acciones&cuenta=SIM-1&simbolo=${symbol}&/enviar`, {
-    form: { tipo: "acciones", cuenta: "SIM-1", simbolo: symbol, intentId, cantidad: `${quantity}` },
+    form: {
+      modo: "SIM",
+      tipo: "acciones",
+      cuenta: "SIM-1",
+      simbolo: symbol,
+      intentId,
+      cantidad: `${quantity}`,
+    },
     headers: { origin, accept: "text/html" },
     maxRedirects: 0,
   });

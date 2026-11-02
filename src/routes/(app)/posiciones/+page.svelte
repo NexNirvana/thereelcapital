@@ -197,6 +197,7 @@
           action={`?/salir&p=${encodeURIComponent(position.id)}`}
           use:enhance={submit}
         >
+          <input type="hidden" name="modo" value={data.mode} />
           <input type="hidden" name="positionId" value={position.id} />
           <ol class="steps">
             {#each steps as step (step.index)}
@@ -251,6 +252,7 @@
                   action={`?/trailing&p=${encodeURIComponent(position.id)}`}
                   use:enhance={submit}
                 >
+                  <input type="hidden" name="modo" value={data.mode} />
                   <input type="hidden" name="positionId" value={position.id} />
                   <select
                     id="trailing-pct"
@@ -289,6 +291,7 @@
             action={`?/salir&p=${encodeURIComponent(position.id)}`}
             use:enhance={submit}
           >
+            <input type="hidden" name="modo" value={data.mode} />
             <input type="hidden" name="positionId" value={position.id} />
             <input type="hidden" name="step" value="ALL_OUT" />
             <Button type="submit" variant="primary" disabled={sending || sellable === 0}>
@@ -322,6 +325,7 @@
                     action={`?/cancelar&p=${encodeURIComponent(position.id)}`}
                     use:enhance={submit}
                   >
+                    <input type="hidden" name="modo" value={data.mode} />
                     <input type="hidden" name="intentId" value={order.id} />
                     <Button type="submit" variant="outline" disabled={sending}>Cancelar</Button>
                   </form>
@@ -334,7 +338,9 @@
     </section>
   {/if}
 
-  <p class="mode">SIM · Simulación, sin dinero real</p>
+  <p class="mode">
+    {data.mode === "REAL" ? "REAL · Dinero real" : "SIM · Simulación, sin dinero real"}
+  </p>
 </div>
 
 <style>

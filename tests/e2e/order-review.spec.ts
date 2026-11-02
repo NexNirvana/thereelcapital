@@ -145,7 +145,14 @@ test("sends one order when the same intent is posted twice at once", async ({ co
   await seedTradingClient(context);
   await openEntry(page, "SLOW");
   const intentId = await page.locator("input[name=intentId]").inputValue();
-  const form = { tipo: "acciones", cuenta: "SIM-1", simbolo: "SLOW", intentId, cantidad: "198" };
+  const form = {
+    modo: "SIM",
+    tipo: "acciones",
+    cuenta: "SIM-1",
+    simbolo: "SLOW",
+    intentId,
+    cantidad: "198",
+  };
   const post = () =>
     page.request.post(SEND, {
       form,
@@ -166,6 +173,7 @@ test("ignores size, price and other fields the browser adds", async ({ context, 
   const send = (extra: Record<string, string>) =>
     page.request.post(SEND, {
       form: {
+        modo: "SIM",
         tipo: "acciones",
         cuenta: "SIM-1",
         simbolo: "SLOW",
@@ -179,7 +187,14 @@ test("ignores size, price and other fields the browser adds", async ({ context, 
 
   // A different quantity is only compared, never used: the server asks to re-confirm.
   const wrongQty = await page.request.post(SEND, {
-    form: { tipo: "acciones", cuenta: "SIM-1", simbolo: "SLOW", intentId, cantidad: "5" },
+    form: {
+      modo: "SIM",
+      tipo: "acciones",
+      cuenta: "SIM-1",
+      simbolo: "SLOW",
+      intentId,
+      cantidad: "5",
+    },
     headers: { origin: origin, accept: "text/html" },
   });
   expect(await wrongQty.text()).toContain("La cantidad cambió");
@@ -192,7 +207,14 @@ test("ignores size, price and other fields the browser adds", async ({ context, 
 
   // The intent id of another symbol cannot be reused.
   const other = await page.request.post(SEND, {
-    form: { tipo: "acciones", cuenta: "SIM-1", simbolo: "MSFT", intentId, cantidad: "198" },
+    form: {
+      modo: "SIM",
+      tipo: "acciones",
+      cuenta: "SIM-1",
+      simbolo: "MSFT",
+      intentId,
+      cantidad: "198",
+    },
     headers: { origin: origin, accept: "text/html" },
     maxRedirects: 0,
   });

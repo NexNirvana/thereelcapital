@@ -22,6 +22,10 @@
     /** Connection indicator; left out where it does not apply. */
     connection?: { healthy: boolean; label: string; action?: string | null; href: string };
     account?: string | null;
+    /** The mode of this request; REAL is shown with its own treatment (docs/design-system.md). */
+    mode?: "SIM" | "REAL";
+    /** Present only when REAL is in the client's modes: where the switch posts and what it hides. */
+    modeSwitch?: { action: string; back: string; entriesAllowed: boolean };
     /** Links in the mobile footer, before the sign-out button. */
     extras?: { href: string; label: string }[];
     /** Rendered above the page content. */
@@ -36,6 +40,8 @@
     tabs,
     connection,
     account,
+    mode = "SIM",
+    modeSwitch,
     extras = [],
     notice,
     children,
@@ -43,7 +49,7 @@
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- every href arrives from the caller already built with resolve() -->
-<div class="shell">
+<div class="shell" class:real={mode === "REAL"}>
   <aside class="sidebar">
     <a class="wordmark" href={home}>REEL<br />CAPITAL</a>
     <nav aria-label={label}>
@@ -73,12 +79,49 @@
           {/if}
         </p>
       {/if}
-      <div class="mode" class:push={!account}><Badge label="SIM" /></div>
+      <div class="mode" class:push={!account}>
+        {#if modeSwitch}
+          <form
+            class="switch"
+            method="POST"
+            action={modeSwitch.action}
+            aria-label="Modo de operación"
+          >
+            <input type="hidden" name="volver" value={modeSwitch.back} />
+            {#each ["SIM", "REAL"] as option (option)}
+              <button
+                type="submit"
+                name="modo"
+                value={option}
+                class:selected={mode === option}
+                aria-pressed={mode === option}
+              >
+                {option}
+              </button>
+            {/each}
+          </form>
+        {:else}
+          <Badge label={mode} />
+        {/if}
+      </div>
       {#if account}
         <p class="account" title="Cuenta">{maskAccount(account)}</p>
       {/if}
       <p class="clock desktop-only"><MarketClock /></p>
     </header>
+
+    {#if mode === "REAL"}
+      <div class="real-band" role="status">
+        <strong>REAL · Dinero real</strong>
+        <span>Las órdenes que envíes se ejecutan en tu cuenta real de TradeStation.</span>
+        {#if modeSwitch && !modeSwitch.entriesAllowed}
+          <span>
+            Solo salidas: las entradas nuevas en REAL están desactivadas. Puedes cerrar y proteger
+            tus posiciones REAL.
+          </span>
+        {/if}
+      </div>
+    {/if}
 
     <main>
       {#if notice}{@render notice()}{/if}
@@ -211,6 +254,44 @@
   .reconnect {
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+  .real-band {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    padding: 0.625rem 1rem;
+    background: var(--text);
+    color: var(--on-primary);
+    font-size: 13px;
+  }
+  .real-band strong {
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .real .sidebar .wordmark {
+    background: var(--text);
+    color: var(--on-primary);
+    padding-block: 0.5rem;
+  }
+  .switch {
+    display: flex;
+    border: 1px solid var(--rule-strong);
+  }
+  .switch button {
+    min-width: 3.5rem;
+    min-height: var(--target);
+    padding: 0 0.75rem;
+    border: 0;
+    background: var(--bg);
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .switch button.selected {
+    background: var(--text);
+    color: var(--on-primary);
   }
   .mode.push,
   .account {

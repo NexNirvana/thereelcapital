@@ -74,7 +74,7 @@ A monospaced face is wide, so check the long Spanish strings at 400px (`ALL OUT 
 
 ## Components
 
-- **Badge (mode)**: black fill, 1px off-white/grey outline, mono caps `SIM` / `REAL`. Always visible.
+- **Badge (mode)**: black fill, 1px off-white/grey outline, mono caps `SIM` / `REAL`. Always visible. With REAL available, the badge is the `SIM | REAL` selector (a segmented control of two submit buttons; the selected option is filled with the text colour and `--on-primary`). **REAL treatment** (existing tokens only, no new one): the selected `REAL` option, a full-width band in `--text` with `--on-primary` text (“REAL · Dinero real”) under the top bar, the inverted wordmark and the mode named in words on the order summary; SIM keeps the plain outlined look, so the two never read alike.
 - **Primary button**: off-white fill, black label (Plex Mono 600), right arrow `→`, square corners, full column width. Exactly one per view.
 - **Outline button**: 1px `--text` border, transparent fill (e.g. `Activar trailing`).
 - **Text link**: underlined (`Usar código de recuperación`).

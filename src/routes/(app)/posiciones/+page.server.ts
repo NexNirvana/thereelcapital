@@ -14,7 +14,7 @@ import {
   withVerification,
 } from "#lib/ui/positions.ts";
 import type { Actions, PageServerLoad } from "./$types";
-import { modeFor } from "#lib/server/trading-mode.ts";
+import { formModeMatches, MODE_MISMATCH_MESSAGE, modeFor } from "#lib/server/trading-mode.ts";
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64));
 // The only thing the browser may say about the view: which open position to show.
@@ -75,6 +75,9 @@ export const actions: Actions = {
   salir: async (event) => {
     requireUser(event);
     const form = await event.request.formData();
+    if (!formModeMatches(form, modeFor(event))) {
+      return fail(409, { message: MODE_MISMATCH_MESSAGE });
+    }
     const parsed = Schema.decodeUnknownResult(Exit)(fields(form, ["positionId", "step"]));
     if (parsed._tag === "Failure")
       return fail(400, { message: "Los datos enviados no son válidos." });
@@ -110,6 +113,9 @@ export const actions: Actions = {
   cancelar: async (event) => {
     requireUser(event);
     const form = await event.request.formData();
+    if (!formModeMatches(form, modeFor(event))) {
+      return fail(409, { message: MODE_MISMATCH_MESSAGE });
+    }
     const parsed = Schema.decodeUnknownResult(Cancel)(fields(form, ["intentId"]));
     if (parsed._tag === "Failure")
       return fail(400, { message: "Los datos enviados no son válidos." });
@@ -136,6 +142,9 @@ export const actions: Actions = {
   trailing: async (event) => {
     requireUser(event);
     const form = await event.request.formData();
+    if (!formModeMatches(form, modeFor(event))) {
+      return fail(409, { message: MODE_MISMATCH_MESSAGE });
+    }
     const parsed = Schema.decodeUnknownResult(Trailing)(
       fields(form, ["positionId", "trailingPct"]),
     );

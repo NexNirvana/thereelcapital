@@ -59,13 +59,20 @@ describe("one connection read per trader page load", () => {
   const read = (path: string) =>
     Bun.file(new URL(`../../routes/(app)/${path}`, import.meta.url)).text();
 
-  test("only the layout asks the engine; /operar and /conexion take it from parent()", async () => {
+  test("only the layout asks the engine; /operar takes it from parent()", async () => {
     expect(await read("+layout.server.ts")).toContain(".connection(");
-    for (const page of ["operar/+page.server.ts", "conexion/+page.server.ts"]) {
+    for (const page of ["operar/+page.server.ts"]) {
       const source = await read(page);
       expect(source).not.toContain(".connection(");
       expect(source).toContain("parent()");
     }
+  });
+
+  test("/conexion reads only the other mode's accounts itself", async () => {
+    const source = await read("conexion/+page.server.ts");
+    expect(source.match(/\.connection\(/g)).toHaveLength(1);
+    expect(source).toContain(".connection({ mode: otherMode })");
+    expect(source).toContain("parent()");
   });
 
   test("the chain refresh invalidates its own key, not the whole page", async () => {

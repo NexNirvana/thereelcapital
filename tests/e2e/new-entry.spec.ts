@@ -57,6 +57,7 @@ test("has no editable price, SIZE or quantity field", async ({ context, page }) 
     expect(
       names.every((name) =>
         [
+          "modo",
           "tipo",
           "cuenta",
           "simbolo",

@@ -73,7 +73,9 @@
   {/if}
 
   <p><Button variant="link" href={resolve("/(app)/operar")}>Volver a Nueva entrada</Button></p>
-  <p class="mode">SIM · Simulación, sin dinero real</p>
+  <p class="mode">
+    {data.mode === "REAL" ? "REAL · Dinero real" : "SIM · Simulación, sin dinero real"}
+  </p>
 </div>
 
 <style>
