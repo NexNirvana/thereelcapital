@@ -103,8 +103,8 @@ function errorTag(error: unknown): string {
 }
 
 /**
- * The mode of work no RPC names (browser sockets, the quote stream, alarm failures). SIM until the
- * issue that opens REAL entries gives the sockets and streams a mode of their own (D52).
+ * The mode of work no RPC names (browser sockets, the quote stream, alarm failures). SIM until #329
+ * gives the sockets and streams a mode of their own (D52); REAL screens price by polling meanwhile.
  */
 const STREAM_MODE: Mode = "SIM";
 
