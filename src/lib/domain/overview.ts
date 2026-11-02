@@ -42,6 +42,16 @@ export interface OverviewOrder {
   readonly createdAt: number;
 }
 
+/**
+ * The outcome of the latest REAL account listing (D49): how many accounts were stored and how many
+ * were skipped because another client holds them. Counts only, never an id or the other client.
+ */
+export interface RealListing {
+  readonly at: number;
+  readonly stored: number;
+  readonly skipped: number;
+}
+
 export interface ClientOverview {
   readonly connection: OverviewConnection;
   readonly positionsOpen: number;
@@ -50,6 +60,8 @@ export interface ClientOverview {
   readonly maxEntries: number;
   readonly positions: readonly OverviewPosition[];
   readonly orders: readonly OverviewOrder[];
+  /** Only for mode REAL, and null before the first listing; always null in SIM. */
+  readonly realListing: RealListing | null;
 }
 
 /** What the admin screens show for a client's connection: the health, or why there is none. */

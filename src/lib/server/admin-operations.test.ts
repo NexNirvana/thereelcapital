@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ClientOverview } from "#lib/domain/overview.ts";
-import { settled, startOverviews } from "./admin-operations.ts";
+import { readRealState, settled, startOverviews } from "./admin-operations.ts";
 
 const overview: ClientOverview = {
   connection: { status: "NOT_CONNECTED" },
@@ -10,6 +10,7 @@ const overview: ClientOverview = {
   maxEntries: 3,
   positions: [],
   orders: [],
+  realListing: null,
 };
 
 describe("settled", () => {
@@ -98,5 +99,38 @@ describe("startOverviews", () => {
     expect(slowDone).toBe(false);
     release();
     expect((await started[1]!.overview).status).toBe("ok");
+  });
+});
+
+describe("readRealState", () => {
+  const answer = (entries: readonly ("SIM" | "REAL")[], exits: readonly ("SIM" | "REAL")[]) => ({
+    modes: async () => ({ ok: true as const, value: { entries, exits } }),
+  });
+
+  test("reads a closed deployment from the engine's modes, not from a variable", async () => {
+    expect(await readRealState(true, answer(["SIM"], ["SIM"]))).toEqual({
+      status: "ok",
+      value: "closed",
+    });
+  });
+
+  test("reads active and exits-only", async () => {
+    expect(await readRealState(true, answer(["SIM", "REAL"], ["SIM", "REAL"]))).toEqual({
+      status: "ok",
+      value: "active",
+    });
+    expect(await readRealState(false, answer(["SIM"], ["SIM", "REAL"]))).toEqual({
+      status: "ok",
+      value: "exits-only",
+    });
+  });
+
+  test("reads an engine error or a timeout as unavailable", async () => {
+    expect(await readRealState(true, { modes: async () => ({ ok: false as const }) })).toEqual({
+      status: "unavailable",
+    });
+    expect(await readRealState(true, { modes: () => new Promise(() => undefined) }, 5)).toEqual({
+      status: "unavailable",
+    });
   });
 });

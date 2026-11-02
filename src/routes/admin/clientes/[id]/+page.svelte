@@ -4,10 +4,11 @@
   import { resolve } from "$app/paths";
   import { connectionKey } from "#lib/domain/overview.ts";
   import { CLIENT_NAME_MAX_CHARS } from "#lib/domain/client-name.ts";
-  import { connectionLabel } from "#lib/ui/admin-operations.ts";
+  import { connectionLabel, realListingText } from "#lib/ui/admin-operations.ts";
   import ClientOperations from "#lib/ui/ClientOperations.svelte";
   import { formatWhen } from "#lib/ui/history.ts";
   import ActivationLink from "#lib/ui/ActivationLink.svelte";
+  import AdminModeSwitch from "#lib/ui/AdminModeSwitch.svelte";
   import Button from "#lib/ui/Button.svelte";
   import DefinitionRow from "#lib/ui/DefinitionRow.svelte";
   import Notice from "#lib/ui/Notice.svelte";
@@ -16,6 +17,14 @@
 
   let { data, form }: PageProps = $props();
   const client = $derived(data.client);
+  const base = $derived(resolve("/admin/clientes/[id]", { id: client.id }));
+  const realStateText = {
+    active: "Activo: acepta entradas, salidas y protecciones REAL",
+    "exits-only":
+      "Solo salidas: el modo está desactivado y quedan posiciones u órdenes REAL sin terminar; las salidas y protecciones siguen permitidas",
+    closed: "REAL cerrado en este despliegue",
+    off: "Inactivo, o REAL cerrado en este despliegue",
+  } as const;
 
   const access = { invited: "Invitado", active: "Activo", disabled: "Desactivado" } as const;
   const linkState = {
@@ -365,6 +374,14 @@
         label="Estado"
         value={client.realTradingEnabled ? "Activado" : "Desactivado"}
       />
+      {#await data.realState}
+        <DefinitionRow label="Estado efectivo" value="Cargando…" />
+      {:then realState}
+        <DefinitionRow
+          label="Estado efectivo"
+          value={realState?.status === "ok" ? realStateText[realState.value] : "No disponible"}
+        />
+      {/await}
     </dl>
     <p class="hint">
       REAL también necesita el interruptor del despliegue, que solo abre el propietario: activarlo
@@ -402,7 +419,8 @@
 </section>
 
 <section aria-labelledby="operations">
-  <h2 id="operations">Conexión y posiciones</h2>
+  <h2 id="operations">Conexión y posiciones · {data.mode}</h2>
+  <AdminModeSwitch {base} mode={data.mode} />
   <div aria-live="polite">
     {#await data.operations}
       <p class="pending">Cargando estado…</p>
@@ -410,6 +428,7 @@
       {#if operations.status === "unavailable"}
         <Notice title="No disponible" role="alert">
           No pudimos leer el estado de este cliente. Recarga la página en unos segundos.
+          {#if data.mode === "REAL"}REAL solo responde con el interruptor del despliegue abierto.{/if}
         </Notice>
       {:else}
         {@const connection = operations.value.connection}
@@ -437,6 +456,12 @@
             <DefinitionRow
               label="Conexión para operar"
               value={connection.entriesBlocked ? "No utilizable" : "Utilizable"}
+            />
+          {/if}
+          {#if data.mode === "REAL"}
+            <DefinitionRow
+              label="Listado REAL"
+              value={realListingText(operations.value.realListing, formatWhen)}
             />
           {/if}
         </dl>

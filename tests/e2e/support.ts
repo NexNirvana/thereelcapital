@@ -378,6 +378,8 @@ function orderStatements(orders: readonly SeededOrder[]): EngineStatement[] {
 
 export interface SeededPosition {
   readonly id: string;
+  /** SIM when omitted. */
+  readonly mode?: "SIM" | "REAL";
   readonly symbol: string;
   readonly qty: number;
   readonly soldQty?: number;
@@ -403,9 +405,10 @@ function positionStatements(
     ...positions.map((p) => ({
       sql: `INSERT INTO positions (id, mode, account_id, symbol, original_qty, sold_qty, avg_entry_price, stop_pct,
          trailing_unlock_pct, protection_state, status, opened_on, underlying, expiry, strike, right)
-       VALUES (?, 'SIM', ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04', ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 101000000, 30, 70, ?, 'OPEN', '2026-11-04', ?, ?, ?, ?)`,
       params: [
         p.id,
+        p.mode ?? "SIM",
         p.account ?? "SIM-1",
         p.symbol,
         p.qty,
@@ -419,8 +422,8 @@ function positionStatements(
     })),
     ...positions.flatMap((p) =>
       Array.from({ length: 7 }, (_, idx) => ({
-        sql: "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, 'SIM', ?, ?)",
-        params: [p.id, idx, p.steps?.[idx] ?? "available"],
+        sql: "INSERT INTO scaleout_steps (position_id, mode, idx, state) VALUES (?, ?, ?, ?)",
+        params: [p.id, p.mode ?? "SIM", idx, p.steps?.[idx] ?? "available"],
       })),
     ),
     ...(entries > 0
@@ -446,6 +449,7 @@ export async function seedTradingClient(
     entriesToday = 0,
     status = "CONNECTED",
     refreshExpiresAt = null,
+    realListing,
   }: {
     accounts?: readonly string[];
     sizeUsd?: number;
@@ -454,6 +458,8 @@ export async function seedTradingClient(
     entriesToday?: number;
     status?: "CONNECTED" | "EXPIRED" | "REVOKED" | "ERROR";
     refreshExpiresAt?: number | null;
+    /** The latest REAL account listing the engine logged (counts only). */
+    realListing?: { readonly stored: number; readonly skipped: number };
   } = {},
 ) {
   const userId = await seedSignedInUser(context);
@@ -471,6 +477,15 @@ export async function seedTradingClient(
       sql: "INSERT INTO broker_accounts (mode, account_id, account_type) VALUES ('SIM', ?, 'Margin')",
       params: [accountId],
     })),
+    ...(realListing === undefined
+      ? []
+      : [
+          {
+            sql: `INSERT INTO events (at, mode, level, type, message, data_json)
+                  VALUES (?, 'REAL', 'info', 'real_accounts.listed', 'real_accounts.listed', ?)`,
+            params: [ENGINE_NOW - 30_000, JSON.stringify(realListing)],
+          },
+        ]),
     ...(orders.length > 0 ? orderStatements(orders) : []),
     ...(positions.length > 0 || entriesToday > 0
       ? positionStatements(positions, entriesToday)

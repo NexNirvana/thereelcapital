@@ -8,6 +8,7 @@ import type { BrokerAccount, BrokerAdapterShape } from "../src/broker/adapter.ts
 import { Unknown } from "../src/broker/errors.ts";
 import { makeLocalSim } from "../src/broker/local-sim/sim.ts";
 import { prepareEntry, sendEntry, type EntryContext } from "../src/entries.ts";
+import { readRealListing } from "../src/overview.ts";
 import { listRealAccounts, unbindRealAccounts } from "../src/real-accounts.ts";
 import { runSync } from "../src/sync.ts";
 import {
@@ -92,8 +93,33 @@ describe("REAL accounts", () => {
         .toArray();
       expect(JSON.stringify(logged)).toContain("bound_elsewhere");
       expect(JSON.stringify(logged)).not.toContain(shared);
+      expect(JSON.stringify(logged)).not.toContain(first.userId);
+      // The latest listing alone is the current outcome: it carries both counts.
+      expect(readRealListing(ctx.sql)).toEqual({
+        at: expect.any(Number),
+        stored: 1,
+        skipped: 1,
+      });
+      expect(
+        ctx.sql
+          .exec<{ data_json: string }>(
+            "SELECT data_json FROM events WHERE mode = 'REAL' AND type = 'real_accounts.listed'",
+          )
+          .one().data_json,
+      ).toBe('{"stored":1,"skipped":1}');
     });
     expect(await owner(shared)).toBe(first.userId);
+  });
+
+  it("reads no listing before the first one and zero skipped after a clean one", async () => {
+    const clock: Clock = { now: IN_SESSION };
+    const client = await newClient();
+    const broker = listing(clock, [account(unique("Z"))]);
+    await inClient(client, clock, broker, async (ctx) => {
+      expect(readRealListing(ctx.sql)).toBeNull();
+      await listRealAccounts(ctx, broker);
+      expect(readRealListing(ctx.sql)).toEqual({ at: expect.any(Number), stored: 1, skipped: 0 });
+    });
   });
 
   it("gives a contested account to exactly one of two clients listing it at once", async () => {

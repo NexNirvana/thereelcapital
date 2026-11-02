@@ -16,7 +16,8 @@ import {
   type Issued,
   type Outcome,
 } from "#lib/server/admin-client-access.ts";
-import { settled } from "#lib/server/admin-operations.ts";
+import { adminModeOf } from "#lib/server/admin-mode.ts";
+import { readRealState, settled } from "#lib/server/admin-operations.ts";
 import { engineForClient } from "#lib/server/engine.ts";
 import { requireAdmin } from "#lib/server/guards.ts";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
@@ -31,10 +32,13 @@ export const load: PageServerLoad = async (event) => {
   // Asked after the client is known to exist, so an arbitrary id never wakes a Durable Object.
   const client = await getClientDetail(env.DB, event.params.id);
   // Streamed: the client's details paint at once and the engine's answer fills its section.
-  const operations = settled(() =>
-    engineForClient(env.ENGINE, event, client.id).overview({ mode: modeFor(event) }),
-  );
-  return { client, operations };
+  const mode = adminModeOf(event.url);
+  const engine = engineForClient(env.ENGINE, event, client.id);
+  const operations = settled(() => engine.overview({ mode }));
+  // The effective REAL state: the switch in D1 read with what the engine allows right now.
+  const realState =
+    client.realTradingEnabled === null ? null : readRealState(client.realTradingEnabled, engine);
+  return { client, mode, operations, realState };
 };
 
 const context = () => ({ db: env.DB });

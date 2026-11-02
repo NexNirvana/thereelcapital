@@ -5,6 +5,9 @@ import { attempt } from "./broker/attempt.ts";
 import type { BrokerAdapterShape } from "./broker/adapter.ts";
 import { logEvent } from "./events.ts";
 
+/** The event every listing writes; `data` is `{ stored, skipped }`, counts only. */
+export const REAL_ACCOUNTS_LISTED = "real_accounts.listed";
+
 export interface RealAccountsContext {
   readonly sql: SqlStorage;
   readonly storage: DurableObjectStorage;
@@ -78,7 +81,11 @@ export async function listRealAccounts(
   if (skipped > 0) {
     logEvent({ ...ctx, mode: "REAL" }, "warn", "real_accounts.bound_elsewhere", { skipped });
   }
-  logEvent({ ...ctx, mode: "REAL" }, "info", "real_accounts.listed", { stored: mine.length });
+  // The latest listing alone is the current outcome (the admin reads it), so it carries both counts.
+  logEvent({ ...ctx, mode: "REAL" }, "info", REAL_ACCOUNTS_LISTED, {
+    stored: mine.length,
+    skipped,
+  });
   return { ok: true, stored: mine.length, skipped };
 }
 

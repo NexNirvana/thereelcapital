@@ -223,10 +223,11 @@ describe("readAdminHistory", () => {
 describe("AdminHistoryQuery", () => {
   const decode = (input: unknown) =>
     Schema.decodeUnknownResult(AdminHistoryQuery, { onExcessProperty: "error" })(input)._tag;
-  test("rejects unknown parameters, REAL mode, bad states and impossible dates", () => {
+  test("rejects unknown parameters, an unknown mode, bad states and impossible dates", () => {
     expect(decode({ cliente: "c1", estado: "FILLED", tipo: "errores" })).toBe("Success");
+    expect(decode({ modo: "REAL" })).toBe("Success");
     expect(decode({ extra: "1" })).toBe("Failure");
-    expect(decode({ modo: "REAL" })).toBe("Failure");
+    expect(decode({ modo: "LIVE" })).toBe("Failure");
     expect(decode({ estado: "NOPE" })).toBe("Failure");
     expect(decode({ desde: "2026-02-31" })).toBe("Failure");
     expect(decode({ despues: "1; DROP" })).toBe("Failure");
