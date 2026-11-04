@@ -417,3 +417,49 @@ test("turns REAL mode on and off for one client with an audit row each time", as
   expect(realOf(client.userId)).toEqual([{ enabled: 0 }]);
   expect(audited("client_settings.real_trading", client.userId)).toBe(2);
 });
+
+test("turns the client-chosen SIZE on and off for one client with an audit row each time", async ({
+  context,
+  page,
+}) => {
+  await seedSignedInUser(context, { role: "admin" });
+  const client = await seedPendingClient();
+  const other = await seedPendingClient();
+  const flagOf = (userId: string) =>
+    d1(`SELECT client_sets_size AS enabled FROM client_settings WHERE user_id = '${userId}'`);
+  await page.goto(`/admin/clientes/${client.userId}`, { waitUntil: "networkidle" });
+
+  const section = page.getByRole("region", { name: "El cliente elige su SIZE" });
+  await expect(section.getByText("Desactivado", { exact: true })).toBeVisible();
+  expect(flagOf(client.userId)).toEqual([{ enabled: 0 }]);
+
+  await section.getByRole("button", { name: "Activar elección de SIZE" }).click();
+  await expect(section.getByText("Activado", { exact: true })).toBeVisible();
+  expect(flagOf(client.userId)).toEqual([{ enabled: 1 }]);
+  expect(flagOf(other.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.client_sets_size", client.userId)).toBe(1);
+  if (process.env.SCREENSHOT_DIR) {
+    for (const [width, height, label] of [
+      [1440, 900, "desktop"],
+      [390, 844, "mobile"],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await section.screenshot({
+        path: `${process.env.SCREENSHOT_DIR}/admin-size-switch-${label}.png`,
+      });
+    }
+  }
+
+  await section.getByRole("button", { name: "Desactivar elección de SIZE" }).click();
+  await expect(section.getByText("Desactivado", { exact: true })).toBeVisible();
+  expect(flagOf(client.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.client_sets_size", client.userId)).toBe(2);
+
+  const invalid = await page.request.post(`/admin/clientes/${client.userId}?/setClientSetsSize`, {
+    form: { clientSetsSize: "enabled" },
+    headers: { origin, accept: "application/json" },
+  });
+  expect(await invalid.text()).toContain("INVALID_INPUT");
+  expect(flagOf(client.userId)).toEqual([{ enabled: 0 }]);
+  expect(audited("client_settings.client_sets_size", client.userId)).toBe(2);
+});

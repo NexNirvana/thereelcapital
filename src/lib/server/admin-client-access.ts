@@ -142,6 +142,19 @@ export const realTradingErrors = {
   },
 } as const;
 
+export const clientSetsSizeErrors = {
+  unchanged: {
+    status: 409,
+    code: "CLIENT_SETS_SIZE_UNCHANGED",
+    message: "La opción de elegir el SIZE ya estaba en ese estado.",
+  },
+  changedMeanwhile: {
+    status: 409,
+    code: "CLIENT_SETS_SIZE_CHANGED",
+    message: "La opción de elegir el SIZE cambió mientras la editabas. Recarga la página.",
+  },
+} as const;
+
 export const nameErrors = {
   nameInvalid: {
     status: 422,
@@ -160,6 +173,7 @@ type Failure =
   | (typeof accessErrors)[keyof typeof accessErrors]
   | (typeof settingsErrors)[keyof typeof settingsErrors]
   | (typeof realTradingErrors)[keyof typeof realTradingErrors]
+  | (typeof clientSetsSizeErrors)[keyof typeof clientSetsSizeErrors]
   | typeof guardErrors.reauthRequired;
 export type Outcome<T = Record<never, never>> = ({ ok: true } & T) | { ok: false; error: Failure };
 
@@ -199,6 +213,7 @@ const SettingsRow = Schema.Struct({
   maxDailyEntries: Schema.Number,
 });
 const RealTradingRow = Schema.Struct({ enabled: Schema.Literals([0, 1]) });
+const ClientSetsSizeRow = Schema.Struct({ enabled: Schema.Literals([0, 1]) });
 export type ClientSettings = typeof SettingsRow.Type;
 
 export type LinkState = "none" | "open" | "used" | "expired" | "revoked";
@@ -217,6 +232,8 @@ export interface ClientDetail {
   minSizeUsd: number | null;
   /** Lock 2 of REAL mode (D52): null only when the client has no settings row. */
   realTradingEnabled: boolean | null;
+  /** D53: the client may choose the SIZE of one entry; null only when the client has no settings row. */
+  clientSetsSize: boolean | null;
   /** The fixed open positions limit, shown read-only (docs/product-spec.md#parameters). */
   limits: { openPositions: number };
   /** Allowed ranges for the form's hints; the server re-checks them with the domain validators. */
@@ -279,6 +296,14 @@ async function loadRealTrading<S extends AccessStatement>(db: AccessDb<S>, userI
   return row === null ? null : Schema.decodeUnknownSync(RealTradingRow)(row).enabled === 1;
 }
 
+async function loadClientSetsSize<S extends AccessStatement>(db: AccessDb<S>, userId: string) {
+  const row = await db
+    .prepare(`SELECT client_sets_size AS enabled FROM client_settings WHERE user_id = ?`)
+    .bind(userId)
+    .first();
+  return row === null ? null : Schema.decodeUnknownSync(ClientSetsSizeRow)(row).enabled === 1;
+}
+
 /** The detail page's data. Hashes, tokens and credential material are never selected. */
 export async function getClientDetail<S extends AccessStatement>(
   db: AccessDb<S>,
@@ -286,7 +311,7 @@ export async function getClientDetail<S extends AccessStatement>(
   now = Date.now(),
 ): Promise<ClientDetail> {
   const profile = await loadTarget(db, rawId);
-  const [sessions, links, settings, realTradingEnabled] = await Promise.all([
+  const [sessions, links, settings, realTradingEnabled, clientSetsSize] = await Promise.all([
     db
       .prepare(
         `SELECT "id" AS id, "createdAt" AS createdAt, "expiresAt" AS expiresAt, "userAgent" AS userAgent,
@@ -304,6 +329,7 @@ export async function getClientDetail<S extends AccessStatement>(
       .all(),
     loadSettings(db, profile.id),
     loadRealTrading(db, profile.id),
+    loadClientSetsSize(db, profile.id),
   ]);
   const [latest] = Schema.decodeUnknownSync(Schema.Array(LinkRow))(links.results);
   const linkState: LinkState = !latest
@@ -327,6 +353,7 @@ export async function getClientDetail<S extends AccessStatement>(
     settings,
     minSizeUsd: settings?.sizeUsd ?? null,
     realTradingEnabled,
+    clientSetsSize,
     limits: { openPositions: MAX_OPEN_POSITIONS },
     bounds: {
       stopPct: STOP_PCT_BOUNDS,
@@ -855,5 +882,53 @@ export function setClientRealTrading<L extends GuardLocals, S extends AccessStat
         ),
     ]);
     return updated?.meta.changes === 1 ? { ok: true } : refuse(realTradingErrors.changedMeanwhile);
+  });
+}
+
+const ClientSetsSizeForm = Schema.Struct({ clientSetsSize: Schema.Literals(["on", "off"]) });
+
+/**
+ * Lets one client choose the SIZE of each entry, or stops it (D53): admin only, passkey within 10
+ * minutes, the target a non-admin client from the route. It stays on until the admin turns it off.
+ * It only sets the flag: the engine reads the flag and the SIZE (the upper bound of the amount) from
+ * D1 whenever it sizes an entry, so nothing here changes an entry already placed. A separate action
+ * from `updateClientSettings`, like REAL: the UPDATE matches the value the check ran against and
+ * the audit row (before and after) lands in the same batch. Repeating the current value is refused
+ * with no write and no audit row.
+ */
+export function setClientSetsSize<L extends GuardLocals, S extends AccessStatement>(
+  event: GuardEvent<L>,
+  { db }: Context<S>,
+  targetId: string,
+  form: unknown,
+  now = Date.now(),
+): Promise<Outcome> {
+  return guarded(event, db, targetId, now, async (actor, target) => {
+    const enabled = decode(ClientSetsSizeForm, form).clientSetsSize === "on";
+    const before = await loadClientSetsSize(db, target.id);
+    if (before === null) return refuse(settingsErrors.missing);
+    if (before === enabled) return refuse(clientSetsSizeErrors.unchanged);
+    const [updated] = await db.batch([
+      db
+        .prepare(
+          `UPDATE client_settings SET client_sets_size = ?, updated_at = ?
+           WHERE user_id = ? AND client_sets_size = ?`,
+        )
+        .bind(enabled ? 1 : 0, now, target.id, before ? 1 : 0),
+      db
+        .prepare(`${auditInsert} SELECT ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`)
+        .bind(
+          crypto.randomUUID(),
+          now,
+          actor.user.id,
+          "client_settings.client_sets_size",
+          target.id,
+          JSON.stringify({ clientSetsSize: before }),
+          JSON.stringify({ clientSetsSize: enabled }),
+        ),
+    ]);
+    return updated?.meta.changes === 1
+      ? { ok: true }
+      : refuse(clientSetsSizeErrors.changedMeanwhile);
   });
 }
