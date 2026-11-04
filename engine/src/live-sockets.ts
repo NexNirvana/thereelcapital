@@ -41,6 +41,7 @@ const WatchMessage = Schema.Struct({
       symbol: Schema.String.check(Schema.isPattern(WATCH_SYMBOL)),
       assetType: Schema.Literals(["equity", "option"]),
       sizeChoice: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
+      sizeUsd: Schema.optionalKey(Schema.Int),
     }),
   ),
   symbols: Schema.optionalKey(Symbols),

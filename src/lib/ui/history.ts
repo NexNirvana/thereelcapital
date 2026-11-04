@@ -133,7 +133,7 @@ export function fillPrice(avgFillPrice: number | null): string {
 }
 
 /**
- * The SIZE an entry was sized with, and «−25%» when the client chose it (D51); a dash for any other
+ * The SIZE an entry was sized with, and «−25%» or «monto propio» when the client chose it (D51, D53); a dash for any other
  * order. Both fields are optional: an engine that predates them sends neither (deploy skew).
  */
 export function sizeLine(order: {
@@ -143,5 +143,6 @@ export function sizeLine(order: {
 }): string {
   if (order.kind !== "entry" || order.size_applied == null) return "—";
   const size = formatSize(order.size_applied);
-  return order.size_choice === "down25" ? `${size} · −25%` : size;
+  if (order.size_choice === "down25") return `${size} · −25%`;
+  return order.size_choice === "custom" ? `${size} · monto propio` : size;
 }

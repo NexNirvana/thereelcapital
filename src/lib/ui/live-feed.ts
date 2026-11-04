@@ -8,6 +8,7 @@
 
 import { LIVE_STREAM_SILENCE_MS } from "#lib/domain/config.ts";
 import type { LiveMessage, WatchMessage } from "#lib/domain/live-protocol.ts";
+import { isSizeChoice } from "#lib/domain/sizing.ts";
 import {
   startLivePoll,
   type LivePollOptions,
@@ -93,7 +94,7 @@ export function parseLiveMessage(text: unknown): LiveMessage | null {
       if (update.status !== "ready" || typeof symbol !== "string") return null;
       // An engine that predates the choice sends none, and always sized at the full SIZE.
       const sizeChoice = update.sizeChoice ?? "full";
-      if (sizeChoice !== "full" && sizeChoice !== "down25") return null;
+      if (!isSizeChoice(sizeChoice)) return null;
       if (assetType !== "equity" && assetType !== "option") return null;
       if (!isNumber(qty) || !isNumber(sizeMicros) || !isNumber(askMicros)) return null;
       return {

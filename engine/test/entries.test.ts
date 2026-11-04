@@ -45,7 +45,9 @@ function newSim(now: () => number = () => IN_SESSION): LocalSim {
 let counter = 0;
 
 /** A connected client with SIZE $20,000 and two SIM accounts, and the Durable Object that serves it. */
-async function newClient(options: { sizeUsd?: number | null; maxDailyEntries?: number } = {}) {
+async function newClient(
+  options: { sizeUsd?: number | null; maxDailyEntries?: number; clientSetsSize?: boolean } = {},
+) {
   const userId = `entries-user-${++counter}`;
   await env.DB.prepare(
     `INSERT INTO "user" (id, name, email, emailVerified, createdAt, updatedAt) VALUES (?, 'Test', ?, 1, 0, 0)`,
@@ -55,10 +57,15 @@ async function newClient(options: { sizeUsd?: number | null; maxDailyEntries?: n
   if (options.sizeUsd !== null) {
     await env.DB.prepare(
       `INSERT INTO client_settings
-         (user_id, size_usd, stop_pct, trailing_unlock_pct, max_daily_entries, updated_at)
-       VALUES (?, ?, 30, 70, ?, 0)`,
+         (user_id, size_usd, stop_pct, trailing_unlock_pct, max_daily_entries, client_sets_size, updated_at)
+       VALUES (?, ?, 30, 70, ?, ?, 0)`,
     )
-      .bind(userId, options.sizeUsd ?? 20_000, options.maxDailyEntries ?? 3)
+      .bind(
+        userId,
+        options.sizeUsd ?? 20_000,
+        options.maxDailyEntries ?? 3,
+        options.clientSetsSize === true ? 1 : 0,
+      )
       .run();
   }
   await env.DB.prepare(
@@ -126,12 +133,14 @@ async function send(
     accountId?: string;
     assetType?: "equity" | "option";
     confirmedQty?: number;
-    sizeChoice?: "full" | "down25";
+    sizeChoice?: "full" | "down25" | "custom";
+    sizeUsd?: number;
   } = {},
 ) {
   const base = {
     ...target(symbol, options.accountId, options.assetType),
     ...(options.sizeChoice === undefined ? {} : { sizeChoice: options.sizeChoice }),
+    ...(options.sizeUsd === undefined ? {} : { sizeUsd: options.sizeUsd }),
   };
   const prepared = await prepareEntry(ctx, base);
   if (!prepared.ok || prepared.value.status !== "READY") return prepared;
@@ -944,6 +953,154 @@ describe("the one-entry SIZE choice", () => {
           confirmedQty: 1,
         }),
       ).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    }
+  });
+});
+
+// D53: with the admin's switch on, the client may type the SIZE of one entry. The browser names the
+// choice and an amount to check; the engine reads the switch and the SIZE from D1 each time.
+describe("a client-chosen SIZE (D53)", () => {
+  const custom = (symbol: string, sizeUsd: number, assetType: "equity" | "option" = "equity") =>
+    ({ ...target(symbol, "SIM-1", assetType), sizeChoice: "custom", sizeUsd }) as const;
+
+  it("sizes a stock and an option at exactly the amount and echoes the choice", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const { stock, option } = await inClient(client, async (ctx) => ({
+      stock: await prepareEntry(ctx, custom("AAPL", 1_000)),
+      option: await prepareEntry(ctx, custom("MSFT 261120C400", 2_000, "option")),
+    }));
+    expect(stock).toMatchObject({
+      value: { qty: 5, sizeMicros: usd(1_000), sizeChoice: "custom" },
+    });
+    expect(option).toMatchObject({ value: { qty: 5, sizeMicros: usd(2_000) } });
+  });
+
+  it("accepts 1 dollar and the client's SIZE, and refuses 0, a negative and SIZE + 1", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const answers = await inClient(client, async (ctx) => ({
+      atSize: await prepareEntry(ctx, custom("AAPL", 20_000)),
+      aboveSize: await prepareEntry(ctx, custom("AAPL", 20_001)),
+      zero: await prepareEntry(ctx, custom("AAPL", 0)),
+      negative: await prepareEntry(ctx, custom("AAPL", -5)),
+      oneDollar: await prepareEntry(ctx, custom("AAPL", 1)),
+    }));
+    expect(answers.atSize).toMatchObject({ value: { status: "READY", qty: 100 } });
+    for (const refused of [answers.aboveSize, answers.zero, answers.negative]) {
+      expect(refused).toMatchObject({
+        value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_OUT_OF_RANGE"] },
+      });
+    }
+    // 1 dollar is a valid amount that buys nothing: refused like any entry below the minimum.
+    expect(answers.oneDollar).toMatchObject({
+      value: { status: "BLOCKED", reasons: ["BELOW_MINIMUM"] },
+    });
+  });
+
+  it("bounds the amount by the client's own SIZE, not a fixed one", async () => {
+    const client = await newClient({ clientSetsSize: true, sizeUsd: 5_000 });
+    const answers = await inClient(client, async (ctx) => ({
+      ok: await prepareEntry(ctx, custom("AAPL", 5_000)),
+      above: await prepareEntry(ctx, custom("AAPL", 5_001)),
+    }));
+    expect(answers.ok).toMatchObject({ value: { status: "READY", sizeMicros: usd(5_000) } });
+    expect(answers.above).toMatchObject({
+      value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_OUT_OF_RANGE"] },
+    });
+  });
+
+  it("refuses a custom amount at prepare and at send while the switch is off", async () => {
+    const client = await newClient();
+    const { prepared, sent, rows, orders } = await inClient(client, async (ctx, state, sim) => ({
+      prepared: await prepareEntry(ctx, custom("AAPL", 1_000)),
+      sent: await send(ctx, "AAPL", { sizeChoice: "custom", sizeUsd: 1_000 }),
+      rows: snapshot(state),
+      orders: await orderCount(sim),
+    }));
+    expect(prepared).toMatchObject({
+      value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_DISABLED"] },
+    });
+    expect(sent).toMatchObject({ value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_DISABLED"] } });
+    expect(rows).toEqual({ counters: [], intents: [] });
+    expect(orders).toBe(0);
+  });
+
+  it("refuses the send when the switch is turned off after prepare, with nothing reserved", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const { sent, rows, orders } = await inClient(client, async (ctx, state, sim) => {
+      const prepared = await prepareEntry(ctx, custom("AAPL", 1_000));
+      if (!prepared.ok || prepared.value.status !== "READY") throw new Error("not ready");
+      await env.DB.prepare("UPDATE client_settings SET client_sets_size = 0 WHERE user_id = ?")
+        .bind(client.userId)
+        .run();
+      const sent = await sendEntry(ctx, {
+        ...custom("AAPL", 1_000),
+        intentId: prepared.value.intentId,
+        confirmedQty: prepared.value.qty,
+      });
+      return { sent, rows: snapshot(state), orders: await orderCount(sim) };
+    });
+    expect(sent).toMatchObject({ value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_DISABLED"] } });
+    expect(rows).toEqual({ counters: [], intents: [] });
+    expect(orders).toBe(0);
+  });
+
+  it("keeps the switch of one client from applying to another", async () => {
+    const allowed = await newClient({ clientSetsSize: true });
+    const other = await newClient();
+    const first = await inClient(allowed, (ctx) => prepareEntry(ctx, custom("AAPL", 1_000)));
+    const second = await inClient(other, (ctx) => prepareEntry(ctx, custom("AAPL", 1_000)));
+    expect(first).toMatchObject({ value: { status: "READY", sizeMicros: usd(1_000) } });
+    expect(second).toMatchObject({
+      value: { status: "BLOCKED", reasons: ["CUSTOM_SIZE_DISABLED"] },
+    });
+  });
+
+  it("persists the choice and the applied amount on the intent before the broker call", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const { sent, intent } = await inClient(client, async (ctx, state) => ({
+      sent: await send(ctx, "AAPL", { sizeChoice: "custom", sizeUsd: 1_000 }),
+      intent: state.storage.sql
+        .exec("SELECT qty, size_applied, size_choice, state FROM intents")
+        .one(),
+    }));
+    expect(sent).toMatchObject({ value: { status: "PLACED", qty: 5 } });
+    expect(intent).toMatchObject({ qty: 5, size_applied: usd(1_000), size_choice: "custom" });
+  });
+
+  it("asks to re-confirm a quantity sized for another amount, and reserves nothing", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const { result, rows } = await inClient(client, async (ctx, state) => {
+      const prepared = await prepareEntry(ctx, custom("AAPL", 1_000));
+      if (!prepared.ok || prepared.value.status !== "READY") throw new Error("not ready");
+      const result = await sendEntry(ctx, {
+        ...custom("AAPL", 2_000),
+        intentId: prepared.value.intentId,
+        confirmedQty: prepared.value.qty,
+      });
+      return { result, rows: snapshot(state) };
+    });
+    expect(result).toMatchObject({
+      value: { status: "RECONFIRM", preview: { qty: 10, sizeChoice: "custom" } },
+    });
+    expect(rows).toEqual({ counters: [], intents: [] });
+  });
+
+  it("rejects an amount without the custom choice, the custom choice without one, and a fraction", async () => {
+    const client = await newClient({ clientSetsSize: true });
+    const bad = [
+      { sizeUsd: 100 },
+      { sizeChoice: "full", sizeUsd: 100 },
+      { sizeChoice: "down25", sizeUsd: 100 },
+      { sizeChoice: "custom" },
+      { sizeChoice: "custom", sizeUsd: 100.5 },
+      { sizeChoice: "custom", sizeUsd: "100" },
+      { sizeChoice: "custom", sizeUsd: 100, sizeMicros: usd(100) },
+    ];
+    for (const extra of bad) {
+      expect(await client.stub.prepareEntry({ ...target("AAPL"), ...extra })).toMatchObject({
+        ok: false,
+        code: "INVALID_INPUT",
+      });
     }
   });
 });

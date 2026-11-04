@@ -13,6 +13,8 @@ export interface WatchEntry {
   readonly assetType: "equity" | "option";
   /** The client's one-entry SIZE choice (D51). Left out for the full SIZE, so an engine that predates it refuses the watch instead of ignoring it. */
   readonly sizeChoice?: SizeChoice;
+  /** With the choice `custom` only (D53): the amount in whole dollars the client asks for; the engine checks it against its own bounds. */
+  readonly sizeUsd?: number;
 }
 
 /** Replaces everything the socket watched so far. An empty watch stops the stream for this screen. */

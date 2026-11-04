@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { blockMessage, formatPrice, formatQuantity, formatSize, limitsLine } from "./new-entry.ts";
+import {
+  blockMessage,
+  formatPrice,
+  formatQuantity,
+  formatSize,
+  limitsLine,
+  parseCustomUsd,
+  sizeParams,
+} from "./new-entry.ts";
 
 describe("blockMessage", () => {
   it("words the first reason in Spanish", () => {
@@ -42,5 +50,20 @@ describe("money and quantity", () => {
     expect(formatQuantity(1, "option")).toBe("1 contrato");
     expect(formatQuantity(198, "equity")).toBe("198 acciones");
     expect(formatQuantity(1, "equity")).toBe("1 acción");
+  });
+});
+
+describe("the client-chosen SIZE (D53)", () => {
+  it("sends only the choice and the typed amount", () => {
+    expect(sizeParams("full", "500")).toEqual({});
+    expect(sizeParams("down25", "500")).toEqual({ tamano: "down25" });
+    expect(sizeParams("custom", "500")).toEqual({ tamano: "custom", importe: "500" });
+  });
+
+  it("reads only whole dollars", () => {
+    expect(parseCustomUsd("1500")).toBe(1500);
+    for (const text of [undefined, "", "0.5", "1e3", "-5", " 5", "5 ", "1,500", "1234567890"]) {
+      expect(parseCustomUsd(text)).toBeUndefined();
+    }
   });
 });

@@ -14,6 +14,12 @@ export const DEFAULT_SIZE_USD = 20_000;
  */
 export const SIZE_DOWN_APPLIED_PCT = 75;
 
+/**
+ * Smallest amount, in whole US dollars, a client may type as the SIZE of one entry when the admin
+ * lets them (decision D53, docs/product-spec.md#parameters). The top is the client's own SIZE.
+ */
+export const CUSTOM_SIZE_MIN_USD = 1;
+
 /** Initial stop % below the average fill price, set by the admin per client. */
 export const STOP_PCT_BOUNDS = { min: 10, max: 50 } as const;
 export const DEFAULT_STOP_PCT = 30;

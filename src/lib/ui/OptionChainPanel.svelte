@@ -28,6 +28,7 @@
   import type { ChainView } from "./chain-view.ts";
   import ComboField, { type ComboOption } from "./ComboField.svelte";
   import ExpirationField from "./ExpirationField.svelte";
+  import { sizeParams } from "./new-entry.ts";
   import {
     chainFromMessages,
     chainSymbols,
@@ -58,6 +59,7 @@
     initialCount,
     chosenSymbol,
     sizeChoice,
+    sizeAmount,
   }: {
     view: ChainView;
     accountId: string | null;
@@ -70,6 +72,8 @@
     chosenSymbol: string;
     /** The one-entry SIZE choice (D51); the links below keep it while the contract changes. */
     sizeChoice: SizeChoice;
+    /** The amount typed with the choice `custom` (D53), as the URL carries it. */
+    sizeAmount: string;
   } = $props();
 
   const entryPath = resolve("/(app)/operar");
@@ -77,7 +81,7 @@
     new URLSearchParams({
       tipo: "opciones",
       ...(accountId === null ? {} : { cuenta: accountId }),
-      ...(sizeChoice === "full" ? {} : { tamano: sizeChoice }),
+      ...sizeParams(sizeChoice, sizeAmount),
       ...extra,
     });
   let center = $derived(initialStrike);
@@ -300,7 +304,7 @@
     tipo: "opciones",
     subyacente: view.underlying,
     ...(accountId === null ? {} : { cuenta: accountId }),
-    ...(sizeChoice === "full" ? {} : { tamano: sizeChoice }),
+    ...sizeParams(sizeChoice, sizeAmount),
     ...countQuery,
   });
   const expirationHref = (isoDate: string) =>
@@ -338,6 +342,9 @@
   <input type="hidden" name="tipo" value="opciones" />
   {#if sizeChoice !== "full"}
     <input type="hidden" name="tamano" value={sizeChoice} />
+  {/if}
+  {#if sizeChoice === "custom"}
+    <input type="hidden" name="importe" value={sizeAmount} />
   {/if}
   {#if accounts.length > 1}
     <div class="field">

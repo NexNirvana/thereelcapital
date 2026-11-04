@@ -1,6 +1,7 @@
 // RPC surface of the ClientCoordinator: argument schemas and the typed failure every method can
-// return. Arguments never carry a client id (the DO is the client), SIZE, quantity, price or a
-// broker URL (CLAUDE.md, never-break rule 3).
+// return. Arguments never carry a client id (the DO is the client), quantity, price or a broker URL
+// (CLAUDE.md, never-break rule 3). The one amount is `sizeUsd` with the choice `custom` (D53), which
+// the engine checks against the SIZE and the switch it reads from D1.
 
 import { Schema, SchemaTransformation } from "effect";
 import { isCalendarDay } from "#lib/domain/calendar.ts";
@@ -22,10 +23,17 @@ const EntryTarget = {
   symbol: Symbol,
   assetType: Schema.Literals(["equity", "option"]),
   /**
-   * The client's choice for this one entry (D51): the full SIZE when absent. A closed set, never an
-   * amount: the engine computes the applied SIZE from the client's SIZE.
+   * The client's choice for this one entry (D51): the full SIZE when absent. A closed set; the
+   * engine computes the applied SIZE from the client's SIZE.
    */
   sizeChoice: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
+  /**
+   * Only with the choice `custom` (D53): the amount in whole US dollars the client asks for. A
+   * request, not a SIZE: the engine refuses it unless the admin's switch is on and it is from 1 to
+   * the client's SIZE, both read from D1. Optional so a deploy skew fails closed (an old engine
+   * rejects the unknown field).
+   */
+  sizeUsd: Schema.optionalKey(Schema.Int),
 };
 
 export const PrepareEntryArgs = Schema.Struct(EntryTarget);

@@ -1,6 +1,6 @@
 import { json } from "@sveltejs/kit";
 import { env } from "cloudflare:workers";
-import { blockMessage } from "#lib/ui/new-entry.ts";
+import { blockMessage, parseCustomUsd } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
 import { ASSET_TYPE, EntryQuery, SYMBOL, sizeChoiceArg } from "#lib/server/entry-query.ts";
 import { choiceApplied } from "#lib/domain/sizing.ts";
@@ -26,13 +26,21 @@ export const GET: RequestHandler = async (event) => {
     return json({ status: "invalid" }, { status: 400, headers: noStore });
   }
 
+  const customUsd = parseCustomUsd(query.importe?.trim());
+  if (query.tamano === "custom" && customUsd === undefined) {
+    return json(
+      { status: "blocked", message: blockMessage(["CUSTOM_SIZE_OUT_OF_RANGE"]) },
+      { headers: noStore },
+    );
+  }
+
   const prepared = await engineFor(env.ENGINE, event)
     .prepareEntry({
       mode: modeFor(event),
       accountId: query.cuenta,
       symbol,
       assetType: ASSET_TYPE[query.tipo ?? "acciones"],
-      ...sizeChoiceArg(query.tamano),
+      ...sizeChoiceArg(query.tamano, customUsd),
     })
     .catch(() => null);
   if (prepared === null) return json({ status: "unavailable" }, { status: 502, headers: noStore });
@@ -50,7 +58,12 @@ export const GET: RequestHandler = async (event) => {
     );
   }
   // An engine that ignored the choice would show a quantity the order would not follow (D51).
-  if (!choiceApplied(query.tamano ?? "full", prepared.value.sizeChoice)) {
+  if (
+    !choiceApplied(query.tamano ?? "full", prepared.value.sizeChoice, {
+      requestedUsd: customUsd,
+      appliedMicros: prepared.value.sizeMicros,
+    })
+  ) {
     return json({ status: "blocked", message: SIZE_CHOICE_MISMATCH }, { headers: noStore });
   }
   const {

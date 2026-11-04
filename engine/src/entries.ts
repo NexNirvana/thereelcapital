@@ -19,8 +19,8 @@ import {
   type RejectionReason,
 } from "#lib/domain/guards.ts";
 import {
-  appliedSize,
   computeEntryQty,
+  entrySize,
   type EntryAsk,
   type EntryBlockReason,
   type SizeChoice,
@@ -55,6 +55,8 @@ export type EntryBlockCode =
   | "CONNECTION_UNUSABLE"
   | "RECONCILIATION_PENDING"
   | "SIZE_UNAVAILABLE"
+  | "CUSTOM_SIZE_DISABLED"
+  | "CUSTOM_SIZE_OUT_OF_RANGE"
   | "DAILY_ENTRY_LIMIT"
   | "OPEN_POSITION_LIMIT";
 
@@ -66,7 +68,7 @@ export interface EntryPreview {
   readonly symbol: string;
   readonly assetType: "equity" | "option";
   readonly qty: number;
-  /** The SIZE this entry is sized with: the client's SIZE or the share they chose (D51). */
+  /** The SIZE this entry is sized with: the client's SIZE, the share or the amount they chose (D51, D53). */
   readonly sizeMicros: number;
   /** Echo of the choice applied, so the web Worker can refuse an engine that ignored it. */
   readonly sizeChoice: SizeChoice;
@@ -275,9 +277,18 @@ async function evaluate(
   if (inputs.sizeUsd === null || !Number.isSafeInteger(inputs.sizeUsd * MICROS_PER_USD)) {
     return blocked("SIZE_UNAVAILABLE");
   }
-  // The browser names only the choice; the SIZE is the client's, read from D1 (D51).
+  // The browser names the choice (and, for `custom`, an amount to check); the SIZE and the admin's
+  // switch are the client's, read from D1 (D51, D53). The amount belongs to the custom choice only.
   const sizeChoice = args.sizeChoice ?? "full";
-  const sizeMicros = appliedSize(inputs.sizeUsd * MICROS_PER_USD, sizeChoice);
+  if ((sizeChoice === "custom") !== (args.sizeUsd !== undefined)) return failure("INVALID_INPUT");
+  const size = entrySize({
+    configuredSize: inputs.sizeUsd * MICROS_PER_USD,
+    choice: sizeChoice,
+    customUsd: args.sizeUsd,
+    customAllowed: inputs.clientSetsSize,
+  });
+  if (!size.ok) return blocked(size.reason);
+  const sizeMicros = size.sizeMicros;
 
   if (!details.ok) {
     if (details.error._tag === "Rejected") {

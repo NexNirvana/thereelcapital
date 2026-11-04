@@ -4,6 +4,7 @@ import {
   appliedSize,
   choiceApplied,
   computeEntryQty,
+  entrySize,
   validateSizeChange,
   type EntryBlockReason,
   type EntrySizingInput,
@@ -230,5 +231,89 @@ describe("choiceApplied", () => {
   test("an engine that echoes nothing applied the full SIZE, never a reduced one", () => {
     expect(choiceApplied("full", undefined)).toBe(true);
     expect(choiceApplied("down25", undefined)).toBe(false);
+  });
+});
+
+describe("entrySize (D53)", () => {
+  const configuredSize = parseMicros("20000");
+  const custom = (customUsd: number | undefined, customAllowed = true) =>
+    entrySize({ configuredSize, choice: "custom", customUsd, customAllowed });
+
+  test("full and down25 ignore the switch and any amount", () => {
+    expect(
+      entrySize({ configuredSize, choice: "full", customUsd: 5, customAllowed: false }),
+    ).toEqual({
+      ok: true,
+      sizeMicros: configuredSize,
+    });
+    expect(
+      entrySize({ configuredSize, choice: "down25", customUsd: 5, customAllowed: false }),
+    ).toEqual({ ok: true, sizeMicros: parseMicros("15000") });
+  });
+
+  test.each([1, 250, 19_999, 20_000])("sizes a custom entry at exactly $%s", (usd) => {
+    expect(custom(usd)).toEqual({ ok: true, sizeMicros: usd * 1_000_000 });
+  });
+
+  test.each([0, -5, 20_001, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER, undefined])(
+    "refuses the amount %s as out of range",
+    (usd) => {
+      expect(custom(usd)).toEqual({ ok: false, reason: "CUSTOM_SIZE_OUT_OF_RANGE" });
+    },
+  );
+
+  test("refuses a custom amount while the admin's switch is off, whatever the amount", () => {
+    expect(custom(100, false)).toEqual({ ok: false, reason: "CUSTOM_SIZE_DISABLED" });
+    expect(custom(0, false)).toEqual({ ok: false, reason: "CUSTOM_SIZE_DISABLED" });
+  });
+
+  test("a custom amount sizes stocks and options with the same quantity rule", () => {
+    const size = custom(1000);
+    if (!size.ok) throw new Error("expected a size");
+    expect(computeEntryQty({ ...option, size: size.sizeMicros })).toEqual({ ok: true, qty: 2 });
+    const stock: EntrySizingInput = {
+      ...option,
+      assetType: "equity",
+      pointValue: 1,
+      increment: 1,
+      ask: { status: "fresh", price: parseMicros("30") },
+    };
+    expect(computeEntryQty({ ...stock, size: size.sizeMicros })).toEqual({ ok: true, qty: 33 });
+  });
+
+  test("a custom amount below one share or contract is a below-minimum entry", () => {
+    const size = custom(1);
+    if (!size.ok) throw new Error("expected a size");
+    expect(computeEntryQty({ ...option, size: size.sizeMicros })).toEqual({
+      ok: false,
+      reason: "BELOW_MINIMUM",
+    });
+  });
+});
+
+describe("choiceApplied with a custom amount", () => {
+  test("accepts only the exact amount asked for", () => {
+    expect(
+      choiceApplied("custom", "custom", { requestedUsd: 250, appliedMicros: 250_000_000 }),
+    ).toBe(true);
+    expect(
+      choiceApplied("custom", "custom", { requestedUsd: 250, appliedMicros: 20_000_000_000 }),
+    ).toBe(false);
+  });
+
+  test("refuses an engine that predates the choice (it answers nothing, meaning full)", () => {
+    expect(
+      choiceApplied("custom", undefined, { requestedUsd: 250, appliedMicros: 250_000_000 }),
+    ).toBe(false);
+    expect(choiceApplied("custom", "full", { requestedUsd: 250, appliedMicros: 250_000_000 })).toBe(
+      false,
+    );
+  });
+
+  test("refuses a custom request that carries no amount", () => {
+    expect(choiceApplied("custom", "custom")).toBe(false);
+    expect(choiceApplied("custom", "custom", { requestedUsd: undefined, appliedMicros: 1 })).toBe(
+      false,
+    );
   });
 });

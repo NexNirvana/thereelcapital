@@ -124,3 +124,20 @@ test("an answer for another SIZE choice than the one requested is never shown", 
   const blocked = { status: "blocked", message: "x" } as const;
   expect(matchingChoice(blocked, "down25")).toBe(blocked);
 });
+
+test("a client-chosen amount is shown only when the engine sized exactly that amount", () => {
+  const custom = (sizeMicros: number, sizeChoice = "custom") =>
+    parseLiveEntry({ ...ready, preview: { ...ready.preview, sizeChoice, sizeMicros } });
+  const applied = custom(1_500_000_000);
+  if (applied === null) throw new Error("fixture must parse");
+  expect(matchingChoice(applied, "custom", 1_500)).toBe(applied);
+  for (const entry of [custom(20_000_000_000), custom(1_500_000_000, "full")]) {
+    if (entry === null) throw new Error("fixture must parse");
+    expect(matchingChoice(entry, "custom", 1_500)).toEqual({
+      status: "blocked",
+      message: SIZE_CHOICE_MISMATCH,
+    });
+  }
+  expect(matchingChoice(applied, "custom")).toMatchObject({ status: "blocked" });
+  expect(matchingChoice(applied, "custom", 1_501)).toMatchObject({ status: "blocked" });
+});

@@ -2,6 +2,7 @@
 // the engine's stable ones (engine/src/entries.ts); the engine decides, this only words it.
 
 import { formatUsd } from "#lib/domain/money.ts";
+import type { SizeChoice } from "#lib/domain/sizing.ts";
 
 /** Spanish reason for each code the engine can return; one line the client can act on. */
 const BLOCK_MESSAGES: Readonly<Record<string, string>> = {
@@ -11,6 +12,8 @@ const BLOCK_MESSAGES: Readonly<Record<string, string>> = {
   RECONCILIATION_PENDING:
     "Estamos conciliando tus órdenes con TradeStation. Las entradas se reanudan al terminar.",
   SIZE_UNAVAILABLE: "Tu SIZE no está configurado. Avisa al administrador.",
+  CUSTOM_SIZE_DISABLED: "Elegir el SIZE de la entrada no está habilitado para tu cuenta.",
+  CUSTOM_SIZE_OUT_OF_RANGE: "El monto debe ser un número entero de dólares, de 1 hasta tu SIZE.",
   DAILY_ENTRY_LIMIT: "Ya usaste las entradas de hoy.",
   OPEN_POSITION_LIMIT: "Ya tienes el máximo de posiciones abiertas.",
   QUOTE_MISSING: "No hay cotización disponible para este instrumento.",
@@ -79,3 +82,16 @@ export function connectionBlockCode(
     ? "RECONCILIATION_PENDING"
     : "CONNECTION_UNUSABLE";
 }
+
+/**
+ * The URL parameters that carry the one-entry SIZE choice (D51, D53): none for the full SIZE, so a
+ * new Nueva entrada starts there. `amount` is the text the client typed, kept as it is.
+ */
+export function sizeParams(choice: SizeChoice, amount: string): Record<string, string> {
+  if (choice === "full") return {};
+  return choice === "custom" ? { tamano: choice, importe: amount } : { tamano: choice };
+}
+
+/** A whole number of dollars as typed; anything else is no amount. The engine checks the bounds. */
+export const parseCustomUsd = (text: string | undefined): number | undefined =>
+  text !== undefined && /^[0-9]{1,9}$/.test(text) ? Number(text) : undefined;
