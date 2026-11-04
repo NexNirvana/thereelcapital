@@ -301,7 +301,17 @@ describe("the REAL listing retry", () => {
         await state.storage.deleteAlarm();
         await run({
           instance,
-          alarm: () => state.storage.getAlarm(),
+          // The scheduler's due time (storage KV), not the runtime's alarm: workerd runs alarms on
+          // the real clock and reports a past alarm as "now", so for the fixed IN_SESSION instant
+          // getAlarm() grows with real elapsed time once that instant has passed.
+          alarm: async () => {
+            if ((await state.storage.getAlarm()) === null) return null;
+            const due = ["refresh", "sync"].flatMap((task) => {
+              const at = state.storage.kv.get<number>(`alarm_due:${task}`);
+              return at === undefined ? [] : [at];
+            });
+            return Math.min(...due);
+          },
           request: async () => {
             await state.storage.deleteAlarm();
             await instance.connection({ mode: "SIM" });
