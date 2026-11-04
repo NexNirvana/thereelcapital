@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { findOpenInvitation } from "./activation.ts";
 import {
+  clientSetsSizeErrors,
   accessErrors,
   deactivateClient,
   generateLink,
@@ -17,6 +18,7 @@ import {
   revokeSession,
   realTradingErrors,
   setClientRealTrading,
+  setClientSetsSize,
   settingsErrors,
   updateClientSettings,
 } from "./admin-client-access.ts";
@@ -100,6 +102,8 @@ const mutations: Record<string, Mutation> = {
     updateClientSettings(e, s.ctx, id, { sizeUsd: "25000", stopPct: "30", unlockPct: "70" }, now),
   setRealTrading: (s, e, id = "c1") =>
     setClientRealTrading(e, s.ctx, id, { realTrading: "on", confirmed: "on" }, now),
+  setClientSetsSize: (s, e, id = "c1") =>
+    setClientSetsSize(e, s.ctx, id, { clientSetsSize: "on" }, now),
   rename: (s, e, id = "c1") => renameClient(e, s.ctx, id, { name: "Ana Pérez" }, now),
   recover: (s, e, id = "c1") => recoverClient(e, s.ctx, id, { verified: "on" }, now),
 };
@@ -923,6 +927,106 @@ describe("setClientRealTrading", () => {
   });
 
   test("never lets an admin enable REAL for an admin account", async () => {
+    const s = setup();
+    await expect(set(s, "on", "admin-1")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("setClientSetsSize (D53)", () => {
+  const set = (s: ReturnType<typeof setup>, clientSetsSize: unknown, id = "c1") =>
+    setClientSetsSize(admin(), s.ctx, id, { clientSetsSize }, now);
+  const flag = (s: ReturnType<typeof setup>, id: string) =>
+    s.db.sqlite
+      .query<{ flag: number }, [string]>(
+        `SELECT client_sets_size AS flag FROM client_settings WHERE user_id = ?`,
+      )
+      .get(id)?.flag;
+
+  test("starts off for every client", () => {
+    const s = setup();
+    expect([flag(s, "c1"), flag(s, "c2")]).toEqual([0, 0]);
+  });
+
+  test("turns the switch on then off, one audit row each, without touching the SIZE or another client", async () => {
+    const s = setup();
+    expect(await set(s, "on")).toEqual({ ok: true });
+    expect([flag(s, "c1"), flag(s, "c2")]).toEqual([1, 0]);
+    expect(await set(s, "off")).toEqual({ ok: true });
+    expect(flag(s, "c1")).toBe(0);
+    const rows = audits(s.db, "client_settings.client_sets_size");
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.actor_id === "admin-1" && row.target_user_id === "c1")).toBe(
+      true,
+    );
+    const changes = rows.map((row) =>
+      [row.before_json, row.after_json].map((json) => JSON.parse(json).clientSetsSize),
+    );
+    expect(changes).toContainEqual([false, true]);
+    expect(changes).toContainEqual([true, false]);
+    expect((await getClientDetail(s.db, "c1", now)).settings?.sizeUsd).toBe(20_000);
+  });
+
+  test("shows the state in the client detail", async () => {
+    const s = setup();
+    expect((await getClientDetail(s.db, "c1", now)).clientSetsSize).toBe(false);
+    await set(s, "on");
+    expect((await getClientDetail(s.db, "c1", now)).clientSetsSize).toBe(true);
+  });
+
+  test("refuses the value the client already has and writes no audit row", async () => {
+    const s = setup();
+    expect(await set(s, "off")).toEqual({ ok: false, error: clientSetsSizeErrors.unchanged });
+    await set(s, "on");
+    expect(await set(s, "on")).toEqual({ ok: false, error: clientSetsSizeErrors.unchanged });
+    expect(audits(s.db, "client_settings.client_sets_size")).toHaveLength(1);
+  });
+
+  test("fails instead of overwriting when the flag changed after the check", async () => {
+    const s = setup();
+    const racing = {
+      ...s.ctx,
+      db: new Proxy(s.db, {
+        get(target, key, receiver) {
+          if (key !== "batch") return Reflect.get(target, key, receiver);
+          return (statements: Parameters<typeof s.db.batch>[0]) => {
+            s.db.sqlite.run(`UPDATE client_settings SET client_sets_size = 1 WHERE user_id = 'c1'`);
+            return target.batch(statements);
+          };
+        },
+      }),
+    };
+    expect(await setClientSetsSize(admin(), racing, "c1", { clientSetsSize: "on" }, now)).toEqual({
+      ok: false,
+      error: clientSetsSizeErrors.changedMeanwhile,
+    });
+    expect(audits(s.db, "client_settings.client_sets_size")).toHaveLength(0);
+  });
+
+  test("refuses a client without a settings row", async () => {
+    const s = setup();
+    s.user("bare");
+    expect(await set(s, "on", "bare")).toEqual({ ok: false, error: settingsErrors.missing });
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test.each(["true", "1", "ON", "", undefined, 1])("rejects %p as invalid input", async (value) => {
+    const s = setup();
+    await expect(set(s, value)).rejects.toMatchObject({ status: 400 });
+    expect(flag(s, "c1")).toBe(0);
+    expect(n(s.db, "audit_log")).toBe(0);
+  });
+
+  test("rejects unknown fields such as a client id or an amount", async () => {
+    const s = setup();
+    for (const extra of [{ clientId: "c2" }, { sizeUsd: "100" }]) {
+      await expect(
+        setClientSetsSize(admin(), s.ctx, "c1", { clientSetsSize: "on", ...extra }, now),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+    expect(flag(s, "c1")).toBe(0);
+  });
+
+  test("never lets an admin set it for an admin account", async () => {
     const s = setup();
     await expect(set(s, "on", "admin-1")).rejects.toMatchObject({ status: 404 });
   });

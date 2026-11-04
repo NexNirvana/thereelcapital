@@ -43,6 +43,7 @@
     updateSettings: "Configuración guardada.",
     rename: "Nombre guardado.",
     setRealTrading: "Modo REAL actualizado.",
+    setClientSetsSize: "Elección del SIZE actualizada.",
   };
 
   const usd = new Intl.NumberFormat("en-US"); // docs/design-system.md#formats: US$20,000
@@ -415,6 +416,33 @@
         </Button>
       </form>
     {/if}
+  {/if}
+</section>
+
+<section aria-labelledby="client-size">
+  <h2 id="client-size">El cliente elige su SIZE</h2>
+  {#if client.clientSetsSize === null || client.settings === null}
+    <p class="hint">Este cliente no tiene configuración guardada.</p>
+  {:else}
+    <dl>
+      <DefinitionRow label="Estado" value={client.clientSetsSize ? "Activado" : "Desactivado"} />
+    </dl>
+    <p class="hint">
+      Activado, Nueva entrada deja al cliente escribir el SIZE de cada entrada, en dólares enteros
+      desde 1 hasta su SIZE actual (US${usd.format(client.settings.sizeUsd)}), en SIM y en REAL.
+      Sigue activo hasta que lo desactives. El SIZE configurado no cambia y para permitir entradas
+      mayores hay que subirlo arriba.
+    </p>
+    <form method="POST" action="?/setClientSetsSize" use:enhance={submit("setClientSetsSize")}>
+      <input type="hidden" name="clientSetsSize" value={client.clientSetsSize ? "off" : "on"} />
+      <Button type="submit" disabled={busy !== null}>
+        {#if client.clientSetsSize}
+          {busy === "setClientSetsSize" ? "Desactivando" : "Desactivar elección de SIZE"}
+        {:else}
+          {busy === "setClientSetsSize" ? "Activando" : "Activar elección de SIZE"}
+        {/if}
+      </Button>
+    </form>
   {/if}
 </section>
 

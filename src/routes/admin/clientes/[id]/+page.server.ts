@@ -12,6 +12,7 @@ import {
   revokeLink,
   revokeSession,
   setClientRealTrading,
+  setClientSetsSize,
   updateClientSettings,
   type Issued,
   type Outcome,
@@ -93,6 +94,16 @@ export const actions: Actions = {
       "setRealTrading",
       await setClientRealTrading(event, context(), event.params.id, await form(event)),
     ),
+  // D53: the engine keeps a short-lived copy of this switch for the live preview, like SIZE; tell it
+  // to drop it (a failed call is harmless: it expires, and orders always read D1).
+  setClientSetsSize: async (event) => {
+    const result = await setClientSetsSize(event, context(), event.params.id, await form(event));
+    if (result.ok) {
+      const engine = engineForClient(env.ENGINE, event, event.params.id);
+      await settled(() => engine.settingsChanged({ mode: modeFor(event) }));
+    }
+    return respond(event, "setClientSetsSize", result);
+  },
   rename: async (event) =>
     respond(
       event,

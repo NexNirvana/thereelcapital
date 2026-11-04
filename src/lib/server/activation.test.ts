@@ -281,6 +281,7 @@ describe("createClient", () => {
         max_daily_entries: DEFAULT_DAILY_ENTRIES,
         // New clients start with REAL off (D52 lock 2).
         real_trading_enabled: 0,
+        client_sets_size: 0,
         updated_at: now,
       },
     ]);
