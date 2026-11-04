@@ -52,7 +52,7 @@ Deploys run only from CI on `main` (`deploy` job in `.github/workflows/ci.yml`);
 
 1. The client id comes from the verified session. Every query and DO call is scoped by it.
 2. Secrets and tokens stay server-side, encrypted at rest, never logged. Only the engine decrypts TradeStation credentials.
-3. The server computes quantity from SIZE and the TradeStation ask. It never accepts SIZE, quantity, price or a broker URL from the browser.
+3. The server computes quantity from SIZE and the TradeStation ask. It never accepts quantity, price or a broker URL from the browser; the one amount it accepts is the whole-dollar entry SIZE of a client the admin allowed (D53), re-checked against the SIZE and switch in D1 at prepare and at send.
 4. MARKET, long-only, regular session, in-scope instruments, SIM or REAL behind its locks (D52). Everything else is rejected by the server.
 5. Persist the intent (`OrderConfirmID` = intent id) before every broker call; never retry place or cancel; a timeout means UNKNOWN, which is reconciled.
 6. No `await` between reading and writing counters or ledgers in the DO.
