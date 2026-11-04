@@ -6,6 +6,12 @@ import { ClientCoordinator } from "../src/index.ts";
 import { logOnce } from "../src/reconcile.ts";
 import { newClient } from "./sync-helpers.ts";
 
+describe("the engine test environment", () => {
+  it("pins the REAL switch closed whatever engine/wrangler.jsonc says", () => {
+    expect(env.REAL_TRADING).toBe("disabled");
+  });
+});
+
 describe("activeModes", () => {
   it("is SIM only while the deployment switch is closed, whatever the client flag says", async () => {
     const client = await newClient();
