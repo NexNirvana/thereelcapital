@@ -16,6 +16,9 @@ export default defineConfig({
             // The only place the local simulation is switched on (broker/select.ts).
             BROKER: "local-sim",
             ENVIRONMENT: "test",
+            // Tests never depend on the production value in engine/wrangler.jsonc: the REAL switch
+            // is closed here, and a test that needs it open opens it for itself.
+            REAL_TRADING: "disabled",
             CREDENTIALS_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
           },
         },
