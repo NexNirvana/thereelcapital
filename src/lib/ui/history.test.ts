@@ -90,6 +90,12 @@ describe("sizeLine", () => {
     );
   });
 
+  it("marks an amount the client chose (D53)", () => {
+    expect(sizeLine({ kind: "entry", size_applied: 1_500_000_000, size_choice: "custom" })).toBe(
+      "US$1,500 · monto propio",
+    );
+  });
+
   it("is a dash for exits and for entries with no recorded SIZE", () => {
     expect(sizeLine({ kind: "exit", size_applied: null, size_choice: null })).toBe("—");
     expect(sizeLine({ kind: "entry", size_applied: null, size_choice: null })).toBe("—");

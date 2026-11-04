@@ -3,7 +3,7 @@
 // itself when it is sent.
 
 import type { LiveMessage } from "#lib/domain/live-protocol.ts";
-import { choiceApplied, type SizeChoice } from "#lib/domain/sizing.ts";
+import { choiceApplied, isSizeChoice, type SizeChoice } from "#lib/domain/sizing.ts";
 import { blockMessage } from "./new-entry.ts";
 
 export interface LiveEntryPreview {
@@ -43,7 +43,7 @@ export function parseLiveEntry(body: unknown): LiveEntry | null {
     sizeChoice = "full",
   } = preview as Record<string, unknown>;
   if (typeof symbol !== "string") return null;
-  if (sizeChoice !== "full" && sizeChoice !== "down25") return null;
+  if (!isSizeChoice(sizeChoice)) return null;
   if (!isNumber(qty) || !isNumber(sizeMicros) || !isNumber(askMicros)) return null;
   if (assetType !== "equity" && assetType !== "option") return null;
   return {
@@ -61,8 +61,16 @@ export const SIZE_CHOICE_MISMATCH =
  * A ready answer is trusted only for the choice the screen asked for: otherwise the quantity shown
  * would not be the one an order sends (deploy skew, docs/architecture.md#deploying).
  */
-export function matchingChoice(entry: LiveEntry, requested: SizeChoice): LiveEntry {
-  return entry.status === "ready" && !choiceApplied(requested, entry.preview.sizeChoice)
+export function matchingChoice(
+  entry: LiveEntry,
+  requested: SizeChoice,
+  requestedUsd?: number,
+): LiveEntry {
+  return entry.status === "ready" &&
+    !choiceApplied(requested, entry.preview.sizeChoice, {
+      requestedUsd,
+      appliedMicros: entry.preview.sizeMicros,
+    })
     ? { status: "blocked", message: SIZE_CHOICE_MISMATCH }
     : entry;
 }

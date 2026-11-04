@@ -8,16 +8,27 @@ export const EntryQuery = Schema.Struct({
   tipo: Schema.optionalKey(Schema.Literals(["acciones", "opciones"])),
   cuenta: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   simbolo: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(32))),
-  /** The one-entry SIZE choice (D51): a closed set, never an amount. Absent means the full SIZE. */
+  /** The one-entry SIZE choice (D51, D53): a closed set. Absent means the full SIZE. */
   tamano: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
+  /** With `tamano=custom` only (D53): the amount typed, in dollars. Text, so a typo is a message and not an error page. */
+  importe: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(12))),
 });
 
 /**
  * What the engine call carries for a choice. The full SIZE is left out, so an engine that predates
- * the choice keeps working for it, while a reduced one is refused by its strict decoder.
+ * the choice keeps working for it, while a reduced or custom one is refused by its strict decoder.
+ * A custom choice carries the amount as typed; the engine refuses it unless it is within its bounds.
  */
-export const sizeChoiceArg = (choice: SizeChoice | undefined) =>
-  choice === "down25" ? ({ sizeChoice: "down25" } as const) : ({} as const);
+export const sizeChoiceArg = (choice: SizeChoice | undefined, customUsd?: number) => {
+  if (choice === "down25") return { sizeChoice: "down25" } as const;
+  if (choice === "custom") {
+    return {
+      sizeChoice: "custom",
+      ...(customUsd === undefined ? {} : { sizeUsd: customUsd }),
+    } as const;
+  }
+  return {} as const;
+};
 
 /** The /operar page also takes the chain to show on the Opciones tab (all plain text the server validates again). */
 export const OperarQuery = Schema.Struct({

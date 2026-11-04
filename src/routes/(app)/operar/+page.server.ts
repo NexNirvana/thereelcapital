@@ -2,7 +2,7 @@ import { fail, redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { env } from "cloudflare:workers";
 import { Schema } from "effect";
-import { blockMessage, connectionBlockCode } from "#lib/ui/new-entry.ts";
+import { blockMessage, connectionBlockCode, parseCustomUsd } from "#lib/ui/new-entry.ts";
 import { decode } from "#lib/server/decode.ts";
 import {
   ASSET_TYPE,
@@ -33,6 +33,9 @@ export const load: PageServerLoad = async (event) => {
   const tipo = query.tipo ?? "acciones";
   // Every new Nueva entrada starts at the full SIZE: the choice lives in this URL only (D51).
   const sizeChoice = query.tamano ?? "full";
+  // D53: the amount as typed (kept in the URL) and as a number; only `custom` reads it.
+  const sizeAmount = sizeChoice === "custom" ? (query.importe ?? "").trim() : "";
+  const customUsd = parseCustomUsd(sizeAmount);
   const symbol = (query.simbolo ?? "").trim().toUpperCase();
 
   const engine = engineFor(env.ENGINE, event);
@@ -45,9 +48,13 @@ export const load: PageServerLoad = async (event) => {
   // The connection comes from the layout; the other reads start now so they overlap with it.
   const others = Promise.all([
     engine.limits({ mode: modeFor(event) }).catch(() => null),
-    env.DB.prepare("SELECT stop_pct FROM client_settings WHERE user_id = ?")
+    // The stop, and what the custom SIZE field needs (D53): it shows only while the admin's switch
+    // is on, and its bounds are the client's SIZE. The engine reads both again when it sizes.
+    env.DB.prepare(
+      "SELECT stop_pct, size_usd, client_sets_size FROM client_settings WHERE user_id = ?",
+    )
       .bind(user.id)
-      .first<{ stop_pct: number }>()
+      .first<{ stop_pct: number; size_usd: number; client_sets_size: number }>()
       .catch(() => null),
     // What the chosen option symbol stands for, so the screen shows the underlying and the
     // contract apart. The symbol came back from the chain; the engine says what it is.
@@ -71,6 +78,12 @@ export const load: PageServerLoad = async (event) => {
     tipo,
     symbol,
     sizeChoice,
+    sizeAmount,
+    // Whether to offer the free amount and the SIZE it cannot exceed, in whole dollars.
+    customSize:
+      settings?.client_sets_size === 1
+        ? { maxUsd: settings.size_usd }
+        : (null as null | { maxUsd: number }),
     stopPct: settings?.stop_pct ?? null,
     limits: limits?.ok ? limits.value : null,
     contract: chosen,
@@ -120,13 +133,18 @@ export const load: PageServerLoad = async (event) => {
     return { ...shown, preview: null, blocked: blockMessage(["SYMBOL_DETAILS_MISSING"]) };
   }
 
+  // A typed amount that is not a whole number never reaches the engine.
+  if (sizeChoice === "custom" && customUsd === undefined) {
+    return { ...shown, preview: null, blocked: blockMessage(["CUSTOM_SIZE_OUT_OF_RANGE"]) };
+  }
+
   const prepared = await engine
     .prepareEntry({
       mode: modeFor(event),
       accountId,
       symbol,
       assetType: ASSET_TYPE[tipo],
-      ...sizeChoiceArg(sizeChoice),
+      ...sizeChoiceArg(sizeChoice, customUsd),
     })
     .catch(() => null);
   if (prepared === null) {
@@ -137,7 +155,12 @@ export const load: PageServerLoad = async (event) => {
     return { ...shown, preview: null, blocked: blockMessage(prepared.value.reasons) };
   }
   // An engine that ignored the choice would show a quantity the order would not follow.
-  if (!choiceApplied(sizeChoice, prepared.value.sizeChoice)) {
+  if (
+    !choiceApplied(sizeChoice, prepared.value.sizeChoice, {
+      requestedUsd: customUsd,
+      appliedMicros: prepared.value.sizeMicros,
+    })
+  ) {
     return { ...shown, preview: null, blocked: SIZE_CHOICE_MISMATCH };
   }
   // One intent id per page load: every post of this page's send form carries it, so a double
@@ -169,6 +192,9 @@ const Send = Schema.Struct({
   cantidad: Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
   // The choice, never an amount: the engine computes the applied SIZE (D51).
   tamano: Schema.optionalKey(Schema.Literals(SIZE_CHOICES)),
+  // With `custom` only (D53): the amount in whole dollars; the engine checks it against the admin's
+  // switch and the client's SIZE.
+  importe: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9]{1,9}$/))),
 });
 
 const statusHref = (intentId: string) => resolve("/(app)/operar/revisar/[intentId]", { intentId });
@@ -184,7 +210,7 @@ export const actions: Actions = {
     const parsed = Schema.decodeUnknownResult(Send)(
       // A field the form left out is absent, not null: the choice is optional (the full SIZE).
       Object.fromEntries(
-        ["tipo", "cuenta", "simbolo", "intentId", "cantidad", "tamano"]
+        ["tipo", "cuenta", "simbolo", "intentId", "cantidad", "tamano", "importe"]
           .map((name) => [name, form.get(name)] as const)
           .filter(([, value]) => value !== null),
       ),
@@ -194,6 +220,11 @@ export const actions: Actions = {
     }
     const { tipo, cuenta, simbolo, intentId, cantidad } = parsed.success;
     const tamano = parsed.success.tamano ?? "full";
+    const customUsd = parseCustomUsd(parsed.success.importe);
+    // The amount belongs to the custom choice and the custom choice needs it.
+    if ((tamano === "custom") !== (customUsd !== undefined)) {
+      return fail(400, { message: "Los datos enviados no son válidos." });
+    }
 
     const sent = await engineFor(env.ENGINE, event)
       .sendEntry({
@@ -203,7 +234,7 @@ export const actions: Actions = {
         assetType: ASSET_TYPE[tipo],
         intentId,
         confirmedQty: cantidad,
-        ...sizeChoiceArg(tamano),
+        ...sizeChoiceArg(tamano, customUsd),
       })
       // The order may have left before the failure: the status page tells what became of it.
       .catch(() => null);
@@ -212,7 +243,12 @@ export const actions: Actions = {
     const result = sent.value;
     if (result.status === "BLOCKED") return fail(409, { message: blockMessage(result.reasons) });
     if (result.status === "RECONFIRM") {
-      if (!choiceApplied(tamano, result.preview.sizeChoice)) {
+      if (
+        !choiceApplied(tamano, result.preview.sizeChoice, {
+          requestedUsd: customUsd,
+          appliedMicros: result.preview.sizeMicros,
+        })
+      ) {
         return fail(409, { message: SIZE_CHOICE_MISMATCH });
       }
       const { symbol, qty, sizeMicros, askMicros, assetType } = result.preview;

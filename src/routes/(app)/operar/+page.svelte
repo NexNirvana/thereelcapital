@@ -12,6 +12,7 @@
     LIVE_QUOTE_MAX_POLLS,
     LIVE_QUOTE_POLL_MS,
   } from "#lib/domain/config.ts";
+  import { MICROS_PER_USD } from "#lib/domain/money.ts";
   import { unverifiedLine, unverifiedSince } from "#lib/ui/connection-alert.ts";
   import LiveQuoteNote from "#lib/ui/LiveQuoteNote.svelte";
   import OptionChainPanel from "#lib/ui/OptionChainPanel.svelte";
@@ -25,7 +26,14 @@
   import { startLiveFeed } from "#lib/ui/live-feed.ts";
   import { startLivePoll } from "#lib/ui/live-poll.ts";
   import { contractLabel } from "#lib/ui/option-chain.ts";
-  import { formatPrice, formatQuantity, formatSize, limitsLine } from "#lib/ui/new-entry.ts";
+  import {
+    formatPrice,
+    formatQuantity,
+    formatSize,
+    limitsLine,
+    parseCustomUsd,
+    sizeParams,
+  } from "#lib/ui/new-entry.ts";
   import type { PageProps } from "./$types";
 
   let { data, form }: PageProps = $props();
@@ -50,9 +58,11 @@
           tipo: data.tipo,
           cuenta: data.accountId,
           simbolo: data.symbol,
-          ...(data.sizeChoice === "full" ? {} : { tamano: data.sizeChoice }),
+          ...sizeParams(data.sizeChoice, data.sizeAmount),
         })}`,
   );
+  // D53: the amount typed with «Monto propio», as a number (the engine checks its bounds).
+  const customUsd = $derived(parseCustomUsd(data.sizeAmount));
   // A new page load (another symbol, account or search) starts from what the server just read.
   $effect.pre(() => {
     void data;
@@ -68,7 +78,8 @@
       run: async (signal: AbortSignal) => {
         const answer = await readLiveEntry(href, fetch, signal);
         // An answer for an entry that is no longer on screen is dropped.
-        if (answer !== null && !signal.aborted) live = matchingChoice(answer, data.sizeChoice);
+        if (answer !== null && !signal.aborted)
+          live = matchingChoice(answer, data.sizeChoice, customUsd);
         return answer !== null;
       },
     };
@@ -85,11 +96,12 @@
           assetType: data.tipo === "opciones" ? "option" : "equity",
           // The full SIZE is left out of the watch (an engine that predates the choice refuses a reduced one).
           ...(data.sizeChoice === "full" ? {} : { sizeChoice: data.sizeChoice }),
+          ...(customUsd === undefined ? {} : { sizeUsd: customUsd }),
         },
       },
       onMessage: (message) => {
         const next = entryFromMessage(message, live);
-        if (next !== null) live = matchingChoice(next, data.sizeChoice);
+        if (next !== null) live = matchingChoice(next, data.sizeChoice, customUsd);
       },
       poll,
     });
@@ -114,20 +126,32 @@
 
   // The one-entry SIZE choice (D51) lives in the URL: a new Nueva entrada has none, so it starts at
   // the full SIZE. Choosing keeps the rest of the search (symbol, account, chain) as it is.
+  // «Monto propio» (D53) is offered only while the admin's switch is on for this client; it starts
+  // at their SIZE, the most they can type.
   const sizeOptions = $derived(
-    (
-      [
-        { id: "full", label: "Normal" },
-        { id: "down25", label: "−25%" },
-      ] as const
-    ).map((option) => {
+    [
+      { id: "full", label: "Normal" },
+      { id: "down25", label: "−25%" },
+      ...(data.customSize === null ? [] : [{ id: "custom", label: "Monto propio" }]),
+    ].map((option) => {
       const search = new SvelteURLSearchParams(page.url.search);
       for (const name of [...search.keys()]) if (name.startsWith("/")) search.delete(name);
+      search.delete("importe");
       if (option.id === "full") search.delete("tamano");
       else search.set("tamano", option.id);
+      if (option.id === "custom" && data.customSize !== null) {
+        search.set("importe", String(data.customSize.maxUsd));
+      }
       const query = search.toString();
       return { ...option, href: `${resolve("/(app)/operar")}${query === "" ? "" : `?${query}`}` };
     }),
+  );
+
+  // The amount form is a plain GET back to this page, so it keeps the rest of the search as it is.
+  const amountFields = $derived(
+    [...new SvelteURLSearchParams(page.url.search)].filter(
+      ([name]) => name !== "importe" && !name.startsWith("/"),
+    ),
   );
 
   const tabs = $derived([
@@ -192,7 +216,7 @@
       cuenta: data.accountId ?? "",
       simbolo: data.symbol,
       // Kept in the action URL too, so a native post that re-runs the load keeps the choice.
-      ...(data.sizeChoice === "full" ? {} : { tamano: data.sizeChoice }),
+      ...sizeParams(data.sizeChoice, data.sizeAmount),
     })}&/enviar`,
   );
 </script>
@@ -226,6 +250,9 @@
         <input type="hidden" name="tipo" value={data.tipo} />
         {#if data.sizeChoice !== "full"}
           <input type="hidden" name="tamano" value={data.sizeChoice} />
+        {/if}
+        {#if data.sizeChoice === "custom"}
+          <input type="hidden" name="importe" value={data.sizeAmount} />
         {/if}
         {#if data.accounts.length > 1}
           <label class="field">
@@ -263,6 +290,7 @@
         initialCount={data.strikeCount}
         chosenSymbol={data.symbol}
         sizeChoice={data.sizeChoice}
+        sizeAmount={data.sizeAmount}
       />
       {#if contract}
         <div class="field chosen">
@@ -291,6 +319,33 @@
         {/each}
       </nav>
       <!-- eslint-enable svelte/no-navigation-without-resolve -->
+      {#if data.sizeChoice === "custom" && data.customSize !== null}
+        <form class="amount" method="GET" action={resolve("/(app)/operar")}>
+          {#each amountFields as [name, value] (name)}
+            <input type="hidden" {name} {value} />
+          {/each}
+          <label class="field">
+            <span>Monto en dólares</span>
+            <input
+              class="field-input"
+              name="importe"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max={data.customSize.maxUsd}
+              step="1"
+              value={data.sizeAmount}
+              required
+            />
+          </label>
+          <Button type="submit" variant="outline">Aplicar</Button>
+        </form>
+        <p class="caption">
+          Un número entero de dólares, de 1 hasta tu SIZE ({formatSize(
+            data.customSize.maxUsd * MICROS_PER_USD,
+          )}).
+        </p>
+      {/if}
       <p class="caption">Solo afecta a esta entrada. La próxima vuelve a Normal.</p>
     </div>
 
@@ -393,6 +448,9 @@
         <input type="hidden" name="intentId" value={intentId} />
         <input type="hidden" name="cantidad" value={preview.qty} />
         <input type="hidden" name="tamano" value={data.sizeChoice} />
+        {#if data.sizeChoice === "custom"}
+          <input type="hidden" name="importe" value={data.sizeAmount} />
+        {/if}
       {/if}
       <Button
         type="submit"
@@ -512,6 +570,7 @@
     display: flex;
   }
   .size-options a {
+    white-space: nowrap;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -523,6 +582,14 @@
     color: var(--text-muted);
     text-decoration: none;
   }
+  /* Three choices (D53) do not fit 390px at 8rem each: share the row instead. */
+  @media (max-width: 30rem) {
+    .size-options a {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 0 0.5rem;
+    }
+  }
   .size-options a + a {
     margin-left: -1px;
   }
@@ -531,6 +598,16 @@
     background: var(--text);
     color: var(--bg);
     font-weight: 500;
+  }
+  .amount {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  .amount .field {
+    flex: 1;
+    margin: 0;
   }
   .selector,
   select {

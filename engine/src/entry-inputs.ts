@@ -1,7 +1,7 @@
 // What sizing a streamed entry needs from D1, held in the Durable Object so a tick of the entry
 // symbol reads no database (D47). D1 stays the owner of these values: this is a read cache that is
 // dropped by `invalidate()` on every event that changes them (a SIZE change from the admin screen,
-// a daily entries limit change, a connection change) and, as a backstop for a missed call, expires after
+// a daily entries limit change, the choose-your-SIZE switch, a connection change) and, as a backstop for a missed call, expires after
 // LIVE_ENTRY_INPUTS_TTL_MS. Only the live preview reads through it: sendEntry and the one-off
 // prepareEntry call always read D1.
 
@@ -16,6 +16,8 @@ export interface EntryInputs {
   readonly sizeUsd: number | null;
   /** The client's daily entries limit (D48); the default when there is no settings row. */
   readonly maxDailyEntries: number;
+  /** The admin's switch for choosing the SIZE of an entry (D53); off when there is no settings row. */
+  readonly clientSetsSize: boolean;
 }
 
 type InputsContext = Pick<ConnectionContext, "db" | "userId">;
@@ -28,15 +30,18 @@ export async function loadEntryInputs(ctx: InputsContext): Promise<EntryInputs> 
     timedD1(
       "size_usd",
       ctx.db
-        .prepare("SELECT size_usd, max_daily_entries FROM client_settings WHERE user_id = ?")
+        .prepare(
+          "SELECT size_usd, max_daily_entries, client_sets_size FROM client_settings WHERE user_id = ?",
+        )
         .bind(ctx.userId)
-        .first<{ size_usd: number; max_daily_entries: number }>(),
+        .first<{ size_usd: number; max_daily_entries: number; client_sets_size: number }>(),
     ),
   ]);
   return {
     connection,
     sizeUsd: settings?.size_usd ?? null,
     maxDailyEntries: settings?.max_daily_entries ?? DEFAULT_DAILY_ENTRIES,
+    clientSetsSize: settings?.client_sets_size === 1,
   };
 }
 

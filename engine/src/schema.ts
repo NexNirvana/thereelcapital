@@ -187,6 +187,15 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // existed (those were all sized at the full SIZE).
     `ALTER TABLE intents ADD COLUMN size_choice TEXT CHECK (size_choice IS NULL OR size_choice IN ('full', 'down25'))`,
   ],
+  [
+    // D53: an entry may also be sized with an amount the client chose, so `size_choice` accepts
+    // 'custom'. A column CHECK cannot be altered: the column is copied to a new one with the wider
+    // check, the old one is dropped (its own CHECK goes with it) and the new one takes its name.
+    `ALTER TABLE intents ADD COLUMN size_choice_next TEXT CHECK (size_choice_next IS NULL OR size_choice_next IN ('full', 'down25', 'custom'))`,
+    `UPDATE intents SET size_choice_next = size_choice`,
+    `ALTER TABLE intents DROP COLUMN size_choice`,
+    `ALTER TABLE intents RENAME COLUMN size_choice_next TO size_choice`,
+  ],
 ];
 
 /** Idempotent: applies only the migrations above the recorded version, atomically. */

@@ -1,3 +1,6 @@
+/** Micro-dollars in one US dollar. */
+export const MICROS_PER_USD = 1_000_000;
+
 /** Money and prices are nonnegative safe-integer micro-dollars (1 USD = 1,000,000).
  * BigInt intermediates keep parsing, formatting and sizing exact.
  */
