@@ -45,7 +45,7 @@ Exercised against SIM with a real key in the spikes of 2026-10-22 and 2026-10-26
 
 REAL mode is decided in [D52](decisions.md) and lands with the issues of milestone M8. This is what the transport enforces (the locks here are the first and fourth of D52; the per-client flag and the account listing are the second and third):
 
-- **The switch.** The engine variable `REAL_TRADING` (`engine/wrangler.jsonc`, `"enabled"` in production since the owner opened it on 2026-11-04, #334) is read by `isRealTradingOpen` (`engine/src/mode.ts`): open only for the exact string `"enabled"`; unset, empty or any other value is closed. Only the owner changes it, in a PR of their own.
+- **The switch.** The engine variable `REAL_TRADING` (`engine/wrangler.jsonc`, `"disabled"` in production) is read by `isRealTradingOpen` (`engine/src/mode.ts`): open only for the exact string `"enabled"`; unset, empty or any other value is closed. Only the owner changes it, in a PR of their own.
 - **Construction.** `makeTransport` refuses a REAL transport unless `realTrading` is true (`REAL_TRADING_DISABLED`), before any access token is read, and refuses a base URL that is not its own mode's (`BASE_URL_NOT_MODE`). The same `realTrading` flows through `makeTradeStationAdapter` and `resolveBroker`.
 - **Every request** is checked against the prefix of the transport's own mode right before `fetch`; the older `endpoints.ts` helper (`send`, used for auth and for listing accounts at connect) takes the same mode and switch and allows the live origin only for REAL with the switch open.
 - **Accounts** are identified by the host that lists them: `GET /brokerage/accounts` on the mode's own base. An account the SIM host listed is refused in REAL and the reverse (`ACCOUNT_NOT_IN_MODE`).
